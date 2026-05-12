@@ -1,0 +1,2 @@
+-- Seed file is intentionally empty for production parity.
+-- Add development fixtures here when needed.

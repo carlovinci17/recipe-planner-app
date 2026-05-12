@@ -1,0 +1,309 @@
+import "server-only";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { Tables, UpdateTables } from "@/types/database.types";
+
+export type RecipeListItem = Pick<
+  Tables<"recipes">,
+  | "id"
+  | "title"
+  | "description"
+  | "cover_image_path"
+  | "image_paths"
+  | "created_by"
+  | "prep_time_min"
+  | "cook_time_min"
+  | "servings"
+  | "rating"
+  | "is_favorite"
+  | "tags"
+  | "meal_types"
+  | "diet_types"
+  | "cuisines"
+  | "source_url"
+  | "status"
+  | "created_at"
+  | "household_id"
+  | "nutrition"
+  | "cover_focal_x"
+  | "cover_focal_y"
+  | "source_name"
+  | "source_metadata"
+>;
+
+export type RecipeFilters = {
+  query?: string;
+  mealTypes?: string[];
+  dietTypes?: string[];
+  cuisines?: string[];
+  favoriteOnly?: boolean;
+  minRating?: number;
+  status?: Tables<"recipes">["status"];
+};
+
+export const recipeService = {
+  async list(args: { householdId: string; filters?: RecipeFilters; limit?: number }): Promise<RecipeListItem[]> {
+    const supabase = await createSupabaseServerClient();
+    let query = supabase
+      .from("recipes")
+      .select(
+        "id, title, description, cover_image_path, image_paths, created_by, prep_time_min, cook_time_min, servings, rating, is_favorite, tags, meal_types, diet_types, cuisines, source_url, status, created_at, household_id, nutrition, cover_focal_x, cover_focal_y, source_name, source_metadata",
+      )
+      .eq("household_id", args.householdId)
+      .is("archived_at", null)
+      .order("created_at", { ascending: false })
+      .limit(args.limit ?? 60);
+
+    const f = args.filters ?? {};
+    if (f.status) query = query.eq("status", f.status);
+    else query = query.in("status", ["published", "needs_review"]);
+    if (f.favoriteOnly) query = query.eq("is_favorite", true);
+    if (f.minRating) query = query.gte("rating", f.minRating);
+    if (f.mealTypes?.length) query = query.contains("meal_types", f.mealTypes);
+    if (f.dietTypes?.length) query = query.contains("diet_types", f.dietTypes);
+    if (f.cuisines?.length) query = query.contains("cuisines", f.cuisines);
+    if (f.query) {
+      // Basic FTS — websearch-style query is more forgiving than plainto_tsquery
+      query = query.textSearch("search_tsv", f.query, { type: "websearch", config: "english" });
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  async getById(recipeId: string) {
+    const supabase = await createSupabaseServerClient();
+    const { data: recipe, error } = await supabase
+      .from("recipes")
+      .select("*")
+      .eq("id", recipeId)
+      .single();
+    if (error) throw error;
+
+    const [{ data: ingredients }, { data: instructions }] = await Promise.all([
+      supabase
+        .from("recipe_ingredients")
+        .select("*")
+        .eq("recipe_id", recipeId)
+        .order("position"),
+      supabase
+        .from("recipe_instructions")
+        .select("*")
+        .eq("recipe_id", recipeId)
+        .order("position"),
+    ]);
+
+    return {
+      recipe,
+      ingredients: ingredients ?? [],
+      instructions: instructions ?? [],
+    };
+  },
+
+  async setFavorite(recipeId: string, isFavorite: boolean) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase
+      .from("recipes")
+      .update({ is_favorite: isFavorite })
+      .eq("id", recipeId);
+    if (error) throw error;
+  },
+
+  async setRating(recipeId: string, rating: number | null) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.from("recipes").update({ rating }).eq("id", recipeId);
+    if (error) throw error;
+  },
+
+  async publish(recipeId: string) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase
+      .from("recipes")
+      .update({ status: "published" })
+      .eq("id", recipeId);
+    if (error) throw error;
+  },
+
+  async archive(recipeId: string) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase
+      .from("recipes")
+      .update({ archived_at: new Date().toISOString() })
+      .eq("id", recipeId);
+    if (error) throw error;
+  },
+
+  /**
+   * Hard delete. RLS enforces creator/owner gating. The FK on
+   * `planner_entries.recipe_id` is `on delete cascade`, so any planner
+   * entries referencing this recipe are also removed. The UI prompts the
+   * user to confirm this before calling — see `countPlannerEntries`.
+   */
+  async delete(recipeId: string) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.from("recipes").delete().eq("id", recipeId);
+    if (error) throw error;
+  },
+
+  /**
+   * Hard-delete many recipes in one round-trip. Scoped to a household so an
+   * accidental empty filter can't escape into another household's data.
+   * RLS still enforces creator/owner gating per row, plus the calling action
+   * adds an explicit owner-only check above this. Cascades remove planner
+   * entries and recipe_ratings.
+   */
+  async bulkDelete(args: { householdId: string; recipeIds: string[] }): Promise<number> {
+    if (args.recipeIds.length === 0) return 0;
+    const supabase = await createSupabaseServerClient();
+    const { error, count } = await supabase
+      .from("recipes")
+      .delete({ count: "exact" })
+      .eq("household_id", args.householdId)
+      .in("id", args.recipeIds);
+    if (error) throw error;
+    return count ?? 0;
+  },
+
+  /** How many planner entries reference this recipe? Used to gate the delete UI. */
+  async countPlannerEntries(recipeId: string): Promise<number> {
+    const supabase = await createSupabaseServerClient();
+    const { count, error } = await supabase
+      .from("planner_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("recipe_id", recipeId);
+    if (error) throw error;
+    return count ?? 0;
+  },
+
+  async update(recipeId: string, patch: UpdateTables<"recipes">) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.from("recipes").update(patch).eq("id", recipeId);
+    if (error) throw error;
+  },
+
+  /**
+   * Generate a signed upload URL for a new recipe image. The browser PUTs the
+   * file directly to Supabase Storage, then calls `attachImage` with the path.
+   * Path layout: <household_id>/<recipe_id>/cover-<ts>.<ext>
+   */
+  async createImageUploadUrl(args: {
+    recipeId: string;
+    householdId: string;
+    fileName: string;
+    contentType: string;
+  }) {
+    const supabase = await createSupabaseServerClient();
+    const safeName = args.fileName.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const ts = Date.now();
+    const path = `${args.householdId}/${args.recipeId}/cover-${ts}-${safeName}`;
+    const { data, error } = await supabase.storage
+      .from("recipe-images")
+      .createSignedUploadUrl(path);
+    if (error || !data) throw error ?? new Error("Failed to sign upload");
+    return { uploadUrl: data.signedUrl, token: data.token, path, bucket: "recipe-images" };
+  },
+
+  /**
+   * Append a newly-uploaded image (in `recipe-images` bucket) to the recipe.
+   * `image_paths[0]` is treated as the active user cover; reorder via
+   * `setCoverImage` to promote a different image.
+   */
+  async attachImage(args: { recipeId: string; path: string }) {
+    const supabase = await createSupabaseServerClient();
+    const { data: existing, error: fetchErr } = await supabase
+      .from("recipes")
+      .select("image_paths")
+      .eq("id", args.recipeId)
+      .single();
+    if (fetchErr || !existing) throw fetchErr ?? new Error("Recipe not found");
+
+    const nextImagePaths = Array.from(new Set([...(existing.image_paths ?? []), args.path]));
+    const { error } = await supabase
+      .from("recipes")
+      .update({ image_paths: nextImagePaths })
+      .eq("id", args.recipeId);
+    if (error) throw error;
+  },
+
+  /** Promote an existing image to position 0 (the visible cover). */
+  async setCoverImage(args: { recipeId: string; path: string }) {
+    const supabase = await createSupabaseServerClient();
+    const { data: existing, error: fetchErr } = await supabase
+      .from("recipes")
+      .select("image_paths")
+      .eq("id", args.recipeId)
+      .single();
+    if (fetchErr || !existing) throw fetchErr ?? new Error("Recipe not found");
+
+    const without = (existing.image_paths ?? []).filter((p) => p !== args.path);
+    const next = [args.path, ...without];
+    const { error } = await supabase
+      .from("recipes")
+      .update({ image_paths: next })
+      .eq("id", args.recipeId);
+    if (error) throw error;
+  },
+
+  async removeImage(args: { recipeId: string; path: string }) {
+    const supabase = await createSupabaseServerClient();
+    const { data: existing, error: fetchErr } = await supabase
+      .from("recipes")
+      .select("image_paths")
+      .eq("id", args.recipeId)
+      .single();
+    if (fetchErr || !existing) throw fetchErr ?? new Error("Recipe not found");
+
+    const next = (existing.image_paths ?? []).filter((p) => p !== args.path);
+    const { error: updateErr } = await supabase
+      .from("recipes")
+      .update({ image_paths: next })
+      .eq("id", args.recipeId);
+    if (updateErr) throw updateErr;
+
+    await supabase.storage.from("recipe-images").remove([args.path]);
+  },
+
+  async replaceIngredients(recipeId: string, ingredients: Array<Partial<Tables<"recipe_ingredients">> & { raw_text: string }>) {
+    const supabase = await createSupabaseServerClient();
+    const { error: delErr } = await supabase
+      .from("recipe_ingredients")
+      .delete()
+      .eq("recipe_id", recipeId);
+    if (delErr) throw delErr;
+    if (ingredients.length === 0) return;
+    const { error } = await supabase.from("recipe_ingredients").insert(
+      ingredients.map((ing, idx) => ({
+        recipe_id: recipeId,
+        position: idx,
+        section: ing.section ?? null,
+        raw_text: ing.raw_text,
+        quantity: ing.quantity ?? null,
+        unit: ing.unit ?? null,
+        ingredient: ing.ingredient ?? null,
+        notes: ing.notes ?? null,
+        optional: ing.optional ?? false,
+      })),
+    );
+    if (error) throw error;
+  },
+
+  async replaceInstructions(recipeId: string, instructions: Array<Partial<Tables<"recipe_instructions">> & { text: string }>) {
+    const supabase = await createSupabaseServerClient();
+    const { error: delErr } = await supabase
+      .from("recipe_instructions")
+      .delete()
+      .eq("recipe_id", recipeId);
+    if (delErr) throw delErr;
+    if (instructions.length === 0) return;
+    const { error } = await supabase.from("recipe_instructions").insert(
+      instructions.map((step, idx) => ({
+        recipe_id: recipeId,
+        position: idx,
+        section: step.section ?? null,
+        text: step.text,
+        duration_min: step.duration_min ?? null,
+      })),
+    );
+    if (error) throw error;
+  },
+};

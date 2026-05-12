@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 14% 98%;
+    --foreground: 25 25% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 25 25% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 25 25% 15%;
+
+    --primary: 18 78% 47%;        /* warm terracotta */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 30 14% 94%;
+    --secondary-foreground: 25 25% 15%;
+
+    --muted: 30 14% 94%;
+    --muted-foreground: 25 10% 40%;
+
+    --accent: 100 26% 92%;        /* sage tint */
+    --accent-foreground: 130 25% 18%;
+
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 12% 88%;
+    --input: 30 12% 88%;
+    --ring: 18 78% 47%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 25 10% 9%;
+    --foreground: 40 14% 95%;
+    --card: 25 10% 11%;
+    --card-foreground: 40 14% 95%;
+    --popover: 25 10% 11%;
+    --popover-foreground: 40 14% 95%;
+    --primary: 18 78% 55%;
+    --primary-foreground: 25 10% 9%;
+    --secondary: 25 8% 16%;
+    --secondary-foreground: 40 14% 95%;
+    --muted: 25 8% 16%;
+    --muted-foreground: 30 6% 65%;
+    --accent: 130 12% 18%;
+    --accent-foreground: 100 20% 88%;
+    --destructive: 0 65% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 25 6% 22%;
+    --input: 25 6% 22%;
+    --ring: 18 78% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html, body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .scroll-shadow {
+    background:
+      linear-gradient(hsl(var(--background)) 33%, transparent),
+      linear-gradient(transparent, hsl(var(--background)) 66%) bottom,
+      radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, 0.1), transparent),
+      radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, 0.1), transparent) bottom;
+    background-repeat: no-repeat;
+    background-size: 100% 24px, 100% 24px, 100% 8px, 100% 8px;
+    background-attachment: local, local, scroll, scroll;
+  }
+}

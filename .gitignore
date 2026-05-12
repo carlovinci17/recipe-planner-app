@@ -1,0 +1,22 @@
+node_modules
+.next
+out
+dist
+.env
+.env.local
+.env.*.local
+# Google OAuth client secrets — must never land in the repo. Real secret
+# was moved to ~/Secrets/google-oauth/ on 2026-05-12.
+client_secret_*.json
+# Scratch brainstorm/spec docs — kept locally as historical context but
+# not part of the codebase.
+AI-generated-prompt_*.md
+.DS_Store
+*.log
+.vercel
+.turbo
+coverage
+.supabase
+.cache
+*.tsbuildinfo
+next-env.d.ts

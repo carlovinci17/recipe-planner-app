@@ -1,0 +1,585 @@
+"use client";
+
+import { useDeferredValue, useMemo, useState, useTransition } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { CheckSquare, Search, Star, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { RecipeCard } from "@/components/recipes/recipe-card";
+import { MultiSelectPopover } from "@/components/recipes/multi-select-popover";
+import { cn } from "@/lib/utils";
+import type { RecipeListItem } from "@/lib/services/recipe-service";
+import { getRecipeSourceName } from "@/lib/recipes/source-name";
+import { bulkDeleteRecipesAction } from "./actions";
+
+const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack", "dessert"] as const;
+const DIET_TYPES = [
+  "vegetarian",
+  "vegan",
+  "gluten-free",
+  "dairy-free",
+  "low-carb",
+  "keto",
+  "paleo",
+  "pescatarian",
+  "nut-free",
+];
+
+type ChipRemoval = {
+  kind: "meal" | "diet" | "cuisine" | "tag" | "source" | "fav";
+  value?: string;
+};
+
+/**
+ * Hybrid recipe filter UX.
+ *
+ * Layout:
+ *   [search ............................................... ]
+ *   ( All | Breakfast | Lunch | Dinner | Snack | Dessert )       ← segmented (single-select)
+ *   [⭐ Favourites]  [Diet ▾]  [Cuisine ▾]  [Tags ▾]              ← popover pills (multi-select)
+ *   ┊ active filter chips with × ┊                  [ Clear all ]
+ *   [recipe grid]
+ *
+ * - Text search hits the server (Postgres FTS). Everything else is in-memory
+ *   so the chips/popovers feel instant.
+ * - Cuisine + Tag option lists are derived from the loaded recipe set, so any
+ *   tag the user adds in the editor automatically appears as a filter.
+ */
+export function RecipesBrowser({
+  householdId,
+  initialRecipes,
+  initialQuery,
+  isOwner,
+  ratingAggregates = {},
+}: {
+  householdId: string;
+  initialRecipes: RecipeListItem[];
+  initialQuery: string;
+  isOwner: boolean;
+  ratingAggregates?: Record<string, { avg: number; count: number }>;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [, startTransition] = useTransition();
+  const [recipes, setRecipes] = useState(initialRecipes);
+
+  // Selection mode (owner-only). When `selectMode` is on, the recipe cards
+  // show checkboxes and clicking the card toggles selection instead of
+  // navigating. This lets owners curate big imports without clicking into
+  // each recipe to delete one at a time.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmBulkDeleteOpen, setConfirmBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, startBulkDelete] = useTransition();
+
+  const [meal, setMeal] = useState<string | null>(null);
+  const [diets, setDiets] = useState<string[]>([]);
+  const [cuisines, setCuisines] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  const [sources, setSources] = useState<string[]>([]);
+  const [favOnly, setFavOnly] = useState(false);
+  const [query, setQuery] = useState(initialQuery);
+  const deferredQuery = useDeferredValue(query);
+
+  // Option lists derived from the loaded recipes. Sources come from
+  // source_url → friendly name (e.g. "https://recipetineats.com/..." →
+  // "RecipeTin Eats"). Recipes without a source_url are excluded from the
+  // source list.
+  const { allCuisines, allTags, allSources } = useMemo(() => {
+    const c = new Set<string>();
+    const t = new Set<string>();
+    const s = new Set<string>();
+    for (const r of recipes) {
+      r.cuisines.forEach((x) => c.add(x));
+      r.tags.forEach((x) => t.add(x));
+      const name = getRecipeSourceName(r);
+      if (name) s.add(name);
+    }
+    return {
+      allCuisines: Array.from(c).sort(),
+      allTags: Array.from(t).sort(),
+      allSources: Array.from(s).sort(),
+    };
+  }, [recipes]);
+
+  const filtered = useMemo(() => {
+    return recipes.filter((r) => {
+      if (favOnly && !r.is_favorite) return false;
+      if (meal && !r.meal_types.includes(meal)) return false;
+      // Multi-select uses OR semantics within a category — recipe matches if
+      // it has any of the selected diets/cuisines/tags/sources.
+      if (diets.length && !diets.some((d) => r.diet_types.includes(d))) return false;
+      if (cuisines.length && !cuisines.some((c) => r.cuisines.includes(c))) return false;
+      if (tags.length && !tags.some((t) => r.tags.includes(t))) return false;
+      if (sources.length) {
+        const recipeSource = getRecipeSourceName(r);
+        if (!recipeSource || !sources.includes(recipeSource)) return false;
+      }
+      return true;
+    });
+  }, [recipes, favOnly, meal, diets, cuisines, tags, sources]);
+
+  function commitTextSearch(value: string) {
+    const next = new URLSearchParams();
+    if (value.trim()) next.set("q", value.trim());
+    startTransition(() => router.push(`${pathname}?${next.toString()}`));
+  }
+
+  function removeChip(c: ChipRemoval) {
+    if (c.kind === "fav") setFavOnly(false);
+    else if (c.kind === "meal") setMeal(null);
+    else if (c.kind === "diet" && c.value)
+      setDiets((prev) => prev.filter((x) => x !== c.value));
+    else if (c.kind === "cuisine" && c.value)
+      setCuisines((prev) => prev.filter((x) => x !== c.value));
+    else if (c.kind === "tag" && c.value)
+      setTags((prev) => prev.filter((x) => x !== c.value));
+    else if (c.kind === "source" && c.value)
+      setSources((prev) => prev.filter((x) => x !== c.value));
+  }
+
+  function clearAll() {
+    setMeal(null);
+    setDiets([]);
+    setCuisines([]);
+    setTags([]);
+    setSources([]);
+    setFavOnly(false);
+    setQuery("");
+    commitTextSearch("");
+  }
+
+  const activeChips: { key: string; label: string; remove: () => void }[] = [];
+  if (favOnly)
+    activeChips.push({ key: "fav", label: "favourites", remove: () => removeChip({ kind: "fav" }) });
+  if (meal)
+    activeChips.push({ key: `meal-${meal}`, label: meal, remove: () => removeChip({ kind: "meal" }) });
+  for (const d of diets)
+    activeChips.push({
+      key: `diet-${d}`,
+      label: d,
+      remove: () => removeChip({ kind: "diet", value: d }),
+    });
+  for (const c of cuisines)
+    activeChips.push({
+      key: `cuisine-${c}`,
+      label: c,
+      remove: () => removeChip({ kind: "cuisine", value: c }),
+    });
+  for (const t of tags)
+    activeChips.push({
+      key: `tag-${t}`,
+      label: t,
+      remove: () => removeChip({ kind: "tag", value: t }),
+    });
+  for (const s of sources)
+    activeChips.push({
+      key: `source-${s}`,
+      label: s,
+      remove: () => removeChip({ kind: "source", value: s }),
+    });
+
+  const hasAny = activeChips.length > 0 || deferredQuery.length > 0;
+
+  // ─── Selection helpers (owner-only) ────────────────────────────
+  const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+  const allVisibleSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+
+  function toggleSelectMode() {
+    setSelectMode((on) => {
+      if (on) setSelectedIds(new Set());
+      return !on;
+    });
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllVisible() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of visibleIds) next.add(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  function performBulkDelete() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    startBulkDelete(async () => {
+      const result = await bulkDeleteRecipesAction({ householdId, recipeIds: ids });
+      if (!result.ok) {
+        toast.error(result.error ?? "Couldn't delete");
+        return;
+      }
+      // Optimistic-ish: remove rows whose ids we tried to delete from the
+      // visible list. RLS may have skipped rows the caller didn't own; for
+      // those, the next page load will resurrect them — uncommon enough to
+      // not worry about here.
+      setRecipes((prev) => prev.filter((r) => !selectedIds.has(r.id)));
+      setSelectedIds(new Set());
+      setConfirmBulkDeleteOpen(false);
+      setSelectMode(false);
+      toast.success(
+        `Deleted ${result.deleted} ${result.deleted === 1 ? "recipe" : "recipes"}`,
+      );
+      // Force a server round-trip so any planner entries that referenced
+      // these recipes show their cascade deletion.
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitTextSearch((e.target as HTMLInputElement).value);
+          }}
+          placeholder="Search recipes, ingredients, descriptions..."
+          className="pl-9"
+        />
+      </div>
+
+      {/* Segmented meal type — primary axis, single select */}
+      <SegmentedControl
+        value={meal}
+        options={MEAL_TYPES as readonly string[]}
+        onChange={(v) => setMeal(v)}
+      />
+
+      {/* Secondary filters — multi-select popovers */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant={favOnly ? "default" : "outline"}
+          size="sm"
+          className="h-8 gap-1.5"
+          onClick={() => setFavOnly((v) => !v)}
+        >
+          <Star className={cn("h-3.5 w-3.5", favOnly && "fill-current")} />
+          Favourites
+        </Button>
+
+        <MultiSelectPopover
+          label="Diet"
+          options={DIET_TYPES}
+          selected={diets}
+          onChange={setDiets}
+          searchPlaceholder="Search diets..."
+        />
+
+        <MultiSelectPopover
+          label="Cuisine"
+          options={allCuisines}
+          selected={cuisines}
+          onChange={setCuisines}
+          emptyMessage={
+            allCuisines.length === 0 ? "No cuisines yet — add tags via the recipe editor." : "No matches."
+          }
+          searchPlaceholder="Search cuisines..."
+        />
+
+        <MultiSelectPopover
+          label="Tags"
+          options={allTags}
+          selected={tags}
+          onChange={setTags}
+          emptyMessage={
+            allTags.length === 0 ? "No tags yet — add tags via the recipe editor." : "No matches."
+          }
+          searchPlaceholder="Search tags..."
+        />
+
+        <MultiSelectPopover
+          label="Source"
+          options={allSources}
+          selected={sources}
+          onChange={setSources}
+          emptyMessage={
+            allSources.length === 0
+              ? "No sources yet — import a recipe from a URL to populate this."
+              : "No matches."
+          }
+          searchPlaceholder="Search sources..."
+        />
+      </div>
+
+      {/* Active filters row */}
+      {hasAny ? (
+        <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
+          <span className="text-xs text-muted-foreground">Active:</span>
+          {activeChips.map((chip) => (
+            <Badge key={chip.key} variant="secondary" className="gap-1 pl-2 pr-1 capitalize">
+              <span>{chip.label}</span>
+              <button
+                type="button"
+                onClick={chip.remove}
+                className="rounded-full p-0.5 hover:bg-background/60"
+                aria-label={`Remove ${chip.label}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7 text-xs"
+            onClick={clearAll}
+          >
+            Clear all
+          </Button>
+        </div>
+      ) : null}
+
+      {/* Owner-only selection toolbar. Sits between filters and grid so the
+          user can select while still narrowing the visible set. */}
+      {isOwner ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+          <div className="text-xs text-muted-foreground">
+            {filtered.length} of {recipes.length}{" "}
+            {recipes.length === 1 ? "recipe" : "recipes"}
+            {selectMode && selectedIds.size > 0 ? (
+              <span className="ml-2 font-medium text-foreground">
+                · {selectedIds.size} selected
+              </span>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            {selectMode ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={allVisibleSelected ? clearSelection : selectAllVisible}
+                  disabled={visibleIds.length === 0}
+                >
+                  <CheckSquare className="mr-1.5 h-3.5 w-3.5" />
+                  {allVisibleSelected ? "Clear all" : `Select all (${visibleIds.length})`}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirmBulkDeleteOpen(true)}
+                  disabled={selectedIds.size === 0 || bulkDeleting}
+                  className="text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Delete {selectedIds.size > 0 ? `${selectedIds.size} ` : ""}selected
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleSelectMode}
+                  disabled={bulkDeleting}
+                >
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <Button type="button" variant="outline" size="sm" onClick={toggleSelectMode}>
+                <CheckSquare className="mr-1.5 h-3.5 w-3.5" />
+                Select
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="text-xs text-muted-foreground">
+          {filtered.length} of {recipes.length}{" "}
+          {recipes.length === 1 ? "recipe" : "recipes"}
+        </div>
+      )}
+
+      {/* Grid */}
+      {filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed py-16 text-center">
+          <div className="font-medium">No matching recipes</div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Try clearing filters, or import your first recipe.
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {filtered.map((r) => (
+            <SelectableRecipeCard
+              key={r.id}
+              recipe={r}
+              rating={ratingAggregates[r.id]}
+              selectMode={selectMode}
+              selected={selectedIds.has(r.id)}
+              onToggleSelect={() => toggleSelected(r.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      <Dialog
+        open={confirmBulkDeleteOpen}
+        onOpenChange={(open) => !bulkDeleting && setConfirmBulkDeleteOpen(open)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Delete {selectedIds.size} {selectedIds.size === 1 ? "recipe" : "recipes"}?
+            </DialogTitle>
+            <DialogDescription>
+              This permanently removes the selected{" "}
+              {selectedIds.size === 1 ? "recipe" : "recipes"} from your household.
+              Planner entries and ratings tied to{" "}
+              {selectedIds.size === 1 ? "it" : "them"} will be removed too. This
+              can&apos;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmBulkDeleteOpen(false)}
+              disabled={bulkDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              onClick={performBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {bulkDeleting
+                ? "Deleting..."
+                : `Delete ${selectedIds.size} ${selectedIds.size === 1 ? "recipe" : "recipes"}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/**
+ * RecipeCard wrapper that adds a selection-mode overlay. When `selectMode`
+ * is on, the wrapper covers the underlying <Link> with a button that
+ * toggles selection instead of navigating, and renders a checkbox in the
+ * top-left corner. When off, the original card behaves normally.
+ */
+function SelectableRecipeCard({
+  recipe,
+  rating,
+  selectMode,
+  selected,
+  onToggleSelect,
+}: {
+  recipe: RecipeListItem;
+  rating?: { avg: number; count: number };
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
+}) {
+  return (
+    <div className={cn("relative", selectMode && selected && "ring-2 ring-primary rounded-xl")}>
+      <RecipeCard recipe={recipe} rating={rating} />
+      {selectMode ? (
+        <button
+          type="button"
+          onClick={onToggleSelect}
+          className="absolute inset-0 z-10 cursor-pointer rounded-xl"
+          aria-label={selected ? `Unselect ${recipe.title}` : `Select ${recipe.title}`}
+        />
+      ) : null}
+      {selectMode ? (
+        <div className="absolute left-3 top-3 z-20 rounded-md bg-background/90 p-1 shadow-sm backdrop-blur-sm">
+          <Checkbox
+            checked={selected}
+            onCheckedChange={onToggleSelect}
+            aria-label={selected ? `Unselect ${recipe.title}` : `Select ${recipe.title}`}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Segmented control with an "All" option that maps to null. Single-select.
+ * Renders as connected pill buttons; horizontally scrollable on narrow screens.
+ */
+function SegmentedControl({
+  value,
+  options,
+  onChange,
+}: {
+  value: string | null;
+  options: readonly string[];
+  onChange: (next: string | null) => void;
+}) {
+  return (
+    <div className="-mx-1 overflow-x-auto px-1">
+      <div className="inline-flex rounded-lg border bg-background p-1">
+        <SegmentButton active={value === null} onClick={() => onChange(null)}>
+          All
+        </SegmentButton>
+        {options.map((opt) => (
+          <SegmentButton key={opt} active={value === opt} onClick={() => onChange(opt)}>
+            {opt}
+          </SegmentButton>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SegmentButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-md px-3 py-1 text-sm font-medium capitalize transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        active
+          ? "bg-primary text-primary-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}

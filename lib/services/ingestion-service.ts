@@ -1,0 +1,157 @@
+import "server-only";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { inngest } from "@/lib/inngest/client";
+import type { RecipeSourceKind } from "@/types/database.types";
+
+const UPLOADS_BUCKET = "recipe-uploads";
+
+export const ingestionService = {
+  /**
+   * Generate a signed upload URL the browser can PUT to. The path is
+   * pre-namespaced under <household_id>/<job_id>/source-* so RLS holds.
+   */
+  async createUploadJob(args: {
+    householdId: string;
+    sourceKind: RecipeSourceKind;
+    fileName: string;
+    contentType: string;
+  }) {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not authenticated");
+
+    const { data: job, error } = await supabase
+      .from("ingestion_jobs")
+      .insert({
+        household_id: args.householdId,
+        created_by: user.id,
+        source_kind: args.sourceKind,
+        storage_bucket: UPLOADS_BUCKET,
+      })
+      .select("id")
+      .single();
+    if (error || !job) throw error ?? new Error("Failed to create job");
+
+    const safeName = args.fileName.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const path = `${args.householdId}/${job.id}/source-${safeName}`;
+
+    const { data: signed, error: signErr } = await supabase.storage
+      .from(UPLOADS_BUCKET)
+      .createSignedUploadUrl(path);
+    if (signErr || !signed) throw signErr ?? new Error("Failed to sign upload");
+
+    return {
+      jobId: job.id,
+      uploadUrl: signed.signedUrl,
+      token: signed.token,
+      path,
+      bucket: UPLOADS_BUCKET,
+    };
+  },
+
+  /**
+   * Mark upload complete and emit the ingestion event.
+   * The browser calls this after the storage PUT succeeds.
+   */
+  async completeUpload(args: { jobId: string; storagePath: string }) {
+    const supabase = await createSupabaseServerClient();
+    // Don't transition to 'processing' here — that's the worker's job. The
+    // gap between this call and the worker actually starting can be tens
+    // of minutes if the queue is busy, and a row claiming "processing"
+    // while no worker is touching it confuses both the UI and the
+    // stuck-job sweep.
+    const { data: job, error } = await supabase
+      .from("ingestion_jobs")
+      .update({ storage_path: args.storagePath })
+      .eq("id", args.jobId)
+      .select("household_id, source_kind")
+      .single();
+    if (error || !job) throw error ?? new Error("Job not found");
+
+    await supabase.from("ingestion_events").insert({
+      job_id: args.jobId,
+      kind: "file_uploaded",
+      payload: { storage_path: args.storagePath },
+    });
+
+    await inngest.send({
+      name: "ingestion/file.uploaded",
+      data: {
+        jobId: args.jobId,
+        householdId: job.household_id,
+        sourceKind: job.source_kind,
+      },
+    });
+  },
+
+  async createUrlJob(args: { householdId: string; url: string }) {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not authenticated");
+
+    // Status defaults to 'draft' (queued). The processUrl worker's
+    // mark-processing step transitions to 'processing' on pickup.
+    const { data: job, error } = await supabase
+      .from("ingestion_jobs")
+      .insert({
+        household_id: args.householdId,
+        created_by: user.id,
+        source_kind: "url",
+        source_url: args.url,
+      })
+      .select("id")
+      .single();
+    if (error || !job) throw error ?? new Error("Failed to create job");
+
+    await supabase.from("ingestion_events").insert({
+      job_id: job.id,
+      kind: "ingestion_requested",
+      payload: { url: args.url },
+    });
+
+    await inngest.send({
+      name: "ingestion/url.requested",
+      data: { jobId: job.id, householdId: args.householdId, url: args.url },
+    });
+
+    return { jobId: job.id };
+  },
+
+  async getJob(jobId: string) {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("ingestion_jobs")
+      .select("*, events:ingestion_events(*)")
+      .eq("id", jobId)
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * User-initiated cancel of an in-flight import. Soft-cancel: marks the job
+   * `failed` with `error="Cancelled by user"` only if it's still in `draft`
+   * or `processing`. The guard prevents racing with a completion that
+   * landed at the same instant. The Inngest worker may still finish the
+   * remaining steps for that job — the row update at the end is a no-op
+   * when status changed mid-flight, so no DB damage occurs. Reuses the
+   * existing `failed` status so "Clear failed" sweeps cancelled rows too.
+   */
+  async cancelJob(jobId: string): Promise<{ cancelled: boolean }> {
+    const supabase = await createSupabaseServerClient();
+    const { error, count } = await supabase
+      .from("ingestion_jobs")
+      .update(
+        { status: "failed", error: "Cancelled by user" },
+        { count: "exact" },
+      )
+      .eq("id", jobId)
+      .in("status", ["draft", "processing"]);
+    if (error) throw error;
+    return { cancelled: (count ?? 0) > 0 };
+  },
+};

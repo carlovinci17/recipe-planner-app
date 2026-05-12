@@ -1,0 +1,157 @@
+import "server-only";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import type { ExtractedRecipe } from "@/lib/ai/schemas";
+import type { RecipeSourceKind } from "@/types/database.types";
+
+function clampPct(v: number | null | undefined): number {
+  if (typeof v !== "number" || !Number.isFinite(v)) return 50;
+  if (v < 0) return 0;
+  if (v > 100) return 100;
+  return Math.round(v);
+}
+
+/**
+ * Insert a draft recipe (status='needs_review') from an ExtractedRecipe.
+ * Caller is expected to be in a trusted background context (Inngest function).
+ *
+ * `ingestionJobId` back-links the recipe to the import that created it.
+ * One ingestion job can produce multiple recipes (cookbook PDFs, listicle
+ * URLs); this FK is what the UI uses to group siblings under a single row.
+ */
+export async function persistDraftRecipe(args: {
+  householdId: string;
+  createdBy: string;
+  sourceKind: RecipeSourceKind;
+  sourceUrl?: string | null;
+  coverImagePath?: string | null;
+  imagePaths?: string[];
+  aiModel: string;
+  extracted: ExtractedRecipe;
+  ingestionJobId?: string | null;
+  /**
+   * Stable id from the originating external system (e.g. Google Drive file id)
+   * for canonical dedup. Outlasts the ingestion_jobs row, so future scans can
+   * skip files whose recipe still exists even if the import history was wiped.
+   */
+  externalSourceId?: string | null;
+  /**
+   * Human-friendly source label (e.g. "Health with Bec", "RecipeTin Eats").
+   * Auto-populated by the URL pipeline; users can edit on the review form.
+   */
+  sourceName?: string | null;
+}): Promise<string> {
+  const supabase = createSupabaseAdmin();
+
+  const { data: recipe, error } = await supabase
+    .from("recipes")
+    .insert({
+      household_id: args.householdId,
+      created_by: args.createdBy,
+      title: args.extracted.title || "Untitled recipe",
+      description: args.extracted.description,
+      servings: args.extracted.servings,
+      prep_time_min: args.extracted.prep_time_min,
+      cook_time_min: args.extracted.cook_time_min,
+      source_kind: args.sourceKind,
+      source_url: args.sourceUrl ?? null,
+      cover_image_path: args.coverImagePath ?? null,
+      image_paths: args.imagePaths ?? [],
+      nutrition: args.extracted.nutrition ?? {},
+      ai_metadata: { source_notes: args.extracted.source_notes },
+      ai_confidence: args.extracted.confidence,
+      ai_model: args.aiModel,
+      status: "needs_review",
+      ingestion_job_id: args.ingestionJobId ?? null,
+      external_source_id: args.externalSourceId ?? null,
+      source_name: args.sourceName ?? null,
+      // AI-detected framing. Default to 50/50 (center crop, matching legacy
+      // behavior) when the model didn't report a focal point — e.g. pages
+      // with no clear photo, or single-image / URL imports.
+      cover_focal_x: clampPct(args.extracted.cover_focal_x),
+      cover_focal_y: clampPct(args.extracted.cover_focal_y),
+    })
+    .select("id")
+    .single();
+
+  if (error || !recipe) {
+    // Tag the failure with the recipe's title + the exact Postgres error
+    // (PostgREST surfaces helpful info like "column X does not exist in
+    // the schema cache" when a migration hasn't been pushed). Without
+    // the title, multi-recipe failures all look identical and the user
+    // can't tell which import broke or what migration is missing.
+    const detail = error
+      ? `${error.message}${error.details ? ` (${error.details})` : ""}${error.hint ? ` — ${error.hint}` : ""}`
+      : "no row returned";
+    throw new Error(
+      `Failed to insert recipe "${args.extracted.title}" — ${detail}`,
+    );
+  }
+
+  if (args.extracted.ingredients.length > 0) {
+    const { error: ingErr } = await supabase.from("recipe_ingredients").insert(
+      args.extracted.ingredients.map((ing, idx) => ({
+        recipe_id: recipe.id,
+        position: idx,
+        section: ing.section,
+        raw_text: ing.raw_text,
+        quantity: ing.quantity,
+        unit: ing.unit,
+        ingredient: ing.ingredient,
+        notes: ing.notes,
+        optional: ing.optional,
+      })),
+    );
+    if (ingErr) {
+      throw new Error(
+        `Ingredient insert failed for "${args.extracted.title}" (${args.extracted.ingredients.length} items): ${ingErr.message}`,
+      );
+    }
+  }
+
+  if (args.extracted.instructions.length > 0) {
+    const { error: stepErr } = await supabase.from("recipe_instructions").insert(
+      args.extracted.instructions.map((step, idx) => ({
+        recipe_id: recipe.id,
+        position: idx,
+        section: step.section,
+        text: step.text,
+        duration_min: step.duration_min,
+      })),
+    );
+    if (stepErr) {
+      throw new Error(
+        `Instruction insert failed for "${args.extracted.title}" (${args.extracted.instructions.length} steps): ${stepErr.message}`,
+      );
+    }
+  }
+
+  return recipe.id;
+}
+
+export async function applyRecipeTags(args: {
+  recipeId: string;
+  tags: {
+    cuisines: string[];
+    meal_types: string[];
+    diet_types: string[];
+    cooking_methods: string[];
+    occasions: string[];
+    difficulty: string | null;
+    tags: string[];
+  };
+}): Promise<void> {
+  const supabase = createSupabaseAdmin();
+  const { error } = await supabase
+    .from("recipes")
+    .update({
+      cuisines: args.tags.cuisines,
+      meal_types: args.tags.meal_types,
+      diet_types: args.tags.diet_types,
+      cooking_methods: args.tags.cooking_methods,
+      occasions: args.tags.occasions,
+      difficulty: args.tags.difficulty,
+      tags: args.tags.tags,
+    })
+    .eq("id", args.recipeId);
+  if (error) throw new Error(`Tag update failed: ${error.message}`);
+}
