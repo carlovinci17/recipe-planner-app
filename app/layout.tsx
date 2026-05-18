@@ -29,7 +29,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning className={cn(inter.variable, display.variable)}>
-      <body className="min-h-dvh bg-background font-sans">
+      <body className="min-h-dvh overflow-x-hidden bg-background font-sans">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {children}
           <Toaster richColors position="bottom-center" closeButton />
