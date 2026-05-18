@@ -30,12 +30,17 @@ export async function getActiveHousehold(): Promise<{ id: string; name: string; 
     memberships.find((m) => m.household.id === cookieValue) ?? memberships[0]!;
 
   if (cookieValue !== chosen.household.id) {
-    cookieStore.set(COOKIE, chosen.household.id, {
-      path: "/",
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-    });
+    try {
+      cookieStore.set(COOKIE, chosen.household.id, {
+        path: "/",
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+      });
+    } catch {
+      // Server Components cannot set cookies — middleware or the next
+      // Server Action will persist it.
+    }
   }
 
   return { id: chosen.household.id, name: chosen.household.name, role: chosen.role };
