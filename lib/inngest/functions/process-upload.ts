@@ -93,7 +93,7 @@ export const processUpload = inngest.createFunction(
     id: "ingestion-process-upload",
     name: "Process uploaded recipe file",
     retries: 3,
-    concurrency: { limit: 8 },
+    concurrency: { limit: 5 },
     onFailure: async ({ event, error }) => {
       const jobId = extractJobIdFromFailureEvent(event);
       await markIngestionJobFailed(jobId, error.message ?? "Pipeline failed");

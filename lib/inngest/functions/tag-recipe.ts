@@ -10,7 +10,7 @@ export const tagRecipeFn = inngest.createFunction(
     id: "ingestion-tag-recipe",
     name: "Tag recipe with AI",
     retries: 2,
-    concurrency: { limit: 16 },
+    concurrency: { limit: 5 },
   },
   { event: "ingestion/recipe.tagging.requested" },
   async ({ event, step }) => {
