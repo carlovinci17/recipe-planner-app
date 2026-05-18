@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   CalendarDays,
   ChefHat,
   ChevronsUpDown,
   LogOut,
+  Menu,
   Settings,
   ShoppingBasket,
   Upload,
@@ -21,6 +23,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { switchHouseholdAction } from "./actions";
@@ -48,6 +56,7 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   async function logout() {
     await supabase.auth.signOut();
@@ -69,9 +78,68 @@ export function AppShell({
 
   return (
     <div className="flex min-h-dvh flex-col">
+      {/* Mobile drawer */}
+      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+        <SheetContent side="left" className="w-64 p-0">
+          <SheetHeader className="border-b px-4 py-4">
+            <SheetTitle className="font-display text-left text-base">Menu</SheetTitle>
+          </SheetHeader>
+          <nav className="flex flex-col gap-1 p-3">
+            {NAV.map((item) => {
+              const Icon = item.icon;
+              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMenuOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors",
+                    active
+                      ? "bg-accent text-accent-foreground font-medium"
+                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  )}
+                >
+                  <Icon className="h-4 w-4" /> {item.label}
+                </Link>
+              );
+            })}
+            <div className="my-2 border-t" />
+            <Link
+              href="/settings"
+              onClick={() => setMenuOpen(false)}
+              className={cn(
+                "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors",
+                pathname.startsWith("/settings")
+                  ? "bg-accent text-accent-foreground font-medium"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+              )}
+            >
+              <Settings className="h-4 w-4" /> Settings
+            </Link>
+            <button
+              onClick={() => { setMenuOpen(false); logout(); }}
+              className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <LogOut className="h-4 w-4" /> Log out
+            </button>
+          </nav>
+        </SheetContent>
+      </Sheet>
+
       {/* Top bar (mobile + desktop) */}
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b bg-background/80 px-4 backdrop-blur md:px-6">
         <div className="flex items-center gap-3">
+          {/* Hamburger — mobile only */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 md:hidden"
+            aria-label="Open menu"
+            onClick={() => setMenuOpen(true)}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
           <Link href="/recipes" className="font-display text-lg font-semibold">
             Recipes
           </Link>
