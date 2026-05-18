@@ -25,13 +25,13 @@ export function LoginForm({ next }: { next?: string }) {
       toast.error(error.message);
       return;
     }
-    router.push(next ?? "/dashboard");
+    router.push(next ?? "/recipes");
     router.refresh();
   }
 
   async function onGoogle() {
     setBusy("google");
-    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next ?? "/dashboard")}`;
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next ?? "/recipes")}`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo },

@@ -9,7 +9,7 @@ export default async function LandingPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (user) redirect("/dashboard");
+  if (user) redirect("/recipes");
 
   return (
     <main className="min-h-dvh bg-background">

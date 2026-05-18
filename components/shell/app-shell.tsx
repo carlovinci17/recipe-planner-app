@@ -28,7 +28,6 @@ import { switchHouseholdAction } from "./actions";
 type HouseholdSummary = { id: string; name: string; role: "owner" | "member" };
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: ChefHat },
   { href: "/recipes", label: "Recipes", icon: ChefHat },
   { href: "/planner", label: "Planner", icon: CalendarDays },
   { href: "/shopping", label: "Shopping", icon: ShoppingBasket },
@@ -73,7 +72,7 @@ export function AppShell({
       {/* Top bar (mobile + desktop) */}
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b bg-background/80 px-4 backdrop-blur md:px-6">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="font-display text-lg font-semibold">
+          <Link href="/recipes" className="font-display text-lg font-semibold">
             Recipes
           </Link>
 

@@ -30,7 +30,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         avatarUrl: profile?.avatar_url ?? null,
       }}
       activeHousehold={active}
-      households={memberships.map((m) => ({
+      households={Array.from(
+        new Map(memberships.map((m) => [m.household.id, m])).values()
+      ).map((m) => ({
         id: m.household.id,
         name: m.household.name,
         role: m.role,
