@@ -27,3 +27,4 @@ supabase/.temp/
 # so leaving it tracked produces noisy diffs. Team-shared .claude/ files
 # (commands/, agents/, project CLAUDE.md) can still be committed.
 .claude/settings.local.json
+.env.prod
