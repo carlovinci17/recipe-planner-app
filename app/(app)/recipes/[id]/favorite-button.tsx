@@ -20,7 +20,7 @@ export function FavoriteButton({ recipeId, initial }: { recipeId: string; initia
       }
     >
       <Heart className={`mr-2 h-4 w-4 ${favorite ? "fill-current" : ""}`} />
-      {favorite ? "Favorited" : "Favorite"}
+      {favorite ? "Favourited" : "Favourite"}
     </Button>
   );
 }

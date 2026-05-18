@@ -240,7 +240,7 @@ export function AIChefDialog({
                   variant={favoritesOnly ? "default" : "outline"}
                   onClick={() => setFavoritesOnly((v) => !v)}
                 >
-                  ★ Favorites only
+                  ★ Favourites only
                 </Button>
                 <MultiSelectPopover
                   label="Cuisines"

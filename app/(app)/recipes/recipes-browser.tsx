@@ -274,65 +274,69 @@ export function RecipesBrowser({
         onChange={(v) => setMeal(v)}
       />
 
-      {/* Secondary filters — multi-select popovers */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-0.5 [&::-webkit-scrollbar]:hidden">
-        <Button
-          variant={favOnly ? "default" : "outline"}
-          size="sm"
-          className="h-8 gap-1.5"
-          onClick={() => setFavOnly((v) => !v)}
-        >
-          <Star className={cn("h-3.5 w-3.5", favOnly && "fill-current")} />
-          Favourites
-        </Button>
+      {/* Secondary filters — horizontally scrollable on mobile */}
+      <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden">
+        <div className="flex w-max min-w-full items-center gap-2 pb-0.5">
+          <Button
+            variant={favOnly ? "default" : "outline"}
+            size="sm"
+            className="h-8 shrink-0 gap-1.5"
+            aria-label="Favourites"
+            onClick={() => setFavOnly((v) => !v)}
+          >
+            <Star className={cn("h-3.5 w-3.5", favOnly && "fill-current")} />
+            <span className="hidden sm:inline">Favourites</span>
+          </Button>
 
-        <MultiSelectPopover
-          label="Diet"
-          options={DIET_TYPES}
-          selected={diets}
-          onChange={setDiets}
-          searchPlaceholder="Search diets..."
-        />
+          <MultiSelectPopover
+            label="Diet"
+            options={DIET_TYPES}
+            selected={diets}
+            onChange={setDiets}
+            searchPlaceholder="Search diets..."
+          />
 
-        <MultiSelectPopover
-          label="Cuisine"
-          options={allCuisines}
-          selected={cuisines}
-          onChange={setCuisines}
-          emptyMessage={
-            allCuisines.length === 0 ? "No cuisines yet — add tags via the recipe editor." : "No matches."
-          }
-          searchPlaceholder="Search cuisines..."
-        />
+          <MultiSelectPopover
+            label="Cuisine"
+            options={allCuisines}
+            selected={cuisines}
+            onChange={setCuisines}
+            emptyMessage={
+              allCuisines.length === 0 ? "No cuisines yet — add tags via the recipe editor." : "No matches."
+            }
+            searchPlaceholder="Search cuisines..."
+          />
 
-        <MultiSelectPopover
-          label="Tags"
-          options={allTags}
-          selected={tags}
-          onChange={setTags}
-          emptyMessage={
-            allTags.length === 0 ? "No tags yet — add tags via the recipe editor." : "No matches."
-          }
-          searchPlaceholder="Search tags..."
-        />
+          <MultiSelectPopover
+            label="Tags"
+            options={allTags}
+            selected={tags}
+            onChange={setTags}
+            emptyMessage={
+              allTags.length === 0 ? "No tags yet — add tags via the recipe editor." : "No matches."
+            }
+            searchPlaceholder="Search tags..."
+          />
 
-        <MultiSelectPopover
-          label="Source"
-          options={allSources}
-          selected={sources}
-          onChange={setSources}
-          emptyMessage={
-            allSources.length === 0
-              ? "No sources yet — import a recipe from a URL to populate this."
-              : "No matches."
-          }
-          searchPlaceholder="Search sources..."
-        />
+          <MultiSelectPopover
+            label="Source"
+            options={allSources}
+            selected={sources}
+            onChange={setSources}
+            emptyMessage={
+              allSources.length === 0
+                ? "No sources yet — import a recipe from a URL to populate this."
+                : "No matches."
+            }
+            searchPlaceholder="Search sources..."
+          />
+        </div>
       </div>
 
       {/* Active filters row */}
       {hasAny ? (
-        <div className="flex items-center gap-1.5 overflow-x-auto border-t pt-3 pb-0.5 [&::-webkit-scrollbar]:hidden">
+        <div className="overflow-x-auto border-t pt-3 [&::-webkit-scrollbar]:hidden">
+        <div className="flex w-max min-w-full items-center gap-1.5 pb-0.5">
           <span className="text-xs text-muted-foreground">Active:</span>
           {activeChips.map((chip) => (
             <Badge key={chip.key} variant="secondary" className="gap-1 pl-2 pr-1 capitalize">
@@ -351,11 +355,12 @@ export function RecipesBrowser({
             type="button"
             variant="ghost"
             size="sm"
-            className="ml-auto h-7 text-xs"
+            className="ml-auto h-7 shrink-0 text-xs"
             onClick={clearAll}
           >
             Clear all
           </Button>
+        </div>
         </div>
       ) : null}
 

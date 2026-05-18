@@ -64,7 +64,7 @@ export function RecipeCard({
         )}
         {recipe.is_favorite ? (
           <div className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-background/90 shadow-sm backdrop-blur-sm">
-            <Star className="h-4 w-4 fill-amber-500 text-amber-500" aria-label="Favorite" />
+            <Star className="h-4 w-4 fill-amber-500 text-amber-500" aria-label="Favourite" />
           </div>
         ) : null}
       </div>
@@ -129,7 +129,7 @@ export function RecipeCard({
         )}
         {recipe.is_favorite ? (
           <div className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/90 shadow-sm">
-            <Star className="h-3 w-3 fill-amber-500 text-amber-500" aria-label="Favorite" />
+            <Star className="h-3 w-3 fill-amber-500 text-amber-500" aria-label="Favourite" />
           </div>
         ) : null}
       </div>
