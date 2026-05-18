@@ -70,7 +70,7 @@ export function RecipeCard({
       </div>
 
       {/* Card body */}
-      <div className="flex flex-1 flex-col gap-1 p-3 sm:gap-2 sm:p-4">
+      <div className="flex flex-1 flex-col gap-1 p-2.5 sm:gap-2 sm:p-4">
         {recipe.status === "needs_review" ? (
           <div className="sm:hidden mb-0.5">
             <Badge variant="default" className="text-xs">Needs review</Badge>
@@ -114,7 +114,7 @@ export function RecipeCard({
       </div>
 
       {/* Mobile thumbnail — small square on the right, hidden on desktop */}
-      <div className="relative order-last m-3 h-20 w-20 shrink-0 self-center overflow-hidden rounded-lg bg-muted sm:hidden">
+      <div className="relative order-last m-2.5 h-16 w-16 shrink-0 self-center overflow-hidden rounded-lg bg-muted sm:hidden">
         {cover ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img

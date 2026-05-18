@@ -275,7 +275,7 @@ export function RecipesBrowser({
       />
 
       {/* Secondary filters — multi-select popovers */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-2 overflow-x-auto pb-0.5 [&::-webkit-scrollbar]:hidden">
         <Button
           variant={favOnly ? "default" : "outline"}
           size="sm"
@@ -332,7 +332,7 @@ export function RecipesBrowser({
 
       {/* Active filters row */}
       {hasAny ? (
-        <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto border-t pt-3 pb-0.5 [&::-webkit-scrollbar]:hidden">
           <span className="text-xs text-muted-foreground">Active:</span>
           {activeChips.map((chip) => (
             <Badge key={chip.key} variant="secondary" className="gap-1 pl-2 pr-1 capitalize">
