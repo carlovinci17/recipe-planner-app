@@ -548,8 +548,8 @@ function SegmentedControl({
   onChange: (next: string | null) => void;
 }) {
   return (
-    <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden">
-      <div className="inline-flex min-w-max rounded-lg border bg-background p-1">
+    <div className="-mx-1 overflow-x-auto px-1">
+      <div className="inline-flex rounded-lg border bg-background p-1">
         <SegmentButton active={value === null} onClick={() => onChange(null)}>
           All
         </SegmentButton>

@@ -77,7 +77,7 @@ export function AppShell({
     .toUpperCase();
 
   return (
-    <div className="flex min-h-dvh flex-col overflow-x-hidden">
+    <div className="flex min-h-dvh flex-col">
       {/* Mobile drawer */}
       <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
         <SheetContent side="left" className="w-64 p-0">
