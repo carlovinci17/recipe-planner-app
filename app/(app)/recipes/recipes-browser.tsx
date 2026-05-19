@@ -2,7 +2,7 @@
 
 import { useDeferredValue, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { CheckSquare, Search, Star, Trash2, X } from "lucide-react";
+import { CheckSquare, SlidersHorizontal, Search, Star, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { RecipeCard } from "@/components/recipes/recipe-card";
 import { MultiSelectPopover } from "@/components/recipes/multi-select-popover";
 import { cn } from "@/lib/utils";
@@ -89,6 +95,7 @@ export function RecipesBrowser({
   const [tags, setTags] = useState<string[]>([]);
   const [sources, setSources] = useState<string[]>([]);
   const [favOnly, setFavOnly] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [query, setQuery] = useState(initialQuery);
   const deferredQuery = useDeferredValue(query);
 
@@ -267,102 +274,100 @@ export function RecipesBrowser({
         />
       </div>
 
-      {/* Segmented meal type — primary axis, single select */}
-      <SegmentedControl
-        value={meal}
-        options={MEAL_TYPES as readonly string[]}
-        onChange={(v) => setMeal(v)}
-      />
-
-      {/* Secondary filters — horizontally scrollable on mobile */}
-      <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden">
-        <div className="flex w-max min-w-full items-center gap-2 pb-0.5">
-          <Button
-            variant={favOnly ? "default" : "outline"}
-            size="sm"
-            className="h-8 shrink-0 gap-1.5"
-            aria-label="Favourites"
-            onClick={() => setFavOnly((v) => !v)}
-          >
-            <Star className={cn("h-3.5 w-3.5", favOnly && "fill-current")} />
-            <span className="hidden sm:inline">Favourites</span>
-          </Button>
-
-          <MultiSelectPopover
-            label="Diet"
-            options={DIET_TYPES}
-            selected={diets}
-            onChange={setDiets}
-            searchPlaceholder="Search diets..."
-          />
-
-          <MultiSelectPopover
-            label="Cuisine"
-            options={allCuisines}
-            selected={cuisines}
-            onChange={setCuisines}
-            emptyMessage={
-              allCuisines.length === 0 ? "No cuisines yet — add tags via the recipe editor." : "No matches."
-            }
-            searchPlaceholder="Search cuisines..."
-          />
-
-          <MultiSelectPopover
-            label="Tags"
-            options={allTags}
-            selected={tags}
-            onChange={setTags}
-            emptyMessage={
-              allTags.length === 0 ? "No tags yet — add tags via the recipe editor." : "No matches."
-            }
-            searchPlaceholder="Search tags..."
-          />
-
-          <MultiSelectPopover
-            label="Source"
-            options={allSources}
-            selected={sources}
-            onChange={setSources}
-            emptyMessage={
-              allSources.length === 0
-                ? "No sources yet — import a recipe from a URL to populate this."
-                : "No matches."
-            }
-            searchPlaceholder="Search sources..."
-          />
-        </div>
-      </div>
-
-      {/* Active filters row */}
-      {hasAny ? (
-        <div className="overflow-x-auto border-t pt-3 [&::-webkit-scrollbar]:hidden">
-        <div className="flex w-max min-w-full items-center gap-1.5 pb-0.5">
-          <span className="text-xs text-muted-foreground">Active:</span>
-          {activeChips.map((chip) => (
-            <Badge key={chip.key} variant="secondary" className="gap-1 pl-2 pr-1 capitalize">
-              <span>{chip.label}</span>
-              <button
-                type="button"
-                onClick={chip.remove}
-                className="rounded-full p-0.5 hover:bg-background/60"
-                aria-label={`Remove ${chip.label}`}
-              >
-                <X className="h-3 w-3" />
-              </button>
+      {/* ── Mobile: Filters button → bottom sheet ── */}
+      <div className="flex items-center gap-2 sm:hidden">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 gap-2"
+          onClick={() => setFiltersOpen(true)}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          Filters
+          {activeChips.length > 0 && (
+            <Badge variant="default" className="h-4 min-w-4 px-1 text-[10px]">
+              {activeChips.length}
             </Badge>
-          ))}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="ml-auto h-7 shrink-0 text-xs"
-            onClick={clearAll}
-          >
+          )}
+        </Button>
+        {activeChips.length > 0 && (
+          <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={clearAll}>
             Clear all
           </Button>
+        )}
+      </div>
+
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="bottom" className="max-h-[80vh] rounded-t-2xl p-0">
+          <SheetHeader className="border-b px-4 py-3">
+            <SheetTitle className="text-base">Filters</SheetTitle>
+          </SheetHeader>
+          <div className="space-y-4 overflow-y-auto p-4 pb-8">
+            <div>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Meal type</p>
+              <SegmentedControl value={meal} options={MEAL_TYPES as readonly string[]} onChange={(v) => setMeal(v)} />
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">More filters</p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant={favOnly ? "default" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => setFavOnly((v) => !v)}>
+                  <Star className={cn("h-3.5 w-3.5", favOnly && "fill-current")} /> Favourites
+                </Button>
+                <MultiSelectPopover label="Diet" options={DIET_TYPES} selected={diets} onChange={setDiets} searchPlaceholder="Search diets..." />
+                <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={setCuisines} emptyMessage={allCuisines.length === 0 ? "No cuisines yet." : "No matches."} searchPlaceholder="Search cuisines..." />
+                <MultiSelectPopover label="Tags" options={allTags} selected={tags} onChange={setTags} emptyMessage={allTags.length === 0 ? "No tags yet." : "No matches."} searchPlaceholder="Search tags..." />
+                <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={setSources} emptyMessage={allSources.length === 0 ? "No sources yet." : "No matches."} searchPlaceholder="Search sources..." />
+              </div>
+            </div>
+            {activeChips.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 border-t pt-3">
+                <span className="text-xs text-muted-foreground">Active:</span>
+                {activeChips.map((chip) => (
+                  <Badge key={chip.key} variant="secondary" className="gap-1 pl-2 pr-1 capitalize">
+                    <span>{chip.label}</span>
+                    <button type="button" onClick={chip.remove} className="rounded-full p-0.5 hover:bg-background/60" aria-label={`Remove ${chip.label}`}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+            <Button className="w-full" onClick={() => setFiltersOpen(false)}>
+              Show {filtered.length} {filtered.length === 1 ? "recipe" : "recipes"}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Desktop: inline filter rows (unchanged) ── */}
+      <div className="hidden sm:space-y-4 sm:block">
+        <SegmentedControl value={meal} options={MEAL_TYPES as readonly string[]} onChange={(v) => setMeal(v)} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant={favOnly ? "default" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => setFavOnly((v) => !v)}>
+            <Star className={cn("h-3.5 w-3.5", favOnly && "fill-current")} /> Favourites
+          </Button>
+          <MultiSelectPopover label="Diet" options={DIET_TYPES} selected={diets} onChange={setDiets} searchPlaceholder="Search diets..." />
+          <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={setCuisines} emptyMessage={allCuisines.length === 0 ? "No cuisines yet — add tags via the recipe editor." : "No matches."} searchPlaceholder="Search cuisines..." />
+          <MultiSelectPopover label="Tags" options={allTags} selected={tags} onChange={setTags} emptyMessage={allTags.length === 0 ? "No tags yet — add tags via the recipe editor." : "No matches."} searchPlaceholder="Search tags..." />
+          <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={setSources} emptyMessage={allSources.length === 0 ? "No sources yet — import a recipe from a URL to populate this." : "No matches."} searchPlaceholder="Search sources..." />
         </div>
-        </div>
-      ) : null}
+        {hasAny ? (
+          <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
+            <span className="text-xs text-muted-foreground">Active:</span>
+            {activeChips.map((chip) => (
+              <Badge key={chip.key} variant="secondary" className="gap-1 pl-2 pr-1 capitalize">
+                <span>{chip.label}</span>
+                <button type="button" onClick={chip.remove} className="rounded-full p-0.5 hover:bg-background/60" aria-label={`Remove ${chip.label}`}>
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+            <Button type="button" variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={clearAll}>
+              Clear all
+            </Button>
+          </div>
+        ) : null}
+      </div>
 
       {/* Owner-only selection toolbar. Sits between filters and grid so the
           user can select while still narrowing the visible set. */}
