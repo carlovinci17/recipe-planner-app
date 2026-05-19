@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, Camera, FileText, ShoppingCart } from "lucide-react";
+import { ArrowRight, Download, ShoppingCart, Sparkles, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -47,15 +47,17 @@ export default async function LandingPage() {
         </div>
 
         <div className="grid gap-4">
-          <FeatureCard icon={Camera} title="Snap, scan, save">
-            Upload a photo of grandma's recipe card. Our vision pipeline cleans it up into a structured recipe
-            you can edit.
+          <FeatureCard icon={Download} title="Import Recipes">
+            Import recipes from URLs, PDFs, or screenshots — instantly structured and ready to cook.
           </FeatureCard>
-          <FeatureCard icon={FileText} title="Plan together">
-            Drag meals onto a shared weekly planner. Realtime sync — your partner sees changes instantly.
+          <FeatureCard icon={Users} title="Plan together">
+            Build a shared weekly meal plan with your household. Everyone stays on the same page.
+          </FeatureCard>
+          <FeatureCard icon={Sparkles} title="AI Chef">
+            Get personalised recipe suggestions based on what's in your kitchen and your household's tastes.
           </FeatureCard>
           <FeatureCard icon={ShoppingCart} title="Auto shopping list">
-            Generate a smart, deduplicated grocery list from the week's meals.
+            Generate a smart, deduplicated grocery list from the week's meals automatically.
           </FeatureCard>
         </div>
       </section>
