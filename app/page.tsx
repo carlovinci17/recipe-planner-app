@@ -14,7 +14,7 @@ export default async function LandingPage() {
   return (
     <main className="min-h-dvh bg-background">
       <header className="container flex items-center justify-between py-6">
-        <div className="font-display text-xl font-semibold">Recipe Planner</div>
+        <div className="font-display text-xl font-semibold">BiteBuddy</div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" asChild>
             <Link href="/login">Log in</Link>

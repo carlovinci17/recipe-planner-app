@@ -9,7 +9,7 @@ export default function SignupPage() {
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
           <Link href="/" className="font-display text-2xl font-semibold">
-            Recipe Planner
+            BiteBuddy
           </Link>
           <p className="mt-2 text-sm text-muted-foreground">Create your account.</p>
         </div>

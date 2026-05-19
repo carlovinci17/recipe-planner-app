@@ -1,6 +1,6 @@
 {
-  "name": "Recipe Planner",
-  "short_name": "Recipes",
+  "name": "BiteBuddy",
+  "short_name": "BiteBuddy",
   "description": "Your household's recipes, planner, and shopping list.",
   "start_url": "/dashboard",
   "display": "standalone",
