@@ -232,7 +232,7 @@ export function AppShell({
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center gap-1 py-2 text-[11px]",
+                "flex flex-col items-center justify-center gap-1.5 py-3 text-[11px]",
                 active ? "text-foreground" : "text-muted-foreground",
               )}
             >
