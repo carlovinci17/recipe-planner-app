@@ -141,33 +141,8 @@ export function AppShell({
             <Menu className="h-5 w-5" />
           </Button>
           <Link href="/recipes" className="font-display text-lg font-semibold">
-            Recipes
+            BiteBuddy
           </Link>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-2">
-                <span className="max-w-[10rem] truncate">{activeHousehold.name}</span>
-                <ChevronsUpDown className="h-3 w-3 opacity-60" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>Households</DropdownMenuLabel>
-              {households.map((h) => (
-                <DropdownMenuItem
-                  key={h.id}
-                  onSelect={() => switchHousehold(h.id)}
-                  className={cn(h.id === activeHousehold.id && "font-medium")}
-                >
-                  {h.name}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/settings/household">Manage</Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
 
         <DropdownMenu>
@@ -223,7 +198,7 @@ export function AppShell({
       </div>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 grid grid-cols-4 border-t bg-background md:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 z-30 flex h-20 border-t bg-background md:hidden">
         {NAV.filter((n) => !n.primary).map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -232,7 +207,7 @@ export function AppShell({
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center justify-center gap-1.5 py-3 text-[11px]",
+                "flex flex-1 flex-col items-center justify-center gap-1.5 text-[11px]",
                 active ? "text-foreground" : "text-muted-foreground",
               )}
             >
