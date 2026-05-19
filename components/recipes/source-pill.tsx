@@ -1,3 +1,5 @@
+"use client";
+
 import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getRecipeSourceName } from "@/lib/recipes/source-name";
