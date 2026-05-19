@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Cloud } from "lucide-react";
+import { Cloud, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { getActiveHousehold } from "@/lib/services/active-household";
@@ -33,15 +34,31 @@ export default async function ImportPage() {
       <div>
         <h1 className="font-display text-2xl font-semibold">Import a recipe</h1>
         <p className="text-sm text-muted-foreground">
-          Drop in a recipe URL, or pull files from a watched Google Drive folder.
+          Add a new recipe manually, paste a URL, or pull from Google Drive.
         </p>
       </div>
 
       <Tabs defaultValue="url">
         <TabsList>
+          <TabsTrigger value="new">New</TabsTrigger>
           <TabsTrigger value="url">From URL</TabsTrigger>
           <TabsTrigger value="drive">Google Drive</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="new" className="pt-4">
+          <div className="rounded-xl border bg-card p-6 text-center space-y-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent mx-auto">
+              <Plus className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="font-medium">Create a blank recipe</p>
+              <p className="text-sm text-muted-foreground mt-1">Start from scratch and fill in the details yourself.</p>
+            </div>
+            <Button asChild>
+              <Link href="/recipes/new">Create new recipe</Link>
+            </Button>
+          </div>
+        </TabsContent>
 
         <TabsContent value="url" className="pt-4">
           <ImportUrl householdId={household.id} />

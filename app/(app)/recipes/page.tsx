@@ -1,6 +1,3 @@
-import Link from "next/link";
-import { Plus, Upload } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { getActiveHousehold } from "@/lib/services/active-household";
 import { householdService } from "@/lib/services/household-service";
 import { ratingService } from "@/lib/services/rating-service";
@@ -49,23 +46,9 @@ export default async function RecipesPage({
 
   return (
     <div className="container space-y-5 py-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-semibold">Recipes</h1>
-          <p className="text-sm text-muted-foreground">{recipes.length} in your household</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link href="/recipes/new">
-              <Plus className="mr-2 h-4 w-4" /> New
-            </Link>
-          </Button>
-          <Button asChild>
-            <Link href="/recipes/import">
-              <Upload className="mr-2 h-4 w-4" /> Import
-            </Link>
-          </Button>
-        </div>
+      <div>
+        <h1 className="font-display text-2xl font-semibold">Recipes</h1>
+        <p className="text-sm text-muted-foreground">{recipes.length} in your household</p>
       </div>
 
       <RecipesBrowser
