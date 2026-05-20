@@ -31,18 +31,12 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
   if (recipe.status === "needs_review") redirect(`/recipes/${recipe.id}/review`);
 
   const totalMin = (recipe.prep_time_min ?? 0) + (recipe.cook_time_min ?? 0);
-  const perms = await getRecipePermissions({
-    recipeId: recipe.id,
-    recipeCreatedBy: recipe.created_by,
-    recipeHouseholdId: recipe.household_id,
-  });
-  const plannerEntryCount = perms.canDelete
-    ? await recipeService.countPlannerEntries(recipe.id)
-    : 0;
-
-  // Per-user ratings — load alongside the recipe so the panel renders
-  // server-side. Realtime keeps it fresh when household-mates rate.
-  const [ratings, currentUser] = await Promise.all([
+  const [perms, ratings, currentUser] = await Promise.all([
+    getRecipePermissions({
+      recipeId: recipe.id,
+      recipeCreatedBy: recipe.created_by,
+      recipeHouseholdId: recipe.household_id,
+    }),
     ratingService.listForRecipe(recipe.id),
     (async () => {
       const supabase = await createSupabaseServerClient();
@@ -52,6 +46,9 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
       return user;
     })(),
   ]);
+  const plannerEntryCount = perms.canDelete
+    ? await recipeService.countPlannerEntries(recipe.id)
+    : 0;
 
   return (
     <div className="container max-w-4xl space-y-6 py-6">

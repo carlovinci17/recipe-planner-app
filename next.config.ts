@@ -15,8 +15,10 @@ const config: NextConfig = {
     serverActions: {
       bodySizeLimit: "25mb",
     },
+    optimizePackageImports: ["lucide-react", "@radix-ui/react-icons"],
   },
   images: {
+    minimumCacheTTL: 3600,
     remotePatterns: [
       ...(supabaseHost
         ? [{ protocol: "https" as const, hostname: supabaseHost, pathname: "/storage/v1/object/**" }]

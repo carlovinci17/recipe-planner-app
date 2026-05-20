@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -10,10 +11,10 @@ const COOKIE = "active_household";
  * Resolve the current user's active household, falling back to their first
  * membership. Sets the cookie if not present so subsequent calls are O(1).
  *
- * Use this in any server component that operates on a single household.
- * Redirects to /onboarding if the user has no household yet.
+ * Wrapped with React.cache() so repeated calls within the same request
+ * (layout + child page) share a single DB round-trip.
  */
-export async function getActiveHousehold(): Promise<{ id: string; name: string; role: "owner" | "member" }> {
+export const getActiveHousehold = cache(async function getActiveHousehold(): Promise<{ id: string; name: string; role: "owner" | "member" }> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -44,7 +45,7 @@ export async function getActiveHousehold(): Promise<{ id: string; name: string; 
   }
 
   return { id: chosen.household.id, name: chosen.household.name, role: chosen.role };
-}
+});
 
 export async function setActiveHouseholdCookie(householdId: string) {
   const cookieStore = await cookies();

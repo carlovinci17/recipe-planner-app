@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Tables } from "@/types/database.types";
 
@@ -7,23 +8,25 @@ export type HouseholdMembership = {
   role: "owner" | "member";
 };
 
+const listForCurrentUser = cache(async function listForCurrentUser(): Promise<HouseholdMembership[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("household_members")
+    .select("role, household:households(*)")
+    .order("joined_at", { ascending: true });
+  if (error) throw error;
+  // Embedded `households(*)` select isn't statically typed because we don't
+  // declare FK Relationships in the hand-authored Database type. Cast through
+  // unknown — runtime shape matches Tables<"households">.
+  type Row = { role: "owner" | "member"; household: Tables<"households"> | null };
+  const rows = (data ?? []) as unknown as Row[];
+  return rows
+    .filter((row): row is Row & { household: Tables<"households"> } => !!row.household)
+    .map((row) => ({ household: row.household, role: row.role }));
+});
+
 export const householdService = {
-  async listForCurrentUser(): Promise<HouseholdMembership[]> {
-    const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase
-      .from("household_members")
-      .select("role, household:households(*)")
-      .order("joined_at", { ascending: true });
-    if (error) throw error;
-    // Embedded `households(*)` select isn't statically typed because we don't
-    // declare FK Relationships in the hand-authored Database type. Cast through
-    // unknown — runtime shape matches Tables<"households">.
-    type Row = { role: "owner" | "member"; household: Tables<"households"> | null };
-    const rows = (data ?? []) as unknown as Row[];
-    return rows
-      .filter((row): row is Row & { household: Tables<"households"> } => !!row.household)
-      .map((row) => ({ household: row.household, role: row.role }));
-  },
+  listForCurrentUser,
 
   async getActive(householdId: string): Promise<Tables<"households"> | null> {
     const supabase = await createSupabaseServerClient();
@@ -59,7 +62,7 @@ export const householdService = {
     role?: "owner" | "member";
   }): Promise<Tables<"household_invites">> {
     const supabase = await createSupabaseServerClient();
-    const { data: profile, error: profErr } = await supabase
+    const { error: profErr } = await supabase
       .from("profiles")
       .select("id")
       .eq("email", args.email.toLowerCase())

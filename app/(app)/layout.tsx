@@ -11,16 +11,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // Run in parallel: getActiveHousehold (handles onboarding redirect) + profile fetch
+  const [active, { data: profile }] = await Promise.all([
+    getActiveHousehold(),
+    supabase.from("profiles").select("display_name, email, avatar_url").eq("id", user.id).single(),
+  ]);
+
+  // listForCurrentUser is cached by React.cache() — no extra DB round-trip
   const memberships = await householdService.listForCurrentUser();
-  if (memberships.length === 0) redirect("/onboarding");
-
-  const active = await getActiveHousehold();
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name, email, avatar_url")
-    .eq("id", user.id)
-    .single();
 
   return (
     <AppShell
