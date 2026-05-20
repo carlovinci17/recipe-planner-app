@@ -48,7 +48,7 @@ export default async function LandingPage() {
 
         <div className="grid gap-4">
           <FeatureCard icon={Download} title="Import Recipes">
-            Import recipes from URLs, PDFs, or screenshots — instantly structured and ready to cook.
+            Import from a URL, photo, or camera roll — our AI reads the image and pulls out the title, ingredients, instructions, and tags automatically.
           </FeatureCard>
           <FeatureCard icon={Users} title="Plan together">
             Build a shared weekly meal plan with your household. Everyone stays on the same page.

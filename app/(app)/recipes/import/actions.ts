@@ -115,6 +115,50 @@ export async function clearAllJobsAction(input: z.infer<typeof ClearAllSchema>) 
   }
 }
 
+const CreatePhotoJobSchema = z.object({
+  householdId: z.string().uuid(),
+  fileName: z.string().min(1).max(255),
+  contentType: z.string().min(1).max(100),
+});
+
+export async function createPhotoJobAction(input: z.infer<typeof CreatePhotoJobSchema>) {
+  const parsed = CreatePhotoJobSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid input" };
+  try {
+    await assertMembership(parsed.data.householdId);
+    const result = await ingestionService.createUploadJob({
+      householdId: parsed.data.householdId,
+      sourceKind: "image",
+      fileName: parsed.data.fileName,
+      contentType: parsed.data.contentType,
+    });
+    return { ok: true as const, ...result };
+  } catch (err) {
+    logger.error({ err }, "createPhotoJobAction failed");
+    return { ok: false as const, error: (err as Error).message };
+  }
+}
+
+const CompletePhotoUploadSchema = z.object({
+  jobId: z.string().uuid(),
+  storagePath: z.string().min(1),
+});
+
+export async function completePhotoUploadAction(input: z.infer<typeof CompletePhotoUploadSchema>) {
+  const parsed = CompletePhotoUploadSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid input" };
+  try {
+    await ingestionService.completeUpload({
+      jobId: parsed.data.jobId,
+      storagePath: parsed.data.storagePath,
+    });
+    return { ok: true as const };
+  } catch (err) {
+    logger.error({ err }, "completePhotoUploadAction failed");
+    return { ok: false as const, error: (err as Error).message };
+  }
+}
+
 const CommitSkimSchema = z.object({
   jobId: z.string().uuid(),
   selectedIndices: z.array(z.number().int().min(0)).max(200),
