@@ -643,7 +643,54 @@ export const processUpload = inngest.createFunction(
         .eq("id", jobId);
     });
 
-    // ── 7. Fan out: tagging (one event per recipe) ────────────────────
+    // ── 7. Clean up source files ──────────────────────────────────────
+    // The recipe data is now in Postgres. Keep only the page image(s)
+    // used as recipe covers — delete everything else (the original PDF
+    // or raw image, plus any page renders not referenced by a cover).
+    await step.run("cleanup-source-files", async () => {
+      const toDelete: string[] = [];
+
+      // Original source file (PDF or raw uploaded image) is no longer
+      // needed — the extracted data is in Postgres and the cover images
+      // below are the web-optimised renders we actually serve.
+      if (job.storage_path) toDelete.push(job.storage_path);
+
+      // Work out which page images are actually used as covers so we can
+      // keep those and delete the rest. Mirrors the cover selection logic
+      // in the persist step above.
+      const usedAsCovers = new Set(
+        normalizedAll.map((r) => {
+          const pi = r.source_page_index;
+          if (pi && pi >= 1 && pi <= pageImagePaths.length) {
+            return pageImagePaths[pi - 1]!;
+          }
+          return pageImagePaths[0]!;
+        }),
+      );
+
+      for (const path of pageImagePaths) {
+        if (!usedAsCovers.has(path)) toDelete.push(path);
+      }
+
+      if (toDelete.length === 0) return;
+
+      const supa = createSupabaseAdmin();
+      const { error } = await supa.storage
+        .from(ingestionStorage.uploadsBucket)
+        .remove(toDelete);
+
+      if (error) {
+        // Don't fail the job — recipe is already saved.
+        logger.warn(
+          { jobId, filesCount: toDelete.length, error: error.message },
+          "source file cleanup failed",
+        );
+      } else {
+        logger.info({ jobId, filesDeleted: toDelete.length }, "source files cleaned up");
+      }
+    });
+
+    // ── 8. Fan out: tagging (one event per recipe) ────────────────────
     for (let i = 0; i < persisted.length; i++) {
       await step.sendEvent(`emit-tagging-${i}`, {
         name: "ingestion/recipe.tagging.requested",
