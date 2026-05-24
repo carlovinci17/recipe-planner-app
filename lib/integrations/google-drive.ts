@@ -59,6 +59,68 @@ export const driveClient = {
   },
 
   /**
+   * Search Drive for files whose name contains the given query string.
+   * Returns up to `limit` results (default 10) across the entire Drive.
+   * Optionally filter to a specific MIME type (e.g. "application/pdf").
+   */
+  async searchByName(args: {
+    accessToken: string;
+    refreshToken?: string;
+    name: string;
+    mimeType?: string;
+    limit?: number;
+  }): Promise<drive_v3.Schema$File[]> {
+    const auth = makeOAuth2(args);
+    const drive = google.drive({ version: "v3", auth });
+
+    // Escape single quotes in the name to avoid breaking the query string.
+    const safeName = args.name.replace(/'/g, "\\'");
+    const mimeClause = args.mimeType ? ` and mimeType = '${args.mimeType}'` : "";
+    const q = `name contains '${safeName}' and trashed = false${mimeClause}`;
+
+    const res = await drive.files.list({
+      q,
+      fields: "files(id, name, mimeType, modifiedTime, parents, webViewLink, size)",
+      pageSize: args.limit ?? 10,
+      orderBy: "modifiedTime desc",
+    });
+    return res.data.files ?? [];
+  },
+
+  /**
+   * Resolve a file's folder path (up to 3 levels deep) so the UI can show
+   * where in Drive a match lives (e.g. "Recipes / Desserts").
+   */
+  async getFolderPath(args: {
+    accessToken: string;
+    refreshToken?: string;
+    parentIds: string[];
+  }): Promise<string> {
+    if (args.parentIds.length === 0) return "My Drive";
+    const auth = makeOAuth2(args);
+    const drive = google.drive({ version: "v3", auth });
+
+    const parts: string[] = [];
+    let currentId = args.parentIds[0]!;
+
+    for (let depth = 0; depth < 3; depth++) {
+      try {
+        const res = await drive.files.get({
+          fileId: currentId,
+          fields: "id, name, parents",
+        });
+        if (!res.data.name || res.data.name === "My Drive") break;
+        parts.unshift(res.data.name);
+        if (!res.data.parents?.length) break;
+        currentId = res.data.parents[0]!;
+      } catch {
+        break;
+      }
+    }
+    return parts.length > 0 ? parts.join(" / ") : "My Drive";
+  },
+
+  /**
    * List ALL non-trashed files in a folder (not subfolders), paginated.
    * Used for the "Scan now" bulk-import button — distinct from the changes
    * feed below which only returns deltas since the last poll.

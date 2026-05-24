@@ -5,8 +5,163 @@ import { ingestionService } from "@/lib/services/ingestion-service";
 import { householdService } from "@/lib/services/household-service";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { inngest } from "@/lib/inngest/client";
+import { driveClient } from "@/lib/integrations/google-drive";
 import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logger";
+
+// ── Bulk Drive import ─────────────────────────────────────────────────────────
+
+const SUPPORTED_BULK_MIME = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/heic",
+  "image/webp",
+  "application/vnd.google-apps.document",
+]);
+
+const SearchDriveByNamesSchema = z.object({
+  householdId: z.string().uuid(),
+  names: z.array(z.string().min(1).max(300)).min(1).max(200),
+});
+
+export type DriveSearchMatch = {
+  fileId: string;
+  fileName: string;
+  mimeType: string;
+  modifiedTime: string | null;
+  webViewLink: string | null;
+  supported: boolean;
+};
+
+export type DriveSearchResult = {
+  query: string;
+  matches: DriveSearchMatch[];
+};
+
+/**
+ * Search the connected Google Drive account for files matching each of the
+ * provided names. Returns up to 5 matches per name so the user can pick the
+ * right one when multiple files share a similar title.
+ */
+export async function searchDriveByNamesAction(
+  input: z.infer<typeof SearchDriveByNamesSchema>,
+): Promise<{ ok: true; results: DriveSearchResult[] } | { ok: false; error: string }> {
+  const parsed = SearchDriveByNamesSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input" };
+
+  try {
+    await assertMembership(parsed.data.householdId);
+
+    const supabase = await createSupabaseServerClient();
+    const { data: account, error: accErr } = await supabase
+      .from("integration_accounts")
+      .select("id, access_token, refresh_token")
+      .eq("household_id", parsed.data.householdId)
+      .eq("provider", "google_drive")
+      .maybeSingle();
+
+    if (accErr) throw accErr;
+    if (!account) return { ok: false, error: "Google Drive is not connected for this household" };
+
+    // Search each name in parallel, batched to avoid hammering the Drive API.
+    const BATCH = 10;
+    const results: DriveSearchResult[] = [];
+
+    for (let i = 0; i < parsed.data.names.length; i += BATCH) {
+      const batch = parsed.data.names.slice(i, i + BATCH);
+      const batchResults = await Promise.all(
+        batch.map(async (name): Promise<DriveSearchResult> => {
+          const files = await driveClient.searchByName({
+            accessToken: account.access_token,
+            refreshToken: account.refresh_token ?? undefined,
+            name,
+            limit: 5,
+          });
+          const matches: DriveSearchMatch[] = files.map((f) => ({
+            fileId: f.id!,
+            fileName: f.name ?? "Untitled",
+            mimeType: f.mimeType ?? "",
+            modifiedTime: f.modifiedTime ?? null,
+            webViewLink: f.webViewLink ?? null,
+            supported: SUPPORTED_BULK_MIME.has(f.mimeType ?? ""),
+          }));
+          return { query: name, matches };
+        }),
+      );
+      results.push(...batchResults);
+    }
+
+    return { ok: true, results };
+  } catch (err) {
+    logger.error({ err }, "searchDriveByNamesAction failed");
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+const QueueBulkDriveSchema = z.object({
+  householdId: z.string().uuid(),
+  files: z
+    .array(
+      z.object({
+        fileId: z.string().min(1),
+        fileName: z.string().min(1).max(300),
+        mimeType: z.string().min(1),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+
+/**
+ * Queue a confirmed list of Drive files for ingestion. Each file fires an
+ * `ingestion/drive.file.detected` event — the existing Inngest pipeline
+ * handles download → extraction → review from there.
+ */
+export async function queueBulkDriveImportAction(
+  input: z.infer<typeof QueueBulkDriveSchema>,
+): Promise<{ ok: true; queued: number } | { ok: false; error: string }> {
+  const parsed = QueueBulkDriveSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input" };
+
+  try {
+    await assertMembership(parsed.data.householdId);
+
+    const supabase = await createSupabaseServerClient();
+    const { data: account, error: accErr } = await supabase
+      .from("integration_accounts")
+      .select("id")
+      .eq("household_id", parsed.data.householdId)
+      .eq("provider", "google_drive")
+      .maybeSingle();
+
+    if (accErr) throw accErr;
+    if (!account) return { ok: false, error: "Google Drive is not connected for this household" };
+
+    const supported = parsed.data.files.filter((f) => SUPPORTED_BULK_MIME.has(f.mimeType));
+
+    await Promise.all(
+      supported.map((file) =>
+        inngest.send({
+          name: "ingestion/drive.file.detected",
+          data: {
+            householdId: parsed.data.householdId,
+            accountId: account.id,
+            driveFileId: file.fileId,
+            mimeType: file.mimeType,
+            fileName: file.fileName,
+          },
+        }),
+      ),
+    );
+
+    revalidatePath("/recipes/import");
+    return { ok: true, queued: supported.length };
+  } catch (err) {
+    logger.error({ err }, "queueBulkDriveImportAction failed");
+    return { ok: false, error: (err as Error).message };
+  }
+}
 
 async function assertMembership(householdId: string) {
   const memberships = await householdService.listForCurrentUser();

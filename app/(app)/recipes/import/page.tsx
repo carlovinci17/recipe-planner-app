@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Camera, Cloud, Plus } from "lucide-react";
+import { Camera, Cloud, List, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { DriveFolderManager } from "@/app/(app)/settings/integrations/drive-folder-manager";
 import { ImportUrl } from "./import-url";
 import { ImportPhoto } from "./import-photo";
+import { ImportBulk } from "./import-bulk";
 import { ActiveJobs } from "./active-jobs";
 
 export const metadata = { title: "Import recipe" };
@@ -48,6 +49,12 @@ export default async function ImportPage() {
           <TabsTrigger value="url">From URL</TabsTrigger>
           <TabsTrigger value="new">New</TabsTrigger>
           <TabsTrigger value="drive">Google Drive</TabsTrigger>
+          {account && (
+            <TabsTrigger value="bulk">
+              <List className="mr-1.5 h-3.5 w-3.5" />
+              Bulk import
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="photo" className="pt-4">
@@ -123,6 +130,12 @@ export default async function ImportPage() {
             </div>
           )}
         </TabsContent>
+
+        {account && (
+          <TabsContent value="bulk" className="pt-4">
+            <ImportBulk householdId={household.id} />
+          </TabsContent>
+        )}
       </Tabs>
 
       <ActiveJobs householdId={household.id} />
