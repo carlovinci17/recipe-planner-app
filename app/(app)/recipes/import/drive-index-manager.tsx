@@ -16,34 +16,43 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStatus = useCallback(async () => {
     const res = await getDriveIndexStatusAction({ householdId });
-    if (res.ok) setStatus(res.status);
+    if (res.ok) {
+      setStatus(res.status);
+      setFetchError(null);
+    } else {
+      setFetchError(res.error);
+    }
     setLoading(false);
     return res.ok ? res.status : null;
   }, [householdId]);
 
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
   const startPolling = useCallback(() => {
     if (pollRef.current) return;
+    // Poll every 2 s while building — cheap DB query, gives responsive feedback.
     pollRef.current = setInterval(async () => {
       const s = await fetchStatus();
-      if (s && !s.isBuilding) {
-        clearInterval(pollRef.current!);
-        pollRef.current = null;
-      }
-    }, 4000);
-  }, [fetchStatus]);
+      if (s && !s.isBuilding) stopPolling();
+    }, 2000);
+  }, [fetchStatus, stopPolling]);
 
   useEffect(() => {
     fetchStatus().then((s) => {
       if (s?.isBuilding) startPolling();
     });
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [fetchStatus, startPolling]);
+    return stopPolling;
+  }, [fetchStatus, startPolling, stopPolling]);
 
   async function handleCancel() {
     setCancelling(true);
@@ -53,25 +62,50 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
       toast.error(res.error);
       return;
     }
-    toast.info(`Indexing cancelled — ${res.cancelled} file${res.cancelled === 1 ? "" : "s"} skipped.`);
+    toast.info(
+      `Indexing cancelled — ${res.cancelled} file${res.cancelled === 1 ? "" : "s"} skipped.`,
+    );
     await fetchStatus();
+    stopPolling();
   }
 
   async function handleBuild(force = false) {
     setStarting(true);
     const res = await startDriveIndexAction({ householdId, force });
     setStarting(false);
+
     if (!res.ok) {
       toast.error(res.error);
       return;
     }
+
     if (res.queued === 0 && res.skipped > 0) {
       toast.success("All files are already indexed.");
       fetchStatus();
       return;
     }
+
+    if (res.queued === 0) {
+      toast.info("No indexable PDF files found in watched folders.");
+      return;
+    }
+
+    // Optimistically transition to building state immediately — don't wait for
+    // fetchStatus() to round-trip back to the DB. This ensures the progress UI
+    // shows right away even if the subsequent DB read takes a moment.
+    setStatus((prev) => ({
+      total: (prev?.done ?? 0) + (prev?.failed ?? 0) + res.queued,
+      done: prev?.done ?? 0,
+      pending: res.queued,
+      indexing: 0,
+      failed: prev?.failed ?? 0,
+      totalRecipes: prev?.totalRecipes ?? 0,
+      lastIndexedAt: prev?.lastIndexedAt ?? null,
+      isBuilding: true,
+    }));
+
     toast.success(`Indexing ${res.queued} file${res.queued === 1 ? "" : "s"}…`);
-    await fetchStatus();
+    fetchStatus(); // sync real counts in background
     startPolling();
   }
 
@@ -80,6 +114,21 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
       <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
         <Loader2 className="h-4 w-4 animate-spin" />
         Checking index…
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 flex items-start gap-2.5">
+        <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium">Recipe title index unavailable</p>
+          <p className="text-xs text-muted-foreground">{fetchError}</p>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={fetchStatus}>
+            Retry
+          </Button>
+        </div>
       </div>
     );
   }
@@ -184,17 +233,17 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
               )}
             </Button>
           )}
-          {!hasIndex && (
+          {!hasIndex && !status?.isBuilding && (
             <Button
               size="sm"
               variant="secondary"
-              disabled={starting || status?.isBuilding}
+              disabled={starting}
               onClick={() => handleBuild(false)}
             >
               {starting ? (
                 <>
                   <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  Starting…
+                  Scanning folders…
                 </>
               ) : (
                 "Build index"
