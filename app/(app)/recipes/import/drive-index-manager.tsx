@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, BookOpen, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, Loader2, RefreshCw, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
+  cancelDriveIndexAction,
   getDriveIndexStatusAction,
   startDriveIndexAction,
   type DriveIndexStatus,
@@ -14,6 +15,7 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
   const [status, setStatus] = useState<DriveIndexStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -42,6 +44,18 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [fetchStatus, startPolling]);
+
+  async function handleCancel() {
+    setCancelling(true);
+    const res = await cancelDriveIndexAction({ householdId });
+    setCancelling(false);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    toast.info(`Indexing cancelled — ${res.cancelled} file${res.cancelled === 1 ? "" : "s"} skipped.`);
+    await fetchStatus();
+  }
 
   async function handleBuild(force = false) {
     setStarting(true);
@@ -175,11 +189,29 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
       </div>
 
       {hasIndex && status.isBuilding && (
-        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-          <div
-            className="h-full rounded-full bg-primary transition-all duration-500"
-            style={{ width: `${pct}%` }}
-          />
+        <div className="space-y-2">
+          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground"
+              disabled={cancelling}
+              onClick={handleCancel}
+            >
+              {cancelling ? (
+                <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+              ) : (
+                <X className="mr-1.5 h-3 w-3" />
+              )}
+              Cancel
+            </Button>
+          </div>
         </div>
       )}
     </div>

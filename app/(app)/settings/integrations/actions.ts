@@ -650,3 +650,46 @@ export async function getDriveIndexStatusAction(
     return { ok: false, error: (err as Error).message };
   }
 }
+
+const CancelIndexSchema = z.object({ householdId: z.string().uuid() });
+
+/**
+ * Cancel pending indexing jobs by marking all `pending` rows as `failed`.
+ * Already-running (`indexing`) Inngest jobs are left alone — they will
+ * complete naturally and flip their rows to `done`. The UI stops polling
+ * as soon as `pending` drops to zero.
+ */
+export async function cancelDriveIndexAction(
+  input: z.infer<typeof CancelIndexSchema>,
+): Promise<{ ok: true; cancelled: number } | { ok: false; error: string }> {
+  const parsed = CancelIndexSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input" };
+
+  try {
+    const memberships = await householdService.listForCurrentUser();
+    if (!memberships.some((m) => m.household.id === parsed.data.householdId)) {
+      return { ok: false, error: "Not a member of this household" };
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const { count, error } = await supabase
+      .from("drive_file_index")
+      .update(
+        {
+          index_status: "failed",
+          error: "Cancelled by user",
+          updated_at: new Date().toISOString(),
+        },
+        { count: "exact" },
+      )
+      .eq("household_id", parsed.data.householdId)
+      .eq("index_status", "pending");
+
+    if (error) throw error;
+    revalidatePath("/recipes/import");
+    return { ok: true, cancelled: count ?? 0 };
+  } catch (err) {
+    logger.error({ err }, "cancelDriveIndexAction failed");
+    return { ok: false, error: (err as Error).message };
+  }
+}

@@ -174,9 +174,13 @@ function computeLabel(kind: IngestionEventKind | undefined, meta: ProgressMeta):
   return STEP_LABEL[kind];
 }
 
+const PAGE_SIZE = 25;
+
 export function ActiveJobs({ householdId }: { householdId: string }) {
   const supabase = createClient();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [totalLoaded, setTotalLoaded] = useState(0);
   // Map of job_id -> the most recent event kind (drives the progress bar).
   const [latestEvents, setLatestEvents] = useState<Record<string, IngestionEventKind>>({});
   // Map of job_id -> all recipes attached via recipes.ingestion_job_id. A
@@ -219,10 +223,14 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
         .select("*")
         .eq("household_id", householdId)
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(PAGE_SIZE + 1);
       if (cancelled) return;
       const list = (jobsData ?? []) as Job[];
-      setJobs(list);
+      // Load PAGE_SIZE+1 to detect if more exist, then trim.
+      const trimmed = list.slice(0, PAGE_SIZE);
+      setJobs(trimmed);
+      setTotalLoaded(trimmed.length);
+      if (list.length > PAGE_SIZE) setVisibleCount(PAGE_SIZE);
 
       const jobIds = list.map((j) => j.id);
       if (jobIds.length === 0) return;
@@ -464,7 +472,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
               });
             }
             const without = prev.filter((j) => j.id !== next.id);
-            return [next, ...without].slice(0, 10);
+            return [next, ...without].slice(0, PAGE_SIZE);
           });
         },
       )
@@ -625,6 +633,24 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
       void supabase.removeChannel(recipesChannel);
     };
   }, [householdId, supabase]);
+
+  async function loadMore() {
+    const { data } = await supabase
+      .from("ingestion_jobs")
+      .select("*")
+      .eq("household_id", householdId)
+      .order("created_at", { ascending: false })
+      .range(jobs.length, jobs.length + PAGE_SIZE);
+    const more = (data ?? []) as Job[];
+    if (more.length > 0) {
+      setJobs((prev) => {
+        const existing = new Set(prev.map((j) => j.id));
+        return [...prev, ...more.filter((j) => !existing.has(j.id))];
+      });
+      setTotalLoaded((n) => n + more.length);
+    }
+    setVisibleCount((n) => n + PAGE_SIZE);
+  }
 
   function clearFailed() {
     start(async () => {
@@ -799,7 +825,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
-        {jobs.map((j) => (
+        {jobs.slice(0, visibleCount).map((j) => (
           <JobRow
             key={j.id}
             job={j}
@@ -819,6 +845,13 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
             }
           />
         ))}
+        {(visibleCount < jobs.length || jobs.length === totalLoaded) && totalLoaded >= PAGE_SIZE && (
+          <div className="pt-1 flex justify-center">
+            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={loadMore}>
+              Show more
+            </Button>
+          </div>
+        )}
       </CardContent>
 
       {/* Cover-picker dialog — opens when a recipe thumbnail in a sub-row
