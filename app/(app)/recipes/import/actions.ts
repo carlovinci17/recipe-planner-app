@@ -22,7 +22,12 @@ const NUMBER_WORDS: Record<string, string> = {
 };
 
 function normalizeTitle(s: string): string {
-  let n = s.toLowerCase().replace(/&/g, "and").replace(/[-–—]/g, " ");
+  // NFD decompose then strip combining diacritics (é → e, ñ → n, etc.)
+  let n = s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+  n = n.toLowerCase();
+  n = n.replace(/&/g, "and");
+  // All dash/hyphen variants → space (covers -, –, —, ‑, ‐, −, ‒, and more)
+  n = n.replace(/[-‐‑‒–—―−﹘﹣－]/g, " ");
   for (const [word, digit] of Object.entries(NUMBER_WORDS)) {
     n = n.replace(new RegExp(`\\b${word}\\b`, "g"), digit);
   }
@@ -35,8 +40,30 @@ function significantWords(name: string): string[] {
     .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
 }
 
+/**
+ * Detect "G R I L L E D" style names where every character is separated by
+ * a space — a common PDF extraction artifact. True when >60% of tokens are
+ * single characters and there are at least 6 tokens.
+ */
+function isSpacedChars(s: string): boolean {
+  const tokens = s.trim().split(/\s+/);
+  if (tokens.length < 6) return false;
+  const singles = tokens.filter((t) => t.length === 1).length;
+  return singles / tokens.length > 0.6;
+}
+
 /** Token overlap score: how many significant words the query and filename share. */
 function matchScore(query: string, fileName: string): number {
+  // Special case: "G R I L L E D S N A P P E R" — collapse spaces then check
+  // whether each significant query word appears as a substring of the collapsed name.
+  if (isSpacedChars(fileName)) {
+    const collapsed = fileName.replace(/\s+/g, "").toLowerCase();
+    const qWords = significantWords(query).filter((w) => w.length > 2);
+    if (qWords.length === 0) return 0;
+    const found = qWords.filter((w) => collapsed.includes(w));
+    return found.length / qWords.length;
+  }
+
   const qWords = new Set(significantWords(query));
   const fWords = new Set(significantWords(fileName));
   if (qWords.size === 0) return 0;
