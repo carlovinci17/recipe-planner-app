@@ -288,6 +288,11 @@ function Row({
             {item.fileName}
           </span>
         </div>
+        {item.folderPath ? (
+          <div className="mt-0.5 text-xs text-muted-foreground truncate">
+            📁 {item.folderPath}
+          </div>
+        ) : null}
         {hasMatch && item.existingRecipeTitle ? (
           <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
             <FileWarning className="h-3 w-3" aria-hidden="true" />

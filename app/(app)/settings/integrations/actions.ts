@@ -87,6 +87,8 @@ export type DriveScanItem = {
   fileName: string;
   mimeType: string;
   modifiedTime: string | null;
+  /** Subfolder path relative to the watched folder, e.g. "Desserts / Cakes". Empty string = root folder. */
+  folderPath: string;
   /**
    * `recipe-exists`  — canonical id match on recipes.external_source_id
    * `in-flight`      — non-failed ingestion_jobs row exists for this file
@@ -124,7 +126,7 @@ export async function previewDriveFolderScanAction(input: z.infer<typeof Preview
 
   let files;
   try {
-    files = await driveClient.listAllFilesInFolder({
+    files = await driveClient.listAllFilesInFolderRecursive({
       accessToken: account.access_token,
       refreshToken: account.refresh_token ?? undefined,
       folderId: folder.folder_id,
@@ -193,6 +195,7 @@ export async function previewDriveFolderScanAction(input: z.infer<typeof Preview
   const items: DriveScanItem[] = supported.map((f) => {
     const fileId = f.id!;
     const fileName = f.name ?? "untitled";
+    const folderPath = f.folderPath ?? "";
 
     // Canonical: a recipe was created from exactly this Drive file id.
     const canonical = recipeBySourceId.get(fileId);
@@ -202,6 +205,7 @@ export async function previewDriveFolderScanAction(input: z.infer<typeof Preview
         fileName,
         mimeType: f.mimeType!,
         modifiedTime: f.modifiedTime ?? null,
+        folderPath,
         status: "recipe-exists",
         existingRecipeId: canonical.id,
         existingRecipeTitle: canonical.title,
@@ -215,6 +219,7 @@ export async function previewDriveFolderScanAction(input: z.infer<typeof Preview
         fileName,
         mimeType: f.mimeType!,
         modifiedTime: f.modifiedTime ?? null,
+        folderPath,
         status: "in-flight",
       };
     }
@@ -228,6 +233,7 @@ export async function previewDriveFolderScanAction(input: z.infer<typeof Preview
         fileName,
         mimeType: f.mimeType!,
         modifiedTime: f.modifiedTime ?? null,
+        folderPath,
         status: "name-match",
         existingRecipeId: fuzzy.id,
         existingRecipeTitle: fuzzy.title,
@@ -239,6 +245,7 @@ export async function previewDriveFolderScanAction(input: z.infer<typeof Preview
       fileName,
       mimeType: f.mimeType!,
       modifiedTime: f.modifiedTime ?? null,
+      folderPath,
       status: "new",
     };
   });

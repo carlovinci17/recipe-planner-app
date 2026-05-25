@@ -152,6 +152,67 @@ export const driveClient = {
   },
 
   /**
+   * Recursively list ALL non-trashed files in a folder and every subfolder
+   * beneath it (BFS, up to maxDepth levels deep, default 6).
+   *
+   * Each returned file has an extra `folderPath` field showing its location
+   * relative to the root watched folder (e.g. "Desserts / Cakes") so the
+   * scan preview UI can display where in Drive each file lives.
+   *
+   * Hard cap: 5 000 files total to avoid runaway API usage on huge drives.
+   */
+  async listAllFilesInFolderRecursive(args: {
+    accessToken: string;
+    refreshToken?: string;
+    folderId: string;
+    maxDepth?: number;
+  }): Promise<Array<drive_v3.Schema$File & { folderPath: string }>> {
+    const auth = makeOAuth2(args);
+    const drive = google.drive({ version: "v3", auth });
+    const maxDepth = args.maxDepth ?? 6;
+    const MAX_FILES = 5_000;
+
+    const out: Array<drive_v3.Schema$File & { folderPath: string }> = [];
+
+    // BFS queue — each entry is a folder to visit plus its display path.
+    const queue: Array<{ folderId: string; path: string; depth: number }> = [
+      { folderId: args.folderId, path: "", depth: 0 },
+    ];
+
+    while (queue.length > 0 && out.length < MAX_FILES) {
+      const { folderId, path, depth } = queue.shift()!;
+
+      let pageToken: string | undefined;
+      do {
+        const res = await drive.files.list({
+          // Include both files AND subfolders in one call.
+          q: `'${folderId}' in parents and trashed = false`,
+          fields: "nextPageToken, files(id, name, mimeType, modifiedTime)",
+          pageSize: 200,
+          pageToken,
+        });
+
+        for (const file of res.data.files ?? []) {
+          if (file.mimeType === "application/vnd.google-apps.folder") {
+            // Queue the subfolder if we haven't hit the depth limit.
+            if (depth < maxDepth && file.id) {
+              const subPath = path ? `${path} / ${file.name ?? ""}` : (file.name ?? "");
+              queue.push({ folderId: file.id, path: subPath, depth: depth + 1 });
+            }
+          } else {
+            out.push({ ...file, folderPath: path });
+            if (out.length >= MAX_FILES) break;
+          }
+        }
+
+        pageToken = res.data.nextPageToken ?? undefined;
+      } while (pageToken && out.length < MAX_FILES);
+    }
+
+    return out;
+  },
+
+  /**
    * List files added or modified in a folder since the last poll.
    *
    * `pageToken` is the Drive Changes API cursor — passed in from the previous
