@@ -65,10 +65,13 @@ export async function searchDriveByNamesAction(
     if (!account) return { ok: false, error: "Google Drive is not connected for this household" };
 
     // Persist refreshed access tokens so the DB stays current across serverless invocations.
-    const onNewTokens = (accessToken: string) => {
+    const onNewTokens = ({ accessToken, refreshToken }: { accessToken: string; refreshToken?: string }) => {
       supabase
         .from("integration_accounts")
-        .update({ access_token: accessToken })
+        .update({
+          access_token: accessToken,
+          ...(refreshToken ? { refresh_token: refreshToken } : {}),
+        })
         .eq("id", account.id)
         .then(({ error }) => {
           if (error) logger.warn({ err: error.message, accountId: account.id }, "failed to persist refreshed Drive token");

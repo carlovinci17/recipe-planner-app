@@ -5,7 +5,7 @@ import { env } from "@/lib/env";
 function makeOAuth2(args: {
   accessToken: string;
   refreshToken?: string;
-  onNewTokens?: (accessToken: string) => void;
+  onNewTokens?: (tokens: { accessToken: string; refreshToken?: string }) => void;
 }) {
   const client = new google.auth.OAuth2(
     env.GOOGLE_CLIENT_ID,
@@ -18,7 +18,13 @@ function makeOAuth2(args: {
   });
   if (args.onNewTokens) {
     client.on("tokens", (tokens) => {
-      if (tokens.access_token) args.onNewTokens!(tokens.access_token);
+      if (tokens.access_token) {
+        args.onNewTokens!({
+          accessToken: tokens.access_token,
+          // refresh_token is only present when Google rotates it
+          refreshToken: tokens.refresh_token ?? undefined,
+        });
+      }
     });
   }
   return client;
@@ -75,7 +81,7 @@ export const driveClient = {
   async searchByName(args: {
     accessToken: string;
     refreshToken?: string;
-    onNewTokens?: (accessToken: string) => void;
+    onNewTokens?: (tokens: { accessToken: string; refreshToken?: string }) => void;
     name: string;
     mimeType?: string;
     limit?: number;
@@ -174,7 +180,7 @@ export const driveClient = {
   async listAllFilesInFolderRecursive(args: {
     accessToken: string;
     refreshToken?: string;
-    onNewTokens?: (accessToken: string) => void;
+    onNewTokens?: (tokens: { accessToken: string; refreshToken?: string }) => void;
     folderId: string;
     maxDepth?: number;
   }): Promise<Array<drive_v3.Schema$File & { folderPath: string }>> {

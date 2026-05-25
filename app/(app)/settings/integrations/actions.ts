@@ -133,11 +133,13 @@ export async function previewDriveFolderScanAction(input: z.infer<typeof Preview
     return { ok: false as const, error: "Drive account not connected" };
   }
 
-  const supabaseForTokens = supabase;
-  const onNewTokens = (accessToken: string) => {
-    supabaseForTokens
+  const onNewTokens = ({ accessToken, refreshToken }: { accessToken: string; refreshToken?: string }) => {
+    supabase
       .from("integration_accounts")
-      .update({ access_token: accessToken })
+      .update({
+        access_token: accessToken,
+        ...(refreshToken ? { refresh_token: refreshToken } : {}),
+      })
       .eq("id", account.id)
       .then(({ error }) => {
         if (error) logger.warn({ err: error.message, accountId: account.id }, "failed to persist refreshed Drive token");
