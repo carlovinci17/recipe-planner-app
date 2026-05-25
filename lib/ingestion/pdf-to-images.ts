@@ -31,17 +31,6 @@ export async function pdfBufferToPageImages(args: {
     "pdfjs-dist/legacy/build/pdf.mjs"
   );
 
-  // Explicitly point pdfjs at the worker file. Without this, it tries to
-  // resolve the path at runtime from inside the pdfjs module — which works
-  // locally but fails on Vercel because the worker file isn't traced unless
-  // we set outputFileTracingIncludes AND pin the path here.
-  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    pdfjs.GlobalWorkerOptions.workerSrc = require.resolve(
-      "pdfjs-dist/legacy/build/pdf.worker.mjs",
-    );
-  }
-
   // pdfjs-dist explicitly rejects Node's Buffer (`instanceof Buffer` check)
   // even though Buffer extends Uint8Array. Force a plain Uint8Array view —
   // same memory, different prototype, no copy.
