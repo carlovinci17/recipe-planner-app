@@ -64,6 +64,17 @@ export async function searchDriveByNamesAction(
     if (accErr) throw accErr;
     if (!account) return { ok: false, error: "Google Drive is not connected for this household" };
 
+    // Persist refreshed access tokens so the DB stays current across serverless invocations.
+    const onNewTokens = (accessToken: string) => {
+      supabase
+        .from("integration_accounts")
+        .update({ access_token: accessToken })
+        .eq("id", account.id)
+        .then(({ error }) => {
+          if (error) logger.warn({ err: error.message, accountId: account.id }, "failed to persist refreshed Drive token");
+        });
+    };
+
     // Search each name in parallel, batched to avoid hammering the Drive API.
     const BATCH = 10;
     const results: DriveSearchResult[] = [];
@@ -75,6 +86,7 @@ export async function searchDriveByNamesAction(
           const files = await driveClient.searchByName({
             accessToken: account.access_token,
             refreshToken: account.refresh_token ?? undefined,
+            onNewTokens,
             name,
             limit: 5,
           });
@@ -95,7 +107,11 @@ export async function searchDriveByNamesAction(
     return { ok: true, results };
   } catch (err) {
     logger.error({ err }, "searchDriveByNamesAction failed");
-    return { ok: false, error: (err as Error).message };
+    const msg = (err as Error).message ?? "";
+    if (msg.includes("invalid_grant")) {
+      return { ok: false, error: "Your Google Drive connection has expired. Please reconnect in Settings → Integrations." };
+    }
+    return { ok: false, error: msg };
   }
 }
 

@@ -2,7 +2,11 @@ import "server-only";
 import { google, type drive_v3 } from "googleapis";
 import { env } from "@/lib/env";
 
-function makeOAuth2(args: { accessToken: string; refreshToken?: string }) {
+function makeOAuth2(args: {
+  accessToken: string;
+  refreshToken?: string;
+  onNewTokens?: (accessToken: string) => void;
+}) {
   const client = new google.auth.OAuth2(
     env.GOOGLE_CLIENT_ID,
     env.GOOGLE_CLIENT_SECRET,
@@ -12,6 +16,11 @@ function makeOAuth2(args: { accessToken: string; refreshToken?: string }) {
     access_token: args.accessToken,
     refresh_token: args.refreshToken,
   });
+  if (args.onNewTokens) {
+    client.on("tokens", (tokens) => {
+      if (tokens.access_token) args.onNewTokens!(tokens.access_token);
+    });
+  }
   return client;
 }
 
@@ -66,6 +75,7 @@ export const driveClient = {
   async searchByName(args: {
     accessToken: string;
     refreshToken?: string;
+    onNewTokens?: (accessToken: string) => void;
     name: string;
     mimeType?: string;
     limit?: number;
@@ -164,6 +174,7 @@ export const driveClient = {
   async listAllFilesInFolderRecursive(args: {
     accessToken: string;
     refreshToken?: string;
+    onNewTokens?: (accessToken: string) => void;
     folderId: string;
     maxDepth?: number;
   }): Promise<Array<drive_v3.Schema$File & { folderPath: string }>> {

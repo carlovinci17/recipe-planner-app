@@ -124,16 +124,32 @@ export async function previewDriveFolderScanAction(input: z.infer<typeof Preview
     return { ok: false as const, error: "Drive account not connected" };
   }
 
+  const supabaseForTokens = supabase;
+  const onNewTokens = (accessToken: string) => {
+    supabaseForTokens
+      .from("integration_accounts")
+      .update({ access_token: accessToken })
+      .eq("id", account.id)
+      .then(({ error }) => {
+        if (error) logger.warn({ err: error.message, accountId: account.id }, "failed to persist refreshed Drive token");
+      });
+  };
+
   let files;
   try {
     files = await driveClient.listAllFilesInFolderRecursive({
       accessToken: account.access_token,
       refreshToken: account.refresh_token ?? undefined,
+      onNewTokens,
       folderId: folder.folder_id,
     });
   } catch (err) {
     logger.error({ err, folderId: folder.id }, "drive scan failed");
-    return { ok: false as const, error: (err as Error).message };
+    const msg = (err as Error).message ?? "";
+    if (msg.includes("invalid_grant")) {
+      return { ok: false as const, error: "Your Google Drive connection has expired. Please reconnect in Settings → Integrations." };
+    }
+    return { ok: false as const, error: msg };
   }
 
   const supported = files.filter(
