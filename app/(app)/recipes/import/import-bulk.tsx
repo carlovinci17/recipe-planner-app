@@ -247,10 +247,11 @@ function ResultRow({
 
   return (
     <div className="px-4 py-3 space-y-2">
+      {/* Recipe name (search term) */}
       <div className="flex items-center gap-2 justify-between">
         <span className="text-sm font-medium truncate">{result.query}</span>
         {!hasMatches && (
-          <Badge variant="secondary" className="shrink-0 text-xs">
+          <Badge variant="secondary" className="shrink-0 text-xs text-destructive">
             Not found
           </Badge>
         )}
@@ -282,29 +283,30 @@ function ResultRow({
                   className="accent-primary shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm truncate">{match.fileName}</p>
-                  <div className="flex items-center gap-2 flex-wrap">
+                  {/* File name + path */}
+                  <p className="text-sm text-muted-foreground truncate">
+                    <span className="font-medium text-foreground">({match.fileName})</span>
                     {match.folderPath && (
-                      <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                      <span className="ml-1.5 inline-flex items-center gap-1">
                         <FolderOpen className="h-3 w-3 shrink-0" />
                         {match.folderPath}
-                      </p>
+                      </span>
                     )}
+                  </p>
+                  {/* Metadata row */}
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     {match.modifiedTime && (
-                      <p className="text-xs text-muted-foreground">
-                        Modified {new Date(match.modifiedTime).toLocaleDateString()}
-                      </p>
+                      <span>Modified {new Date(match.modifiedTime).toLocaleDateString("en-GB")}</span>
                     )}
-                  </div>
+                    <span className="mx-1">·</span>
+                    <span>{mimeLabel(match.mimeType)}</span>
+                  </p>
                 </div>
                 {match.alreadyImported && (
                   <Badge variant="secondary" className="shrink-0 text-xs">
                     Already imported
                   </Badge>
                 )}
-                <Badge variant="outline" className="shrink-0 text-xs">
-                  {mimeLabel(match.mimeType)}
-                </Badge>
               </label>
             );
           })}
