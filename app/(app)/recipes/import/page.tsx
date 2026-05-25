@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Camera, Cloud, List, Plus } from "lucide-react";
+import { Camera, Cloud, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -49,12 +49,6 @@ export default async function ImportPage() {
           <TabsTrigger value="url">From URL</TabsTrigger>
           <TabsTrigger value="new">Manual</TabsTrigger>
           <TabsTrigger value="drive">Google Drive</TabsTrigger>
-          {account && (
-            <TabsTrigger value="bulk">
-              <List className="mr-1.5 h-3.5 w-3.5" />
-              Bulk import
-            </TabsTrigger>
-          )}
         </TabsList>
 
         <TabsContent value="photo" className="pt-4">
@@ -116,6 +110,15 @@ export default async function ImportPage() {
                 </Link>
                 .
               </div>
+              <div className="border-t pt-4 space-y-2">
+                <div>
+                  <p className="font-medium text-sm">Find by name</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Enter one or more recipe names to search your Drive and queue them for import.
+                  </p>
+                </div>
+                <ImportBulk householdId={household.id} />
+              </div>
             </div>
           ) : (
             <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
@@ -130,12 +133,6 @@ export default async function ImportPage() {
             </div>
           )}
         </TabsContent>
-
-        {account && (
-          <TabsContent value="bulk" className="pt-4">
-            <ImportBulk householdId={household.id} />
-          </TabsContent>
-        )}
       </Tabs>
 
       <ActiveJobs householdId={household.id} />
