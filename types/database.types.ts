@@ -652,6 +652,54 @@ export type Database = {
         };
         Relationships: [];
       };
+      drive_file_index: {
+        Row: {
+          id: UUID;
+          household_id: UUID;
+          drive_file_id: string;
+          file_name: string;
+          folder_path: string;
+          mime_type: string;
+          modified_time: Timestamp | null;
+          index_status: string;
+          recipe_titles: string[];
+          indexed_at: Timestamp | null;
+          error: string | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          household_id: UUID;
+          drive_file_id: string;
+          file_name: string;
+          folder_path?: string;
+          mime_type: string;
+          modified_time?: Timestamp | null;
+          index_status?: string;
+          recipe_titles?: string[];
+          indexed_at?: Timestamp | null;
+          error?: string | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Update: {
+          id?: UUID;
+          household_id?: UUID;
+          drive_file_id?: string;
+          file_name?: string;
+          folder_path?: string;
+          mime_type?: string;
+          modified_time?: Timestamp | null;
+          index_status?: string;
+          recipe_titles?: string[];
+          indexed_at?: Timestamp | null;
+          error?: string | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Relationships: [];
+      };
       drive_watched_folders: {
         Row: {
           id: UUID;

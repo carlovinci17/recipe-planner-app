@@ -283,15 +283,25 @@ function ResultRow({
                   className="accent-primary shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  {/* Recipe name + container file */}
+                  {/* Recipe title and source file */}
                   <p className="text-sm font-medium truncate">
-                    {result.query}
-                    <span className="font-normal text-muted-foreground ml-1.5">({match.fileName})</span>
+                    {match.matchedTitle ?? result.query}
+                    <span className="font-normal text-muted-foreground ml-1.5">
+                      ({match.fileName})
+                    </span>
                   </p>
+                  {/* When the match came from the index, show the original search term */}
+                  {match.matchedTitle && match.matchedTitle !== result.query && (
+                    <p className="text-xs text-muted-foreground truncate">
+                      Searched for: {result.query}
+                    </p>
+                  )}
                   {/* Metadata row */}
                   <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 flex-wrap">
                     {match.modifiedTime && (
-                      <span>Modified {new Date(match.modifiedTime).toLocaleDateString("en-GB")}</span>
+                      <span>
+                        Modified {new Date(match.modifiedTime).toLocaleDateString("en-GB")}
+                      </span>
                     )}
                     <span>·</span>
                     <span>{mimeLabel(match.mimeType)}</span>

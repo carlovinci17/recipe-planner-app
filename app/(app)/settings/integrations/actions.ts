@@ -7,6 +7,7 @@ import { driveClient } from "@/lib/integrations/google-drive";
 import { inngest } from "@/lib/inngest/client";
 import { recipeService } from "@/lib/services/recipe-service";
 import { logger } from "@/lib/logger";
+import { householdService } from "@/lib/services/household-service";
 
 const SUPPORTED_DRIVE_MIME = new Set([
   "application/pdf",
@@ -389,4 +390,263 @@ export async function commitDriveFolderScanAction(input: z.infer<typeof CommitSc
   revalidatePath("/recipes/import");
   revalidatePath("/recipes");
   return { ok: true as const, queued, replaced, skipped };
+}
+
+// =====================================================================
+// Drive file index — build searchable title index inside PDF files
+// =====================================================================
+
+const StartIndexSchema = z.object({
+  householdId: z.string().uuid(),
+  /** Re-index files that are already done. Useful after adding new watched folders. */
+  force: z.boolean().optional().default(false),
+});
+
+/**
+ * Scan all watched folders for PDFs, upsert rows in drive_file_index,
+ * and fire Inngest events to extract recipe titles from each file.
+ * Only PDFs and Google Docs are indexed (images are single-recipe and
+ * don't benefit from title extraction).
+ */
+export async function startDriveIndexAction(
+  input: z.infer<typeof StartIndexSchema>,
+): Promise<{ ok: true; queued: number; skipped: number } | { ok: false; error: string }> {
+  const parsed = StartIndexSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input" };
+
+  try {
+    const memberships = await householdService.listForCurrentUser();
+    if (!memberships.some((m) => m.household.id === parsed.data.householdId)) {
+      return { ok: false, error: "Not a member of this household" };
+    }
+
+    const supabase = await createSupabaseServerClient();
+
+    const { data: folders, error: fErr } = await supabase
+      .from("drive_watched_folders")
+      .select(
+        "id, folder_id, folder_name, account:integration_accounts(id, access_token, refresh_token)",
+      )
+      .eq("household_id", parsed.data.householdId);
+
+    if (fErr) throw fErr;
+    if (!folders?.length) return { ok: false, error: "No watched folders configured." };
+
+    const onNewTokensFor =
+      (accountId: string) =>
+      ({ accessToken, refreshToken }: { accessToken: string; refreshToken?: string }) => {
+        supabase
+          .from("integration_accounts")
+          .update({
+            access_token: accessToken,
+            ...(refreshToken ? { refresh_token: refreshToken } : {}),
+          })
+          .eq("id", accountId)
+          .then(({ error }) => {
+            if (error)
+              logger.warn({ err: error.message, accountId }, "failed to persist refreshed token");
+          });
+      };
+
+    const INDEXABLE_MIME = new Set([
+      "application/pdf",
+      "application/vnd.google-apps.document",
+    ]);
+
+    const fileArrays = await Promise.all(
+      folders.map((folder) => {
+        const account = folder.account as unknown as {
+          id: string;
+          access_token: string;
+          refresh_token: string | null;
+        } | null;
+        if (!account?.access_token) return Promise.resolve([]);
+        return driveClient
+          .listAllFilesInFolderRecursive({
+            accessToken: account.access_token,
+            refreshToken: account.refresh_token ?? undefined,
+            onNewTokens: onNewTokensFor(account.id),
+            folderId: folder.folder_id,
+          })
+          .then((files) =>
+            files
+              .filter((f) => f.id && INDEXABLE_MIME.has(f.mimeType ?? ""))
+              .map((f) => ({
+                accountId: account.id,
+                driveFileId: f.id!,
+                fileName: f.name ?? "Untitled",
+                mimeType: f.mimeType!,
+                folderPath: f.folderPath,
+                modifiedTime: f.modifiedTime ?? null,
+              })),
+          );
+      }),
+    );
+
+    // Deduplicate across folders
+    const seenIds = new Set<string>();
+    const allFiles: Array<{
+      accountId: string;
+      driveFileId: string;
+      fileName: string;
+      mimeType: string;
+      folderPath: string;
+      modifiedTime: string | null;
+    }> = [];
+    for (const batch of fileArrays) {
+      for (const f of batch) {
+        if (seenIds.has(f.driveFileId)) continue;
+        seenIds.add(f.driveFileId);
+        allFiles.push(f);
+      }
+    }
+
+    if (allFiles.length === 0) return { ok: true, queued: 0, skipped: 0 };
+
+    // Fetch existing index status to skip already-done files (unless force).
+    const { data: existingRows } = await supabase
+      .from("drive_file_index")
+      .select("drive_file_id, index_status")
+      .eq("household_id", parsed.data.householdId)
+      .in(
+        "drive_file_id",
+        allFiles.map((f) => f.driveFileId),
+      );
+
+    const existingStatus = new Map<string, string>();
+    for (const row of existingRows ?? []) {
+      existingStatus.set(row.drive_file_id, row.index_status);
+    }
+
+    const toIndex = parsed.data.force
+      ? allFiles
+      : allFiles.filter((f) => {
+          const status = existingStatus.get(f.driveFileId);
+          // Skip files already done or in progress; queue new/failed ones.
+          return !status || status === "failed" || status === "pending";
+        });
+
+    const skipped = allFiles.length - toIndex.length;
+
+    if (toIndex.length === 0) return { ok: true, queued: 0, skipped };
+
+    // Upsert pending rows for all files to index.
+    await supabase.from("drive_file_index").upsert(
+      toIndex.map((f) => ({
+        household_id: parsed.data.householdId,
+        drive_file_id: f.driveFileId,
+        file_name: f.fileName,
+        folder_path: f.folderPath,
+        mime_type: f.mimeType,
+        modified_time: f.modifiedTime ? new Date(f.modifiedTime).toISOString() : null,
+        index_status: "pending",
+        recipe_titles: [],
+        error: null,
+        updated_at: new Date().toISOString(),
+      })),
+      { onConflict: "household_id,drive_file_id" },
+    );
+
+    // Fire an index event per file. Batch into chunks of 100 to stay within
+    // Inngest's bulk-send limit (500 events).
+    const CHUNK = 100;
+    for (let i = 0; i < toIndex.length; i += CHUNK) {
+      const chunk = toIndex.slice(i, i + CHUNK);
+      await inngest.send(
+        chunk.map((f) => ({
+          name: "drive/file.index-requested" as const,
+          data: {
+            householdId: parsed.data.householdId,
+            accountId: f.accountId,
+            driveFileId: f.driveFileId,
+            fileName: f.fileName,
+            mimeType: f.mimeType,
+            folderPath: f.folderPath,
+          },
+        })),
+      );
+    }
+
+    revalidatePath("/recipes/import");
+    return { ok: true, queued: toIndex.length, skipped };
+  } catch (err) {
+    logger.error({ err }, "startDriveIndexAction failed");
+    const msg = (err as Error).message ?? "";
+    if (msg.includes("invalid_grant")) {
+      return {
+        ok: false,
+        error:
+          "Your Google Drive connection has expired. Please reconnect in Settings → Integrations.",
+      };
+    }
+    return { ok: false, error: msg };
+  }
+}
+
+export type DriveIndexStatus = {
+  total: number;
+  done: number;
+  pending: number;
+  indexing: number;
+  failed: number;
+  totalRecipes: number;
+  lastIndexedAt: string | null;
+  isBuilding: boolean;
+};
+
+const GetIndexStatusSchema = z.object({ householdId: z.string().uuid() });
+
+/** Return aggregate counts for the household's Drive file index. */
+export async function getDriveIndexStatusAction(
+  input: z.infer<typeof GetIndexStatusSchema>,
+): Promise<{ ok: true; status: DriveIndexStatus } | { ok: false; error: string }> {
+  const parsed = GetIndexStatusSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input" };
+
+  try {
+    const memberships = await householdService.listForCurrentUser();
+    if (!memberships.some((m) => m.household.id === parsed.data.householdId)) {
+      return { ok: false, error: "Not a member of this household" };
+    }
+
+    const supabase = await createSupabaseServerClient();
+
+    const { data: rows, error } = await supabase
+      .from("drive_file_index")
+      .select("index_status, indexed_at, recipe_titles")
+      .eq("household_id", parsed.data.householdId);
+
+    if (error) throw error;
+
+    const counts = { total: 0, done: 0, pending: 0, indexing: 0, failed: 0 };
+    let totalRecipes = 0;
+    let lastIndexedAt: string | null = null;
+
+    for (const row of rows ?? []) {
+      counts.total++;
+      counts[row.index_status as keyof typeof counts] =
+        (counts[row.index_status as keyof typeof counts] ?? 0) + 1;
+      if (row.index_status === "done") {
+        totalRecipes += row.recipe_titles?.length ?? 0;
+        if (row.indexed_at) {
+          if (!lastIndexedAt || row.indexed_at > lastIndexedAt) {
+            lastIndexedAt = row.indexed_at;
+          }
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      status: {
+        ...counts,
+        totalRecipes,
+        lastIndexedAt,
+        isBuilding: counts.pending > 0 || counts.indexing > 0,
+      },
+    };
+  } catch (err) {
+    logger.error({ err }, "getDriveIndexStatusAction failed");
+    return { ok: false, error: (err as Error).message };
+  }
 }

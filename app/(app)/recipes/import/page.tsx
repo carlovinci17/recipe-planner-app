@@ -9,6 +9,7 @@ import { DriveFolderManager } from "@/app/(app)/settings/integrations/drive-fold
 import { ImportUrl } from "./import-url";
 import { ImportPhoto } from "./import-photo";
 import { ImportBulk } from "./import-bulk";
+import { DriveIndexManager } from "./drive-index-manager";
 import { ActiveJobs } from "./active-jobs";
 
 export const metadata = { title: "Import recipe" };
@@ -110,11 +111,13 @@ export default async function ImportPage() {
                 </Link>
                 .
               </div>
-              <div className="border-t pt-4 space-y-2">
+              <div className="border-t pt-4 space-y-3">
+                <DriveIndexManager householdId={household.id} />
                 <div>
                   <p className="font-medium text-sm">Find by name</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Enter one or more recipe names to search your Drive and queue them for import.
+                    Enter one or more recipe names to search your watched folders — including
+                    recipe titles found inside PDFs when the index is built.
                   </p>
                 </div>
                 <ImportBulk householdId={household.id} />

@@ -104,6 +104,11 @@ export type DriveSearchMatch = {
   alreadyImported: boolean;
   existingRecipeId: string | null;
   existingRecipeTitle: string | null;
+  /**
+   * When the match was found via the recipe-title index (not just filename),
+   * this is the specific recipe title found inside the file.
+   */
+  matchedTitle?: string;
 };
 
 export type DriveSearchResult = {
@@ -199,8 +204,8 @@ export async function searchDriveByNamesAction(
       }
     }
 
-    // Fetch existing recipes and in-flight jobs for already-imported detection.
-    const [recipesRes, jobsRes] = await Promise.all([
+    // Fetch existing recipes, in-flight jobs, and the recipe-title index in parallel.
+    const [recipesRes, jobsRes, indexRes] = await Promise.all([
       supabase
         .from("recipes")
         .select("id, title, external_source_id")
@@ -212,6 +217,11 @@ export async function searchDriveByNamesAction(
         .eq("household_id", parsed.data.householdId)
         .not("external_file_id", "is", null)
         .in("status", ["draft", "processing", "needs_review", "published"]),
+      supabase
+        .from("drive_file_index")
+        .select("drive_file_id, file_name, folder_path, mime_type, modified_time, recipe_titles")
+        .eq("household_id", parsed.data.householdId)
+        .eq("index_status", "done"),
     ]);
 
     const recipeBySourceId = new Map<string, { id: string; title: string }>();
@@ -225,30 +235,116 @@ export async function searchDriveByNamesAction(
       (jobsRes.data ?? []).map((j) => j.external_file_id).filter(Boolean) as string[],
     );
 
-    // For each search name, score every file and return the top 5.
-    const results: DriveSearchResult[] = parsed.data.names.map((name) => {
-      const scored = allFiles
-        .map((f) => ({ f, score: matchScore(name, f.name) }))
-        .filter(({ score }) => score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5);
+    // Build index lookup: fileId → { titles, fileName, folderPath, mimeType, modifiedTime }
+    type IndexEntry = {
+      fileName: string;
+      folderPath: string;
+      mimeType: string;
+      modifiedTime: string | null;
+      titles: string[];
+    };
+    const indexByFileId = new Map<string, IndexEntry>();
+    for (const row of indexRes.data ?? []) {
+      if ((row.recipe_titles?.length ?? 0) > 0) {
+        indexByFileId.set(row.drive_file_id, {
+          fileName: row.file_name,
+          folderPath: row.folder_path,
+          mimeType: row.mime_type,
+          modifiedTime: (row.modified_time as string | null) ?? null,
+          titles: row.recipe_titles as string[],
+        });
+      }
+    }
 
-      const matches: DriveSearchMatch[] = scored.map(({ f }) => {
+    // For each search name, score via filename AND recipe-title index, then merge.
+    const results: DriveSearchResult[] = parsed.data.names.map((name) => {
+      // Filename matches from Drive scan
+      const filenameHits = new Map<string, { f: (typeof allFiles)[0]; score: number }>();
+      for (const f of allFiles) {
+        const score = matchScore(name, f.name);
+        if (score > 0) filenameHits.set(f.id, { f, score });
+      }
+
+      // Index matches: best-scoring title within each indexed file
+      const indexHits = new Map<
+        string,
+        { f: (typeof allFiles)[0] | null; score: number; matchedTitle: string; entry: IndexEntry }
+      >();
+      for (const [fileId, entry] of indexByFileId) {
+        let bestScore = 0;
+        let bestTitle = "";
+        for (const title of entry.titles) {
+          const s = matchScore(name, title);
+          if (s > bestScore) { bestScore = s; bestTitle = title; }
+        }
+        if (bestScore > 0) {
+          const f = allFiles.find((af) => af.id === fileId) ?? null;
+          indexHits.set(fileId, { f, score: bestScore, matchedTitle: bestTitle, entry });
+        }
+      }
+
+      // Merge: collect all candidate fileIds
+      const allIds = new Set([...filenameHits.keys(), ...indexHits.keys()]);
+      const merged: Array<{
+        fileId: string;
+        f: (typeof allFiles)[0] | null;
+        score: number;
+        matchedTitle?: string;
+        mimeType: string;
+        modifiedTime: string | null;
+        folderPath: string;
+        fileName: string;
+      }> = [];
+
+      for (const fileId of allIds) {
+        const fn = filenameHits.get(fileId);
+        const idx = indexHits.get(fileId);
+
+        // Index match takes precedence when score is equal or better
+        if (idx && (!fn || idx.score >= fn.score)) {
+          const f = idx.f ?? fn?.f ?? null;
+          merged.push({
+            fileId,
+            f,
+            score: idx.score,
+            matchedTitle: idx.matchedTitle,
+            mimeType: f?.mimeType ?? idx.entry.mimeType,
+            modifiedTime: f?.modifiedTime ?? idx.entry.modifiedTime,
+            folderPath: f?.folderPath ?? idx.entry.folderPath,
+            fileName: f?.name ?? idx.entry.fileName,
+          });
+        } else if (fn) {
+          merged.push({
+            fileId,
+            f: fn.f,
+            score: fn.score,
+            mimeType: fn.f.mimeType,
+            modifiedTime: fn.f.modifiedTime,
+            folderPath: fn.f.folderPath,
+            fileName: fn.f.name,
+          });
+        }
+      }
+
+      const top5 = merged.sort((a, b) => b.score - a.score).slice(0, 5);
+
+      const matches: DriveSearchMatch[] = top5.map((item) => {
         const existing =
-          recipeBySourceId.get(f.id) ??
-          recipeByNormTitle.get(normalizeTitle(f.name)) ??
+          recipeBySourceId.get(item.fileId) ??
+          recipeByNormTitle.get(normalizeTitle(item.fileName)) ??
           null;
-        const alreadyImported = !!existing || inFlightFileIds.has(f.id);
+        const alreadyImported = !!existing || inFlightFileIds.has(item.fileId);
         return {
-          fileId: f.id,
-          fileName: f.name,
-          mimeType: f.mimeType,
-          modifiedTime: f.modifiedTime,
-          folderPath: f.folderPath,
-          supported: SUPPORTED_BULK_MIME.has(f.mimeType),
+          fileId: item.fileId,
+          fileName: item.fileName,
+          mimeType: item.mimeType,
+          modifiedTime: item.modifiedTime,
+          folderPath: item.folderPath,
+          supported: SUPPORTED_BULK_MIME.has(item.mimeType),
           alreadyImported,
           existingRecipeId: existing?.id ?? null,
           existingRecipeTitle: existing?.title ?? null,
+          matchedTitle: item.matchedTitle,
         };
       });
 
@@ -308,12 +404,46 @@ export async function queueBulkDriveImportAction(
     if (accErr) throw accErr;
     if (!account) return { ok: false, error: "Google Drive is not connected for this household" };
 
-    const supported = parsed.data.files.filter((f) => SUPPORTED_BULK_MIME.has(f.mimeType));
+    // Deduplicate by fileId — the user might select the same file for multiple
+    // recipe names (e.g. two recipes from the same cookbook PDF).
+    const seen = new Set<string>();
+    const supported = parsed.data.files.filter((f) => {
+      if (!SUPPORTED_BULK_MIME.has(f.mimeType)) return false;
+      if (seen.has(f.fileId)) return false;
+      seen.add(f.fileId);
+      return true;
+    });
 
-    await Promise.all(
-      supported.map((file) =>
-        inngest.send({
-          name: "ingestion/drive.file.detected",
+    if (supported.length === 0) return { ok: true, queued: 0 };
+
+    // Server-side dedup: skip files that already have a recipe or an active job.
+    const fileIds = supported.map((f) => f.fileId);
+    const [recipesRes, jobsRes] = await Promise.all([
+      supabase
+        .from("recipes")
+        .select("external_source_id")
+        .eq("household_id", parsed.data.householdId)
+        .in("external_source_id", fileIds)
+        .is("archived_at", null),
+      supabase
+        .from("ingestion_jobs")
+        .select("external_file_id")
+        .eq("household_id", parsed.data.householdId)
+        .in("external_file_id", fileIds)
+        .in("status", ["draft", "processing", "needs_review", "published"]),
+    ]);
+
+    const alreadyDone = new Set([
+      ...(recipesRes.data ?? []).map((r) => r.external_source_id).filter(Boolean) as string[],
+      ...(jobsRes.data ?? []).map((j) => j.external_file_id).filter(Boolean) as string[],
+    ]);
+
+    const toQueue = supported.filter((f) => !alreadyDone.has(f.fileId));
+
+    if (toQueue.length > 0) {
+      await inngest.send(
+        toQueue.map((file) => ({
+          name: "ingestion/drive.file.detected" as const,
           data: {
             householdId: parsed.data.householdId,
             accountId: account.id,
@@ -321,12 +451,12 @@ export async function queueBulkDriveImportAction(
             mimeType: file.mimeType,
             fileName: file.fileName,
           },
-        }),
-      ),
-    );
+        })),
+      );
+    }
 
     revalidatePath("/recipes/import");
-    return { ok: true, queued: supported.length };
+    return { ok: true, queued: toQueue.length };
   } catch (err) {
     logger.error({ err }, "queueBulkDriveImportAction failed");
     return { ok: false, error: (err as Error).message };

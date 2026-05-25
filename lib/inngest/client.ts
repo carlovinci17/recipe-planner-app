@@ -41,6 +41,16 @@ type Events = {
   "ingestion/file.skim.committed": {
     data: { jobId: string; selectedIndices: number[] };
   };
+  "drive/file.index-requested": {
+    data: {
+      householdId: string;
+      accountId: string;
+      driveFileId: string;
+      fileName: string;
+      mimeType: string;
+      folderPath: string;
+    };
+  };
 };
 
 export const inngest = new Inngest({
