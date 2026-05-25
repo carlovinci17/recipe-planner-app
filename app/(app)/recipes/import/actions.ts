@@ -23,15 +23,19 @@ const NUMBER_WORDS: Record<string, string> = {
 
 function normalizeTitle(s: string): string {
   // NFD decompose then strip combining diacritics (é → e, ñ → n, etc.)
-  let n = s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+  let n = s.normalize("NFD").replace(/\p{M}/gu, "");
   n = n.toLowerCase();
+  // Normalise ALL whitespace variants (newlines, tabs, non-breaking spaces) to space first
+  n = n.replace(/\s+/gu, " ");
   n = n.replace(/&/g, "and");
-  // All dash/hyphen variants → space (covers -, –, —, ‑, ‐, −, ‒, and more)
-  n = n.replace(/[-‐‑‒–—―−﹘﹣－]/g, " ");
+  // All Unicode dash/hyphen characters → space (covers every variant via \p{Dash_Punctuation})
+  n = n.replace(/\p{Dash_Punctuation}/gu, " ");
   for (const [word, digit] of Object.entries(NUMBER_WORDS)) {
     n = n.replace(new RegExp(`\\b${word}\\b`, "g"), digit);
   }
-  return n.replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+  // Replace anything that's not a letter, digit, or space with a space (not empty string)
+  // so adjacent tokens don't accidentally merge: "Style\nGreens" → "Style Greens" not "StyleGreens"
+  return n.replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function significantWords(name: string): string[] {
