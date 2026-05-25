@@ -19,10 +19,11 @@ export async function pdfExtractText(args: {
   );
 
   const buf = args.buffer;
+  // Copy into a fresh ArrayBuffer — pdfjs transfers ownership of the buffer it
+  // receives, detaching it. Without a copy the caller's buffer is unusable after
+  // this call (e.g. for a subsequent vision-path pass in index-drive-file).
   const data: Uint8Array =
-    buf instanceof ArrayBuffer
-      ? new Uint8Array(buf)
-      : new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+    buf instanceof ArrayBuffer ? new Uint8Array(buf.slice(0)) : new Uint8Array(buf);
 
   const doc = await pdfjs.getDocument({ data, useSystemFonts: true, disableFontFace: true })
     .promise;

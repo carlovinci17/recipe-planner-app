@@ -597,7 +597,15 @@ export type DriveIndexStatus = {
     fileName: string;
     currentPage: number | null;
     totalPages: number | null;
+    indexMethod: string | null;
   };
+  /** Files that failed or completed with 0 titles — shown only when not building. */
+  problemFiles?: Array<{
+    fileName: string;
+    status: "failed" | "no_titles";
+    error: string | null;
+    indexMethod: string | null;
+  }>;
 };
 
 const GetIndexStatusSchema = z.object({ householdId: z.string().uuid() });
@@ -648,15 +656,17 @@ export async function getDriveIndexStatusAction(
       }
     }
 
-    // Page-progress query — separate so a missing column (migration not yet
-    // applied) only degrades the progress display, not the whole status.
+    const isBuilding = counts.pending > 0 || counts.indexing > 0;
+
+    // Page-progress + method query — separate so missing columns only degrade
+    // the progress display, not the whole status.
     let currentFile: DriveIndexStatus["currentFile"];
     if (currentFileName) {
-      currentFile = { fileName: currentFileName, currentPage: null, totalPages: null };
+      currentFile = { fileName: currentFileName, currentPage: null, totalPages: null, indexMethod: null };
       try {
         const { data: prog } = await supabase
           .from("drive_file_index")
-          .select("current_page, total_pages")
+          .select("current_page, total_pages, index_method")
           .eq("household_id", parsed.data.householdId)
           .eq("file_name", currentFileName)
           .eq("index_status", "indexing")
@@ -664,9 +674,36 @@ export async function getDriveIndexStatusAction(
         if (prog) {
           currentFile.currentPage = prog.current_page ?? null;
           currentFile.totalPages = prog.total_pages ?? null;
+          currentFile.indexMethod = prog.index_method ?? null;
         }
       } catch {
-        // Columns not yet in DB — page numbers simply won't show.
+        // Columns not yet in DB — details simply won't show.
+      }
+    }
+
+    // Problem files — only fetched when not building (not polled every 2 s).
+    let problemFiles: DriveIndexStatus["problemFiles"];
+    if (!isBuilding && counts.total > 0) {
+      try {
+        const { data: problems } = await supabase
+          .from("drive_file_index")
+          .select("file_name, index_status, error, index_method, recipe_titles")
+          .eq("household_id", parsed.data.householdId)
+          .in("index_status", ["failed", "done"])
+          .order("updated_at", { ascending: false })
+          .limit(100);
+
+        problemFiles = (problems ?? [])
+          .filter((f) => f.index_status === "failed" || !f.recipe_titles?.length)
+          .slice(0, 30)
+          .map((f) => ({
+            fileName: f.file_name,
+            status: (f.index_status === "failed" ? "failed" : "no_titles") as "failed" | "no_titles",
+            error: f.error ?? null,
+            indexMethod: f.index_method ?? null,
+          }));
+      } catch {
+        // Non-fatal — problem list simply won't show.
       }
     }
 
@@ -676,8 +713,9 @@ export async function getDriveIndexStatusAction(
         ...counts,
         totalRecipes,
         lastIndexedAt,
-        isBuilding: counts.pending > 0 || counts.indexing > 0,
+        isBuilding,
         currentFile,
+        problemFiles,
       },
     };
   } catch (err) {

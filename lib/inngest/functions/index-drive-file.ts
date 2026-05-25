@@ -57,12 +57,12 @@ export const indexDriveFile = inngest.createFunction(
         .eq("drive_file_id", driveFileId);
     });
 
-    const titles = await step.run("extract-titles", async () => {
+    const { titles, indexMethod } = await step.run("extract-titles", async () => {
       const isPdf =
         mimeType === "application/pdf" ||
         mimeType === "application/vnd.google-apps.document";
 
-      if (!isPdf) return [] as string[];
+      if (!isPdf) return { titles: [] as string[], indexMethod: "none" };
 
       const buffer = await driveClient.downloadFile({
         accessToken: account.access_token,
@@ -74,7 +74,7 @@ export const indexDriveFile = inngest.createFunction(
       const { pages, totalPages } = await pdfExtractText({ buffer, maxPages: 50 });
       const avg = avgCharsPerPage(pages);
 
-      // Helper — fire-and-forget progress write (non-fatal if it fails).
+      // Fire-and-forget helpers — write real-time progress to DB for the UI.
       const reportProgress = (currentPage: number, total: number) =>
         supabase
           .from("drive_file_index")
@@ -85,21 +85,42 @@ export const indexDriveFile = inngest.createFunction(
             if (error) logger.warn({ err: error.message }, "progress update failed");
           });
 
+      const reportMethod = (method: string) =>
+        supabase
+          .from("drive_file_index")
+          .update({ index_method: method })
+          .eq("household_id", householdId)
+          .eq("drive_file_id", driveFileId)
+          .then(({ error }) => {
+            if (error) logger.warn({ err: error.message }, "method update failed");
+          });
+
       if (avg >= 100) {
-        // Text layer present — all pages read at once.
+        // Text layer present — try text extraction first (cheap).
+        await reportMethod("text");
         await reportProgress(totalPages, totalPages);
         const text = pages.join("\n\n");
-        return extractRecipeTitlesFromText({ text, fileName });
+        const textTitles = await extractRecipeTitlesFromText({ text, fileName });
+        if (textTitles.length > 0) return { titles: textTitles, indexMethod: "text" };
+        // Text layer is garbled (embedded fonts pdfjs can't decode).
+        // Fall through to vision so titles aren't silently lost.
+        await reportMethod("text+vision");
+      } else {
+        await reportMethod("vision");
       }
 
-      // Scanned PDF — render pages one by one and report as each finishes.
+      // Scanned PDF or garbled text layer — render pages via vision model.
       await reportProgress(0, totalPages);
-      return extractRecipeTitlesFromImages({
+      const visionTitles = await extractRecipeTitlesFromImages({
         buffer,
         fileName,
         maxPages: 30,
         onPageRendered: async (pageNum, total) => { await reportProgress(pageNum, total); },
       });
+      return {
+        titles: visionTitles,
+        indexMethod: avg >= 100 ? "text+vision" : "vision",
+      };
     });
 
     await step.run("mark-done", async () => {
@@ -108,6 +129,7 @@ export const indexDriveFile = inngest.createFunction(
         .update({
           index_status: "done",
           recipe_titles: titles,
+          index_method: indexMethod,
           indexed_at: new Date().toISOString(),
           error: null,
           updated_at: new Date().toISOString(),
@@ -116,7 +138,7 @@ export const indexDriveFile = inngest.createFunction(
         .eq("drive_file_id", driveFileId);
     });
 
-    logger.info({ driveFileId, fileName, titlesFound: titles.length }, "drive file indexed");
-    return { driveFileId, titlesFound: titles.length };
+    logger.info({ driveFileId, fileName, titlesFound: titles.length, indexMethod }, "drive file indexed");
+    return { driveFileId, titlesFound: titles.length, indexMethod };
   },
 );

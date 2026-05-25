@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, BookOpen, CheckCircle2, Loader2, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, ChevronUp, Loader2, RefreshCw, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,12 +11,38 @@ import {
   type DriveIndexStatus,
 } from "@/app/(app)/settings/integrations/actions";
 
+function methodLabel(method: string | null): string {
+  if (method === "text") return "Text reading";
+  if (method === "vision") return "Vision";
+  if (method === "text+vision") return "Vision (text fallback)";
+  return "Indexing";
+}
+
+function problemReason(
+  status: "failed" | "no_titles",
+  error: string | null,
+  method: string | null,
+): string {
+  if (status === "no_titles") {
+    if (method === "text+vision") return "No titles found — text + vision tried";
+    if (method === "vision") return "No titles found — vision scan";
+    if (method === "text") return "No titles found — text reading";
+    return "No titles found";
+  }
+  if (error === "Cancelled by user") return "Cancelled";
+  if (error?.includes("detached ArrayBuffer")) return "PDF rendering failed (unsupported format)";
+  if (error?.includes("not found")) return "Drive connection error";
+  if (error?.includes("invalid_grant")) return "Google auth expired — reconnect Drive";
+  return error?.slice(0, 100) ?? "Unknown error";
+}
+
 export function DriveIndexManager({ householdId }: { householdId: string }) {
   const [status, setStatus] = useState<DriveIndexStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [showProblems, setShowProblems] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -91,8 +117,7 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
     }
 
     // Optimistically transition to building state immediately — don't wait for
-    // fetchStatus() to round-trip back to the DB. This ensures the progress UI
-    // shows right away even if the subsequent DB read takes a moment.
+    // fetchStatus() to round-trip back to the DB.
     setStatus((prev) => ({
       total: (prev?.done ?? 0) + (prev?.failed ?? 0) + res.queued,
       done: prev?.done ?? 0,
@@ -137,6 +162,8 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
   const hasFailed = hasIndex && status.failed > 0;
   const allFailed = hasIndex && status.failed === status.total && !status.isBuilding;
   const pct = hasIndex ? Math.round(((status.done + status.failed) / status.total) * 100) : 0;
+  const problemFiles = status?.problemFiles ?? [];
+  const hasProblemFiles = !status?.isBuilding && problemFiles.length > 0;
 
   return (
     <div
@@ -174,12 +201,17 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
                 {status.currentFile && (
                   <p className="text-xs text-muted-foreground/70 truncate max-w-xs">
                     {status.currentFile.fileName}
+                    {status.currentFile.indexMethod && (
+                      <span className="ml-1 font-medium text-muted-foreground">
+                        · {methodLabel(status.currentFile.indexMethod)}
+                      </span>
+                    )}
                     {status.currentFile.totalPages != null && (
                       <span className="ml-1">
                         {"— "}
                         {status.currentFile.currentPage != null &&
                         status.currentFile.currentPage < status.currentFile.totalPages
-                          ? `indexing page ${status.currentFile.currentPage + 1} of ${status.currentFile.totalPages}`
+                          ? `page ${status.currentFile.currentPage + 1} of ${status.currentFile.totalPages}`
                           : `reading ${status.currentFile.totalPages} pages`}
                       </span>
                     )}
@@ -277,6 +309,44 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
               Cancel
             </Button>
           </div>
+        </div>
+      )}
+
+      {hasProblemFiles && (
+        <div className="border-t pt-2.5 space-y-1.5">
+          <button
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left"
+            onClick={() => setShowProblems((v) => !v)}
+          >
+            <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+            <span>
+              {problemFiles.length} file{problemFiles.length === 1 ? "" : "s"} could not be fully
+              indexed
+            </span>
+            {showProblems ? (
+              <ChevronUp className="h-3 w-3 ml-auto" />
+            ) : (
+              <ChevronDown className="h-3 w-3 ml-auto" />
+            )}
+          </button>
+
+          {showProblems && (
+            <div className="space-y-1 max-h-48 overflow-y-auto rounded-md bg-muted/40 p-2">
+              {problemFiles.map((f) => (
+                <div key={f.fileName} className="flex items-start gap-1.5 text-xs">
+                  <AlertTriangle
+                    className={`h-3 w-3 shrink-0 mt-0.5 ${f.status === "failed" ? "text-destructive" : "text-amber-500"}`}
+                  />
+                  <div className="min-w-0">
+                    <span className="font-medium truncate block">{f.fileName}</span>
+                    <span className="text-muted-foreground">
+                      {problemReason(f.status, f.error, f.indexMethod)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

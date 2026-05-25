@@ -37,10 +37,10 @@ export async function pdfBufferToPageImages(args: {
   // even though Buffer extends Uint8Array. Force a plain Uint8Array view —
   // same memory, different prototype, no copy.
   const buf = args.buffer;
+  // Copy into a fresh ArrayBuffer — pdfjs transfers ownership and detaches
+  // the source. Using a view of a pooled Node Buffer also causes detach errors.
   const data: Uint8Array =
-    buf instanceof ArrayBuffer
-      ? new Uint8Array(buf)
-      : new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+    buf instanceof ArrayBuffer ? new Uint8Array(buf.slice(0)) : new Uint8Array(buf);
 
   const loadingTask = pdfjs.getDocument({
     data,

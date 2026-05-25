@@ -8,7 +8,13 @@ const TitlesSchema = z.object({
   titles: z.array(z.string().min(1)).default([]),
 });
 
-const SYSTEM = `You are a recipe index assistant. Your only job is to identify and list every distinct recipe name or title present in the provided content. Return only the recipe titles — no descriptions, no ingredients, no instructions. If no recipes are found, return an empty list.`;
+const SYSTEM = `You are a recipe index assistant. Extract every distinct recipe name or title from the provided content.
+
+Rules:
+- Cookbooks / meal plans: extract every recipe name you can find (table of contents, section headings, inline titles).
+- Single-recipe documents: the document has one recipe — return its title. Use the file name as a strong hint if the content is ambiguous or poorly formatted.
+- Return only recipe names. No descriptions, ingredients, instructions, or metadata.
+- If truly no recipes are present, return an empty list.`;
 
 /**
  * Extract all recipe titles from a text-based PDF (or any plain text).
