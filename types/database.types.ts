@@ -662,6 +662,8 @@ export type Database = {
           mime_type: string;
           modified_time: Timestamp | null;
           index_status: string;
+          current_page: number | null;
+          total_pages: number | null;
           recipe_titles: string[];
           indexed_at: Timestamp | null;
           error: string | null;
@@ -677,6 +679,8 @@ export type Database = {
           mime_type: string;
           modified_time?: Timestamp | null;
           index_status?: string;
+          current_page?: number | null;
+          total_pages?: number | null;
           recipe_titles?: string[];
           indexed_at?: Timestamp | null;
           error?: string | null;
@@ -692,6 +696,8 @@ export type Database = {
           mime_type?: string;
           modified_time?: Timestamp | null;
           index_status?: string;
+          current_page?: number | null;
+          total_pages?: number | null;
           recipe_titles?: string[];
           indexed_at?: Timestamp | null;
           error?: string | null;

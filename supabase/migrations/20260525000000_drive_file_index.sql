@@ -12,6 +12,8 @@ CREATE TABLE drive_file_index (
   modified_time     timestamptz,
   index_status      text        NOT NULL DEFAULT 'pending',
   -- pending | indexing | done | failed
+  current_page      int,
+  total_pages       int,
   recipe_titles     text[]      NOT NULL DEFAULT '{}',
   indexed_at        timestamptz,
   error             text,

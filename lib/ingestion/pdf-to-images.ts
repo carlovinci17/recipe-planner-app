@@ -22,6 +22,8 @@ export async function pdfBufferToPageImages(args: {
   dpi?: number;
   /** Hard cap to prevent runaway PDFs. */
   maxPages?: number;
+  /** Called after each page is rendered. pageNum is 1-based. */
+  onPageRendered?: (pageNum: number, totalPages: number) => void | Promise<void>;
 }): Promise<Buffer[]> {
   const dpi = args.dpi ?? 200;
   const maxPages = args.maxPages ?? 25;
@@ -80,6 +82,7 @@ export async function pdfBufferToPageImages(args: {
 
     images.push(jpeg);
     page.cleanup();
+    await args.onPageRendered?.(pageNum, totalPages);
   }
 
   await doc.cleanup();

@@ -71,14 +71,35 @@ export const indexDriveFile = inngest.createFunction(
         mimeType,
       });
 
-      const { pages } = await pdfExtractText({ buffer, maxPages: 50 });
+      const { pages, totalPages } = await pdfExtractText({ buffer, maxPages: 50 });
       const avg = avgCharsPerPage(pages);
 
+      // Helper — fire-and-forget progress write (non-fatal if it fails).
+      const reportProgress = (currentPage: number, total: number) =>
+        supabase
+          .from("drive_file_index")
+          .update({ current_page: currentPage, total_pages: total })
+          .eq("household_id", householdId)
+          .eq("drive_file_id", driveFileId)
+          .then(({ error }) => {
+            if (error) logger.warn({ err: error.message }, "progress update failed");
+          });
+
       if (avg >= 100) {
+        // Text layer present — all pages read at once.
+        await reportProgress(totalPages, totalPages);
         const text = pages.join("\n\n");
         return extractRecipeTitlesFromText({ text, fileName });
       }
-      return extractRecipeTitlesFromImages({ buffer, fileName, maxPages: 30 });
+
+      // Scanned PDF — render pages one by one and report as each finishes.
+      await reportProgress(0, totalPages);
+      return extractRecipeTitlesFromImages({
+        buffer,
+        fileName,
+        maxPages: 30,
+        onPageRendered: async (pageNum, total) => { await reportProgress(pageNum, total); },
+      });
     });
 
     await step.run("mark-done", async () => {

@@ -49,11 +49,13 @@ export async function extractRecipeTitlesFromImages(args: {
   buffer: ArrayBuffer | Uint8Array;
   fileName: string;
   maxPages?: number;
+  onPageRendered?: (pageNum: number, totalPages: number) => void | Promise<void>;
 }): Promise<string[]> {
   const pageImages = await pdfBufferToPageImages({
     buffer: args.buffer,
     dpi: 100,
     maxPages: args.maxPages ?? 30,
+    onPageRendered: args.onPageRendered,
   });
 
   if (pageImages.length === 0) return [];

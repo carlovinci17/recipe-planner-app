@@ -112,15 +112,31 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
                 Build the index to search recipe names <em>inside</em> your PDF cookbooks.
               </p>
             ) : status.isBuilding ? (
-              <p className="text-xs text-muted-foreground">
-                Indexing {status.total} files — {status.done} done
-                {status.failed > 0 && (
-                  <span className="text-amber-600 dark:text-amber-400 ml-1">
-                    · {status.failed} failed
-                  </span>
+              <div className="space-y-0.5">
+                <p className="text-xs text-muted-foreground">
+                  Indexing {status.total} files — {status.done} done
+                  {status.failed > 0 && (
+                    <span className="text-amber-600 dark:text-amber-400 ml-1">
+                      · {status.failed} failed
+                    </span>
+                  )}
+                  …
+                </p>
+                {status.currentFile && (
+                  <p className="text-xs text-muted-foreground/70 truncate max-w-xs">
+                    {status.currentFile.fileName}
+                    {status.currentFile.totalPages != null && (
+                      <span className="ml-1">
+                        {"— "}
+                        {status.currentFile.currentPage != null &&
+                        status.currentFile.currentPage < status.currentFile.totalPages
+                          ? `indexing page ${status.currentFile.currentPage + 1} of ${status.currentFile.totalPages}`
+                          : `reading ${status.currentFile.totalPages} pages`}
+                      </span>
+                    )}
+                  </p>
                 )}
-                …
-              </p>
+              </div>
             ) : allFailed ? (
               <p className="text-xs text-amber-700 dark:text-amber-400">
                 All {status.failed} files failed to index. Check your Drive connection and retry.

@@ -592,6 +592,12 @@ export type DriveIndexStatus = {
   totalRecipes: number;
   lastIndexedAt: string | null;
   isBuilding: boolean;
+  /** The file currently being indexed, if any. */
+  currentFile?: {
+    fileName: string;
+    currentPage: number | null;
+    totalPages: number | null;
+  };
 };
 
 const GetIndexStatusSchema = z.object({ householdId: z.string().uuid() });
@@ -613,7 +619,7 @@ export async function getDriveIndexStatusAction(
 
     const { data: rows, error } = await supabase
       .from("drive_file_index")
-      .select("index_status, indexed_at, recipe_titles")
+      .select("index_status, indexed_at, recipe_titles, file_name, current_page, total_pages")
       .eq("household_id", parsed.data.householdId);
 
     if (error) throw error;
@@ -621,6 +627,7 @@ export async function getDriveIndexStatusAction(
     const counts = { total: 0, done: 0, pending: 0, indexing: 0, failed: 0 };
     let totalRecipes = 0;
     let lastIndexedAt: string | null = null;
+    let currentFile: DriveIndexStatus["currentFile"];
 
     for (const row of rows ?? []) {
       counts.total++;
@@ -634,6 +641,13 @@ export async function getDriveIndexStatusAction(
           }
         }
       }
+      if (row.index_status === "indexing" && !currentFile) {
+        currentFile = {
+          fileName: row.file_name,
+          currentPage: row.current_page ?? null,
+          totalPages: row.total_pages ?? null,
+        };
+      }
     }
 
     return {
@@ -643,6 +657,7 @@ export async function getDriveIndexStatusAction(
         totalRecipes,
         lastIndexedAt,
         isBuilding: counts.pending > 0 || counts.indexing > 0,
+        currentFile,
       },
     };
   } catch (err) {
