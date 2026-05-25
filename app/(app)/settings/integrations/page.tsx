@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Cloud } from "lucide-react";
+import { AlertTriangle, Cloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,10 +7,16 @@ import { Separator } from "@/components/ui/separator";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getActiveHousehold } from "@/lib/services/active-household";
 import { DriveFolderManager } from "./drive-folder-manager";
+import { DriveAccountActions } from "./drive-account-actions";
 
 export const metadata = { title: "Integrations" };
 
-export default async function IntegrationsPage() {
+export default async function IntegrationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; connected?: string }>;
+}) {
+  const { error: oauthError, connected } = await searchParams;
   const household = await getActiveHousehold();
   const supabase = await createSupabaseServerClient();
 
@@ -36,9 +42,24 @@ export default async function IntegrationsPage() {
         </p>
       </div>
 
+      {oauthError && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 flex items-start gap-2.5 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          {oauthError === "state"
+            ? "Connection attempt failed (invalid state). Please try again."
+            : "Google authorisation failed. Please try connecting again."}
+        </div>
+      )}
+
+      {connected && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300">
+          Google Drive connected successfully.
+        </div>
+      )}
+
       <Card>
         <CardHeader>
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent">
                 <Cloud className="h-5 w-5" />
@@ -60,8 +81,11 @@ export default async function IntegrationsPage() {
             </Button>
           ) : (
             <>
-              <div className="text-sm">
-                Connected as <span className="font-medium">{account.email ?? account.external_id}</span>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm">
+                  Connected as <span className="font-medium">{account.email ?? account.external_id}</span>
+                </p>
+                <DriveAccountActions accountId={account.id} />
               </div>
               <Separator />
               <DriveFolderManager

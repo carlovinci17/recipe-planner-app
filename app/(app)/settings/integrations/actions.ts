@@ -66,6 +66,15 @@ export async function removeWatchedFolderAction(id: string) {
   revalidatePath("/settings/integrations");
 }
 
+export async function disconnectGoogleDriveAction(accountId: string) {
+  const supabase = await createSupabaseServerClient();
+  // Remove watched folders first, then the account row.
+  await supabase.from("drive_watched_folders").delete().eq("account_id", accountId);
+  await supabase.from("integration_accounts").delete().eq("id", accountId);
+  revalidatePath("/settings/integrations");
+  revalidatePath("/recipes/import");
+}
+
 // =====================================================================
 // Drive scan: preview + commit (replaces the old one-shot scan action)
 // =====================================================================
