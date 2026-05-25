@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronRight, ExternalLink, Loader2, Search, X } from "lucide-react";
+import { CheckCircle2, ChevronRight, FolderOpen, Loader2, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,7 @@ export function ImportBulk({ householdId }: { householdId: string }) {
   const [step, setStep] = useState<Step>("paste");
   const [rawText, setRawText] = useState("");
   const [results, setResults] = useState<DriveSearchResult[]>([]);
+  const [scanMeta, setScanMeta] = useState<{ totalFiles: number; folderCount: number } | null>(null);
   // Map of query → chosen DriveSearchMatch (null = skip)
   const [selections, setSelections] = useState<Map<string, DriveSearchMatch | null>>(new Map());
   const [queuedCount, setQueuedCount] = useState(0);
@@ -49,14 +50,15 @@ export function ImportBulk({ householdId }: { householdId: string }) {
         return;
       }
 
-      // Pre-select the first supported match for each query so most rows are
-      // ready to go without any manual interaction.
+      // Pre-select the first supported, not-already-imported match.
+      // Already-imported files default to skip so the user doesn't re-import by accident.
       const initial = new Map<string, DriveSearchMatch | null>();
       for (const r of res.results) {
-        const first = r.matches.find((m) => m.supported) ?? null;
+        const first = r.matches.find((m) => m.supported && !m.alreadyImported) ?? null;
         initial.set(r.query, first);
       }
       setResults(res.results);
+      setScanMeta({ totalFiles: res.totalFiles, folderCount: res.folderCount });
       setSelections(initial);
       setStep("review");
     });
@@ -94,6 +96,7 @@ export function ImportBulk({ householdId }: { householdId: string }) {
     setStep("paste");
     setRawText("");
     setResults([]);
+    setScanMeta(null);
     setSelections(new Map());
     setQueuedCount(0);
   }
@@ -124,6 +127,9 @@ export function ImportBulk({ householdId }: { householdId: string }) {
   if (step === "review") {
     const selectedCount = Array.from(selections.values()).filter(Boolean).length;
     const noMatchCount = results.filter((r) => r.matches.length === 0).length;
+    const alreadyImportedCount = results.filter(
+      (r) => r.matches.length > 0 && r.matches.every((m) => m.alreadyImported),
+    ).length;
 
     return (
       <div className="space-y-4">
@@ -132,7 +138,14 @@ export function ImportBulk({ householdId }: { householdId: string }) {
             <p className="font-medium">Review matches</p>
             <p className="text-sm text-muted-foreground">
               {selectedCount} of {results.length} selected
-              {noMatchCount > 0 && ` · ${noMatchCount} not found in Drive`}
+              {noMatchCount > 0 && ` · ${noMatchCount} not found`}
+              {alreadyImportedCount > 0 && ` · ${alreadyImportedCount} already imported`}
+              {scanMeta && (
+                <span className="ml-1">
+                  — searched {scanMeta.totalFiles} files across {scanMeta.folderCount}{" "}
+                  {scanMeta.folderCount === 1 ? "folder" : "folders"}
+                </span>
+              )}
             </p>
           </div>
           <Button variant="ghost" size="sm" onClick={reset}>
@@ -206,7 +219,7 @@ export function ImportBulk({ householdId }: { householdId: string }) {
           {pending ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Searching Drive…
+              Scanning watched folders…
             </>
           ) : (
             <>
@@ -270,27 +283,28 @@ function ResultRow({
                 />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm truncate">{match.fileName}</p>
-                  {match.modifiedTime && (
-                    <p className="text-xs text-muted-foreground">
-                      Modified {new Date(match.modifiedTime).toLocaleDateString()}
-                    </p>
-                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {match.folderPath && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                        <FolderOpen className="h-3 w-3 shrink-0" />
+                        {match.folderPath}
+                      </p>
+                    )}
+                    {match.modifiedTime && (
+                      <p className="text-xs text-muted-foreground">
+                        Modified {new Date(match.modifiedTime).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
                 </div>
+                {match.alreadyImported && (
+                  <Badge variant="secondary" className="shrink-0 text-xs">
+                    Already imported
+                  </Badge>
+                )}
                 <Badge variant="outline" className="shrink-0 text-xs">
                   {mimeLabel(match.mimeType)}
                 </Badge>
-                {match.webViewLink && (
-                  <a
-                    href={match.webViewLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                    aria-label="Open in Drive"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                )}
               </label>
             );
           })}

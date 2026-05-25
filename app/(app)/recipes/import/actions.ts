@@ -45,19 +45,6 @@ function matchScore(query: string, fileName: string): number {
   return overlap / Math.max(qWords.size, fWords.size);
 }
 
-/**
- * Build a Drive query that matches files containing the most distinctive
- * words from the search name. Uses AND so Drive does the pre-filtering;
- * results are then re-ranked by matchScore on the client side.
- */
-function buildDriveQuery(name: string, words: number = 2): string {
-  const terms = significantWords(name)
-    .sort((a, b) => b.length - a.length) // longest = most distinctive first
-    .slice(0, words)
-    .map((w) => `name contains '${w.replace(/'/g, "\\'")}'`)
-    .join(" and ");
-  return terms ? `${terms} and trashed = false` : `name contains '${name.replace(/'/g, "\\'")}' and trashed = false`;
-}
 
 // ── Bulk Drive import ─────────────────────────────────────────────────────────
 
@@ -80,23 +67,32 @@ export type DriveSearchMatch = {
   fileName: string;
   mimeType: string;
   modifiedTime: string | null;
-  webViewLink: string | null;
+  folderPath: string;
   supported: boolean;
+  /** Recipe already imported from this exact Drive file. */
+  alreadyImported: boolean;
+  existingRecipeId: string | null;
+  existingRecipeTitle: string | null;
 };
 
 export type DriveSearchResult = {
   query: string;
+  /** Top matches sorted by similarity score, highest first. */
   matches: DriveSearchMatch[];
 };
 
 /**
- * Search the connected Google Drive account for files matching each of the
- * provided names. Returns up to 5 matches per name so the user can pick the
- * right one when multiple files share a similar title.
+ * Scan all watched folders for the household (including subfolders), then
+ * fuzzy-match each provided name against the file names found. Returns up to
+ * 5 candidates per name ranked by token-overlap similarity, with already-
+ * imported files flagged so the user can choose to skip them.
  */
 export async function searchDriveByNamesAction(
   input: z.infer<typeof SearchDriveByNamesSchema>,
-): Promise<{ ok: true; results: DriveSearchResult[] } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; results: DriveSearchResult[]; totalFiles: number; folderCount: number }
+  | { ok: false; error: string }
+> {
   const parsed = SearchDriveByNamesSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid input" };
 
@@ -104,85 +100,139 @@ export async function searchDriveByNamesAction(
     await assertMembership(parsed.data.householdId);
 
     const supabase = await createSupabaseServerClient();
-    const { data: account, error: accErr } = await supabase
-      .from("integration_accounts")
-      .select("id, access_token, refresh_token")
-      .eq("household_id", parsed.data.householdId)
-      .eq("provider", "google_drive")
-      .maybeSingle();
 
-    if (accErr) throw accErr;
-    if (!account) return { ok: false, error: "Google Drive is not connected for this household" };
+    // Load all watched folders with their account credentials.
+    const { data: folders, error: fErr } = await supabase
+      .from("drive_watched_folders")
+      .select(
+        "id, folder_id, folder_name, account:integration_accounts(id, access_token, refresh_token)",
+      )
+      .eq("household_id", parsed.data.householdId);
 
-    // Persist refreshed access tokens so the DB stays current across serverless invocations.
-    const onNewTokens = ({ accessToken, refreshToken }: { accessToken: string; refreshToken?: string }) => {
-      supabase
-        .from("integration_accounts")
-        .update({
-          access_token: accessToken,
-          ...(refreshToken ? { refresh_token: refreshToken } : {}),
-        })
-        .eq("id", account.id)
-        .then(({ error }) => {
-          if (error) logger.warn({ err: error.message, accountId: account.id }, "failed to persist refreshed Drive token");
-        });
-    };
-
-    // Search each name in parallel, batched to avoid hammering the Drive API.
-    const BATCH = 10;
-    const results: DriveSearchResult[] = [];
-
-    for (let i = 0; i < parsed.data.names.length; i += BATCH) {
-      const batch = parsed.data.names.slice(i, i + BATCH);
-      const batchResults = await Promise.all(
-        batch.map(async (name): Promise<DriveSearchResult> => {
-          // Primary search: AND query on the 2 most distinctive words.
-          // Fallback: broaden to 1 word if primary returns nothing.
-          let files = await driveClient.searchByName({
-            accessToken: account.access_token,
-            refreshToken: account.refresh_token ?? undefined,
-            onNewTokens,
-            name,
-            driveQuery: buildDriveQuery(name, 2),
-            limit: 20,
-          });
-          if (files.length === 0) {
-            files = await driveClient.searchByName({
-              accessToken: account.access_token,
-              refreshToken: account.refresh_token ?? undefined,
-              onNewTokens,
-              name,
-              driveQuery: buildDriveQuery(name, 1),
-              limit: 20,
-            });
-          }
-
-          // Score, sort, and take the top 5 closest matches.
-          const matches: DriveSearchMatch[] = files
-            .map((f) => ({ f, score: matchScore(name, f.name ?? "") }))
-            .filter(({ score }) => score > 0)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, 5)
-            .map(({ f }) => ({
-              fileId: f.id!,
-              fileName: f.name ?? "Untitled",
-              mimeType: f.mimeType ?? "",
-              modifiedTime: f.modifiedTime ?? null,
-              webViewLink: f.webViewLink ?? null,
-              supported: SUPPORTED_BULK_MIME.has(f.mimeType ?? ""),
-            }));
-          return { query: name, matches };
-        }),
-      );
-      results.push(...batchResults);
+    if (fErr) throw fErr;
+    if (!folders?.length) {
+      return {
+        ok: false,
+        error: "No watched folders configured. Add a folder in the Google Drive section above.",
+      };
     }
 
-    return { ok: true, results };
+    // Build per-account token-refresh callbacks.
+    const onNewTokensFor = (accountId: string) =>
+      ({ accessToken, refreshToken }: { accessToken: string; refreshToken?: string }) => {
+        supabase
+          .from("integration_accounts")
+          .update({
+            access_token: accessToken,
+            ...(refreshToken ? { refresh_token: refreshToken } : {}),
+          })
+          .eq("id", accountId)
+          .then(({ error }) => {
+            if (error) logger.warn({ err: error.message, accountId }, "failed to persist refreshed Drive token");
+          });
+      };
+
+    // Scan all watched folders in parallel.
+    const fileArrays = await Promise.all(
+      folders.map((folder) => {
+        const account = folder.account as unknown as {
+          id: string;
+          access_token: string;
+          refresh_token: string | null;
+        } | null;
+        if (!account?.access_token) return Promise.resolve([]);
+        return driveClient.listAllFilesInFolderRecursive({
+          accessToken: account.access_token,
+          refreshToken: account.refresh_token ?? undefined,
+          onNewTokens: onNewTokensFor(account.id),
+          folderId: folder.folder_id,
+        });
+      }),
+    );
+
+    // Deduplicate by file id across folders, keep only supported types.
+    const seenIds = new Set<string>();
+    const allFiles: Array<{ id: string; name: string; mimeType: string; modifiedTime: string | null; folderPath: string }> = [];
+    for (const batch of fileArrays) {
+      for (const f of batch) {
+        if (!f.id || seenIds.has(f.id)) continue;
+        if (!SUPPORTED_BULK_MIME.has(f.mimeType ?? "")) continue;
+        seenIds.add(f.id);
+        allFiles.push({
+          id: f.id,
+          name: f.name ?? "Untitled",
+          mimeType: f.mimeType ?? "",
+          modifiedTime: f.modifiedTime ?? null,
+          folderPath: f.folderPath,
+        });
+      }
+    }
+
+    // Fetch existing recipes and in-flight jobs for already-imported detection.
+    const [recipesRes, jobsRes] = await Promise.all([
+      supabase
+        .from("recipes")
+        .select("id, title, external_source_id")
+        .eq("household_id", parsed.data.householdId)
+        .is("archived_at", null),
+      supabase
+        .from("ingestion_jobs")
+        .select("external_file_id")
+        .eq("household_id", parsed.data.householdId)
+        .not("external_file_id", "is", null)
+        .in("status", ["draft", "processing", "needs_review", "published"]),
+    ]);
+
+    const recipeBySourceId = new Map<string, { id: string; title: string }>();
+    const recipeByNormTitle = new Map<string, { id: string; title: string }>();
+    for (const r of recipesRes.data ?? []) {
+      if (r.external_source_id) recipeBySourceId.set(r.external_source_id, { id: r.id, title: r.title });
+      const norm = normalizeTitle(r.title);
+      if (norm && !recipeByNormTitle.has(norm)) recipeByNormTitle.set(norm, { id: r.id, title: r.title });
+    }
+    const inFlightFileIds = new Set(
+      (jobsRes.data ?? []).map((j) => j.external_file_id).filter(Boolean) as string[],
+    );
+
+    // For each search name, score every file and return the top 5.
+    const results: DriveSearchResult[] = parsed.data.names.map((name) => {
+      const scored = allFiles
+        .map((f) => ({ f, score: matchScore(name, f.name) }))
+        .filter(({ score }) => score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5);
+
+      const matches: DriveSearchMatch[] = scored.map(({ f }) => {
+        const existing =
+          recipeBySourceId.get(f.id) ??
+          recipeByNormTitle.get(normalizeTitle(f.name)) ??
+          null;
+        const alreadyImported = !!existing || inFlightFileIds.has(f.id);
+        return {
+          fileId: f.id,
+          fileName: f.name,
+          mimeType: f.mimeType,
+          modifiedTime: f.modifiedTime,
+          folderPath: f.folderPath,
+          supported: SUPPORTED_BULK_MIME.has(f.mimeType),
+          alreadyImported,
+          existingRecipeId: existing?.id ?? null,
+          existingRecipeTitle: existing?.title ?? null,
+        };
+      });
+
+      return { query: name, matches };
+    });
+
+    return { ok: true, results, totalFiles: allFiles.length, folderCount: folders.length };
   } catch (err) {
     logger.error({ err }, "searchDriveByNamesAction failed");
     const msg = (err as Error).message ?? "";
     if (msg.includes("invalid_grant")) {
-      return { ok: false, error: "Your Google Drive connection has expired. Please reconnect in Settings → Integrations." };
+      return {
+        ok: false,
+        error: "Your Google Drive connection has expired. Please reconnect in Settings → Integrations.",
+      };
     }
     return { ok: false, error: msg };
   }
