@@ -40,6 +40,19 @@ export default async function RecipeReviewPage({ params }: { params: Promise<{ i
     sourcePages = data?.page_image_paths ?? [];
   }
 
+  // Check for published recipes in the same household with the same title.
+  // Uses ilike (case-insensitive exact match) — good enough to catch the
+  // common case where the same recipe is extracted from two different files.
+  const supabase = await createSupabaseServerClient();
+  const { data: duplicates } = await supabase
+    .from("recipes")
+    .select("id, title")
+    .eq("household_id", bundle.recipe.household_id)
+    .eq("status", "published")
+    .neq("id", bundle.recipe.id)
+    .ilike("title", bundle.recipe.title)
+    .limit(3);
+
   // The /review route is shared between AI-extracted recipes (PDF/image/URL/Drive)
   // and freshly-created blank ones from /recipes/new. Different headings keep
   // the framing right.
@@ -62,6 +75,7 @@ export default async function RecipeReviewPage({ params }: { params: Promise<{ i
         canDelete={perms.canDelete}
         plannerEntryCount={plannerEntryCount}
         sourcePages={sourcePages}
+        duplicates={duplicates ?? []}
       />
     </div>
   );

@@ -47,7 +47,7 @@ export default async function ImportPage() {
             Photo
           </TabsTrigger>
           <TabsTrigger value="url">From URL</TabsTrigger>
-          <TabsTrigger value="new">New</TabsTrigger>
+          <TabsTrigger value="new">Manual</TabsTrigger>
           <TabsTrigger value="drive">Google Drive</TabsTrigger>
           {account && (
             <TabsTrigger value="bulk">

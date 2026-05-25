@@ -2,7 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,6 +41,7 @@ export function ReviewForm({
   canDelete = false,
   plannerEntryCount = 0,
   sourcePages = [],
+  duplicates = [],
 }: {
   recipe: Recipe;
   ingredients: Ingredient[];
@@ -48,6 +50,8 @@ export function ReviewForm({
   plannerEntryCount?: number;
   /** Every source page path from the originating ingestion_jobs row. */
   sourcePages?: string[];
+  /** Existing published recipes whose title matches this one. */
+  duplicates?: { id: string; title: string }[];
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -250,6 +254,32 @@ export function ReviewForm({
 
   return (
     <>
+    {duplicates.length > 0 && (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 p-4 flex gap-3">
+        <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-amber-900 dark:text-amber-200 text-sm">
+            Possible duplicate — this recipe already exists in your library
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {duplicates.map((d) => (
+              <li key={d.id} className="text-sm text-amber-800 dark:text-amber-300">
+                <Link
+                  href={`/recipes/${d.id}`}
+                  target="_blank"
+                  className="underline hover:text-amber-900 dark:hover:text-amber-100"
+                >
+                  {d.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+            You can save this as a new version, or discard it using the delete button below.
+          </p>
+        </div>
+      </div>
+    )}
     <div className="grid gap-6 pb-24 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-6">
         <Card>
