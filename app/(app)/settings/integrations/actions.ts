@@ -617,9 +617,11 @@ export async function getDriveIndexStatusAction(
 
     const supabase = await createSupabaseServerClient();
 
+    // Main status query — does NOT include current_page/total_pages so it
+    // works even if the migration adding those columns hasn't been applied yet.
     const { data: rows, error } = await supabase
       .from("drive_file_index")
-      .select("index_status, indexed_at, recipe_titles, file_name, current_page, total_pages")
+      .select("index_status, indexed_at, recipe_titles, file_name")
       .eq("household_id", parsed.data.householdId);
 
     if (error) throw error;
@@ -627,7 +629,7 @@ export async function getDriveIndexStatusAction(
     const counts = { total: 0, done: 0, pending: 0, indexing: 0, failed: 0 };
     let totalRecipes = 0;
     let lastIndexedAt: string | null = null;
-    let currentFile: DriveIndexStatus["currentFile"];
+    let currentFileName: string | null = null;
 
     for (const row of rows ?? []) {
       counts.total++;
@@ -641,12 +643,30 @@ export async function getDriveIndexStatusAction(
           }
         }
       }
-      if (row.index_status === "indexing" && !currentFile) {
-        currentFile = {
-          fileName: row.file_name,
-          currentPage: row.current_page ?? null,
-          totalPages: row.total_pages ?? null,
-        };
+      if (row.index_status === "indexing" && !currentFileName) {
+        currentFileName = row.file_name;
+      }
+    }
+
+    // Page-progress query — separate so a missing column (migration not yet
+    // applied) only degrades the progress display, not the whole status.
+    let currentFile: DriveIndexStatus["currentFile"];
+    if (currentFileName) {
+      currentFile = { fileName: currentFileName, currentPage: null, totalPages: null };
+      try {
+        const { data: prog } = await supabase
+          .from("drive_file_index")
+          .select("current_page, total_pages")
+          .eq("household_id", parsed.data.householdId)
+          .eq("file_name", currentFileName)
+          .eq("index_status", "indexing")
+          .maybeSingle();
+        if (prog) {
+          currentFile.currentPage = prog.current_page ?? null;
+          currentFile.totalPages = prog.total_pages ?? null;
+        }
+      } catch {
+        // Columns not yet in DB — page numbers simply won't show.
       }
     }
 
