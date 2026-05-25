@@ -9,6 +9,56 @@ import { driveClient } from "@/lib/integrations/google-drive";
 import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logger";
 
+// ── Fuzzy name matching helpers ───────────────────────────────────────────────
+
+const STOP_WORDS = new Set([
+  "a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "by",
+  "with", "as", "is", "are", "was", "were", "its", "my", "our", "your",
+]);
+
+const NUMBER_WORDS: Record<string, string> = {
+  one: "1", two: "2", three: "3", four: "4", five: "5",
+  six: "6", seven: "7", eight: "8", nine: "9", ten: "10",
+};
+
+function normalizeTitle(s: string): string {
+  let n = s.toLowerCase().replace(/&/g, "and").replace(/[-–—]/g, " ");
+  for (const [word, digit] of Object.entries(NUMBER_WORDS)) {
+    n = n.replace(new RegExp(`\\b${word}\\b`, "g"), digit);
+  }
+  return n.replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function significantWords(name: string): string[] {
+  return normalizeTitle(name)
+    .split(" ")
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+}
+
+/** Token overlap score: how many significant words the query and filename share. */
+function matchScore(query: string, fileName: string): number {
+  const qWords = new Set(significantWords(query));
+  const fWords = new Set(significantWords(fileName));
+  if (qWords.size === 0) return 0;
+  let overlap = 0;
+  for (const w of qWords) if (fWords.has(w)) overlap++;
+  return overlap / Math.max(qWords.size, fWords.size);
+}
+
+/**
+ * Build a Drive query that matches files containing the most distinctive
+ * words from the search name. Uses AND so Drive does the pre-filtering;
+ * results are then re-ranked by matchScore on the client side.
+ */
+function buildDriveQuery(name: string, words: number = 2): string {
+  const terms = significantWords(name)
+    .sort((a, b) => b.length - a.length) // longest = most distinctive first
+    .slice(0, words)
+    .map((w) => `name contains '${w.replace(/'/g, "\\'")}'`)
+    .join(" and ");
+  return terms ? `${terms} and trashed = false` : `name contains '${name.replace(/'/g, "\\'")}' and trashed = false`;
+}
+
 // ── Bulk Drive import ─────────────────────────────────────────────────────────
 
 const SUPPORTED_BULK_MIME = new Set([
@@ -86,21 +136,41 @@ export async function searchDriveByNamesAction(
       const batch = parsed.data.names.slice(i, i + BATCH);
       const batchResults = await Promise.all(
         batch.map(async (name): Promise<DriveSearchResult> => {
-          const files = await driveClient.searchByName({
+          // Primary search: AND query on the 2 most distinctive words.
+          // Fallback: broaden to 1 word if primary returns nothing.
+          let files = await driveClient.searchByName({
             accessToken: account.access_token,
             refreshToken: account.refresh_token ?? undefined,
             onNewTokens,
             name,
-            limit: 5,
+            driveQuery: buildDriveQuery(name, 2),
+            limit: 20,
           });
-          const matches: DriveSearchMatch[] = files.map((f) => ({
-            fileId: f.id!,
-            fileName: f.name ?? "Untitled",
-            mimeType: f.mimeType ?? "",
-            modifiedTime: f.modifiedTime ?? null,
-            webViewLink: f.webViewLink ?? null,
-            supported: SUPPORTED_BULK_MIME.has(f.mimeType ?? ""),
-          }));
+          if (files.length === 0) {
+            files = await driveClient.searchByName({
+              accessToken: account.access_token,
+              refreshToken: account.refresh_token ?? undefined,
+              onNewTokens,
+              name,
+              driveQuery: buildDriveQuery(name, 1),
+              limit: 20,
+            });
+          }
+
+          // Score, sort, and take the top 5 closest matches.
+          const matches: DriveSearchMatch[] = files
+            .map((f) => ({ f, score: matchScore(name, f.name ?? "") }))
+            .filter(({ score }) => score > 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5)
+            .map(({ f }) => ({
+              fileId: f.id!,
+              fileName: f.name ?? "Untitled",
+              mimeType: f.mimeType ?? "",
+              modifiedTime: f.modifiedTime ?? null,
+              webViewLink: f.webViewLink ?? null,
+              supported: SUPPORTED_BULK_MIME.has(f.mimeType ?? ""),
+            }));
           return { query: name, matches };
         }),
       );

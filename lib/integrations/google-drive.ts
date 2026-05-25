@@ -82,6 +82,8 @@ export const driveClient = {
     accessToken: string;
     refreshToken?: string;
     onNewTokens?: (tokens: { accessToken: string; refreshToken?: string }) => void;
+    /** Pre-built Drive query string — overrides the default name-contains logic. */
+    driveQuery?: string;
     name: string;
     mimeType?: string;
     limit?: number;
@@ -89,10 +91,10 @@ export const driveClient = {
     const auth = makeOAuth2(args);
     const drive = google.drive({ version: "v3", auth });
 
-    // Escape single quotes in the name to avoid breaking the query string.
-    const safeName = args.name.replace(/'/g, "\\'");
     const mimeClause = args.mimeType ? ` and mimeType = '${args.mimeType}'` : "";
-    const q = `name contains '${safeName}' and trashed = false${mimeClause}`;
+    const q = args.driveQuery
+      ? `${args.driveQuery}${mimeClause}`
+      : `name contains '${args.name.replace(/'/g, "\\'")}' and trashed = false${mimeClause}`;
 
     const res = await drive.files.list({
       q,
