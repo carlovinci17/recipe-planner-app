@@ -283,23 +283,27 @@ function ResultRow({
                   className="accent-primary shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  {/* File name + path */}
-                  <p className="text-sm text-muted-foreground truncate">
-                    <span className="font-medium text-foreground">({match.fileName})</span>
-                    {match.folderPath && (
-                      <span className="ml-1.5 inline-flex items-center gap-1">
-                        <FolderOpen className="h-3 w-3 shrink-0" />
-                        {match.folderPath}
-                      </span>
-                    )}
+                  {/* Recipe name + container file */}
+                  <p className="text-sm font-medium truncate">
+                    {result.query}
+                    <span className="font-normal text-muted-foreground ml-1.5">({match.fileName})</span>
                   </p>
                   {/* Metadata row */}
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 flex-wrap">
                     {match.modifiedTime && (
                       <span>Modified {new Date(match.modifiedTime).toLocaleDateString("en-GB")}</span>
                     )}
-                    <span className="mx-1">·</span>
+                    <span>·</span>
                     <span>{mimeLabel(match.mimeType)}</span>
+                    {match.folderPath && (
+                      <>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1">
+                          <FolderOpen className="h-3 w-3 shrink-0" />
+                          {match.folderPath}
+                        </span>
+                      </>
+                    )}
                   </p>
                 </div>
                 {match.alreadyImported && (
