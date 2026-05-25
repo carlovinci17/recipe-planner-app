@@ -28,6 +28,12 @@ const config: NextConfig = {
     ],
   },
   serverExternalPackages: ["pdfjs-dist", "sharp", "pino", "@napi-rs/canvas"],
+  // pdfjs-dist loads its worker via a runtime string reference that Vercel's
+  // file tracer can't see. Explicitly include it so it's present in the
+  // serverless function bundle.
+  outputFileTracingIncludes: {
+    "**": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+  },
   logging: {
     fetches: { fullUrl: false },
   },
