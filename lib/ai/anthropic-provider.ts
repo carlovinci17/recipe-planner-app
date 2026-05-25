@@ -94,10 +94,19 @@ function toAnthropicShape(messages: AIChatMessage[]): {
         : msg.content.map((part) =>
             part.type === "text"
               ? ({ type: "text", text: part.text } as const)
-              : ({
-                  type: "image",
-                  source: { type: "url", url: part.image_url.url },
-                } as const),
+              : ((): Anthropic.ImageBlockParam => {
+                  const url = part.image_url.url;
+                  if (url.startsWith("data:")) {
+                    const commaIdx = url.indexOf(",");
+                    const header = url.slice(0, commaIdx);
+                    const data = url.slice(commaIdx + 1);
+                    const media_type = header
+                      .slice("data:".length)
+                      .split(";")[0] as Anthropic.Base64ImageSource["media_type"];
+                    return { type: "image", source: { type: "base64", media_type, data } };
+                  }
+                  return { type: "image", source: { type: "url", url } };
+                })(),
           );
 
     conversation.push({ role: msg.role, content });
