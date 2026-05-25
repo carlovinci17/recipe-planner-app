@@ -16,7 +16,7 @@ export const indexDriveFile = inngest.createFunction(
     name: "Index recipe titles from Drive file",
     retries: 2,
     concurrency: { limit: 5 },
-    timeoutMs: 10 * 60 * 1000, // 10 min — enough for 30-page vision pass; clean failure via onFailure
+    timeouts: { finish: "10m" }, // enough for 30-page vision pass; clean failure via onFailure
     onFailure: async ({ event, error }) => {
       const supabase = createSupabaseAdmin();
       const original = (
