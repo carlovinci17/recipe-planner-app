@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +23,6 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
     return res.ok ? res.status : null;
   }, [householdId]);
 
-  // Poll while building; stop once done.
   const startPolling = useCallback(() => {
     if (pollRef.current) return;
     pollRef.current = setInterval(async () => {
@@ -57,9 +56,7 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
       fetchStatus();
       return;
     }
-    toast.success(
-      `Indexing ${res.queued} file${res.queued === 1 ? "" : "s"}…`,
-    );
+    toast.success(`Indexing ${res.queued} file${res.queued === 1 ? "" : "s"}…`);
     await fetchStatus();
     startPolling();
   }
@@ -74,36 +71,65 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
   }
 
   const hasIndex = status && status.total > 0;
-  const pct = hasIndex ? Math.round((status.done / status.total) * 100) : 0;
+  const hasFailed = hasIndex && status.failed > 0;
+  const allFailed = hasIndex && status.failed === status.total && !status.isBuilding;
+  const pct = hasIndex ? Math.round(((status.done + status.failed) / status.total) * 100) : 0;
 
   return (
-    <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+    <div
+      className={`rounded-xl border p-4 space-y-3 ${hasFailed && !status.isBuilding ? "border-amber-300 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20" : "bg-muted/30"}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent">
-            <BookOpen className="h-4 w-4" />
+          <div
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${hasFailed && !status.isBuilding ? "bg-amber-100 dark:bg-amber-900/40" : "bg-accent"}`}
+          >
+            {hasFailed && !status.isBuilding ? (
+              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            ) : (
+              <BookOpen className="h-4 w-4" />
+            )}
           </div>
-          <div>
+          <div className="space-y-0.5">
             <p className="text-sm font-medium leading-tight">Recipe title index</p>
+
             {!hasIndex ? (
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Build the index to search for recipe names <em>inside</em> your PDF cookbooks.
+              <p className="text-xs text-muted-foreground">
+                Build the index to search recipe names <em>inside</em> your PDF cookbooks.
               </p>
             ) : status.isBuilding ? (
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Indexing {status.total} files — {status.done} done…
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
-                {status.totalRecipes} recipes found in {status.done} file
-                {status.done === 1 ? "" : "s"}
-                {status.lastIndexedAt && (
-                  <span className="ml-1 text-muted-foreground/60">
-                    · updated {new Date(status.lastIndexedAt).toLocaleDateString("en-GB")}
+              <p className="text-xs text-muted-foreground">
+                Indexing {status.total} files — {status.done} done
+                {status.failed > 0 && (
+                  <span className="text-amber-600 dark:text-amber-400 ml-1">
+                    · {status.failed} failed
                   </span>
                 )}
+                …
               </p>
+            ) : allFailed ? (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                All {status.failed} files failed to index. Check your Drive connection and retry.
+              </p>
+            ) : (
+              <div className="space-y-0.5">
+                <p className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
+                  <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                  {status.totalRecipes} recipes in {status.done} file{status.done === 1 ? "" : "s"}
+                  {status.lastIndexedAt && (
+                    <span className="text-muted-foreground/60">
+                      · updated {new Date(status.lastIndexedAt).toLocaleDateString("en-GB")}
+                    </span>
+                  )}
+                </p>
+                {hasFailed && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    {status.failed} file{status.failed === 1 ? "" : "s"} failed — use Rebuild to
+                    retry
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -111,14 +137,21 @@ export function DriveIndexManager({ householdId }: { householdId: string }) {
         <div className="flex gap-2 shrink-0">
           {hasIndex && !status.isBuilding && (
             <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
+              variant={hasFailed ? "secondary" : "ghost"}
+              size={hasFailed ? "sm" : "icon"}
+              className={hasFailed ? "" : "h-8 w-8"}
               disabled={starting}
               title="Rebuild index"
               onClick={() => handleBuild(true)}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              {starting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  {hasFailed && <span className="ml-1.5">Rebuild</span>}
+                </>
+              )}
             </Button>
           )}
           {!hasIndex && (
