@@ -333,7 +333,7 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
     .eq("external_file_id", filename)
     .maybeSingle();
 
-  if (existing) {
+  if (existing && existing.status !== "failed") {
     broadcast({
       type: "file-skipped",
       index,
@@ -343,6 +343,10 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
     });
     skipped++;
     return;
+  }
+  // Failed jobs are re-queued — delete the old row so the new upload can proceed.
+  if (existing?.status === "failed") {
+    await supabase.from("ingestion_jobs").delete().eq("id", existing.id);
   }
 
   // ── Upload PDF to Storage ────────────────────────────────────────────────
