@@ -320,8 +320,10 @@ let failed = 0;
 
 async function processPdf(filePath: string, index: number, batchPrefix: string): Promise<void> {
   const filename = path.basename(filePath);
+  // Show relative subfolder path in the UI so user can tell files apart across folders
+  const relPath = path.relative(PDF_DIR, filePath);
 
-  broadcast({ type: "file-start", index, file: filename });
+  broadcast({ type: "file-start", index, file: relPath });
 
   // ── Dedup: skip if already queued or processed ──────────────────────────
   const { data: existing } = await supabase
@@ -335,7 +337,7 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
     broadcast({
       type: "file-skipped",
       index,
-      file: filename,
+      file: relPath,
       existingJobId: existing.id,
       existingStatus: existing.status,
     });
@@ -348,7 +350,7 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
   try {
     buffer = fs.readFileSync(filePath);
   } catch (err) {
-    broadcast({ type: "file-failed", index, file: filename, stage: "read", error: (err as Error).message });
+    broadcast({ type: "file-failed", index, file: relPath, stage: "read", error: (err as Error).message });
     failed++;
     return;
   }
@@ -359,7 +361,7 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
     .upload(storagePath, buffer, { contentType: "application/pdf", upsert: false });
 
   if (uploadErr) {
-    broadcast({ type: "file-failed", index, file: filename, stage: "upload", error: uploadErr.message });
+    broadcast({ type: "file-failed", index, file: relPath, stage: "upload", error: uploadErr.message });
     failed++;
     return;
   }
@@ -381,7 +383,7 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
 
   if (jobErr || !job) {
     await supabase.storage.from(BUCKET).remove([storagePath]);
-    broadcast({ type: "file-failed", index, file: filename, stage: "job-create", error: jobErr?.message ?? "no row returned" });
+    broadcast({ type: "file-failed", index, file: relPath, stage: "job-create", error: jobErr?.message ?? "no row returned" });
     failed++;
     return;
   }
@@ -393,7 +395,7 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
       data: { jobId: job.id, householdId: HOUSEHOLD_ID, sourceKind: "pdf" as const },
     });
   } catch (err) {
-    broadcast({ type: "file-failed", index, file: filename, stage: "inngest", error: (err as Error).message });
+    broadcast({ type: "file-failed", index, file: relPath, stage: "inngest", error: (err as Error).message });
     failed++;
     return;
   }
@@ -412,18 +414,24 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
     { onConflict: "household_id,drive_file_id" },
   );
 
-  broadcast({ type: "file-queued", index, file: filename, jobId: job.id });
+  broadcast({ type: "file-queued", index, file: relPath, jobId: job.id });
   queued++;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const allFiles = fs
-    .readdirSync(PDF_DIR)
-    .filter((f) => f.toLowerCase().endsWith(".pdf"))
-    .sort()
-    .map((f) => path.join(PDF_DIR, f));
+  function collectPdfs(dir: string): string[] {
+    const results: string[] = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) results.push(...collectPdfs(full));
+      else if (entry.name.toLowerCase().endsWith(".pdf")) results.push(full);
+    }
+    return results;
+  }
+
+  const allFiles = collectPdfs(PDF_DIR).sort();
 
   if (allFiles.length === 0) {
     console.error(`No PDF files found in ${PDF_DIR}`);
