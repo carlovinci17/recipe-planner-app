@@ -125,6 +125,30 @@ export const processDriveFile = inngest.createFunction(
       return data;
     });
 
+    // Dedup: if this file was already imported via the bulk-import script, skip
+    // re-extraction and just upgrade the sentinel job's external_file_id to the
+    // real Drive file ID so future scans dedup by ID instead of filename.
+    const alreadyImported = await step.run("check-bulk-import", async () => {
+      const { data } = await supabase
+        .from("ingestion_jobs")
+        .select("id")
+        .eq("household_id", householdId)
+        .eq("external_file_id", fileName)
+        .maybeSingle();
+      if (!data) return false;
+      // Upgrade sentinel external_file_id → real Drive file ID.
+      await supabase
+        .from("ingestion_jobs")
+        .update({ external_file_id: driveFileId })
+        .eq("id", data.id);
+      return true;
+    });
+
+    if (alreadyImported) {
+      logger.info({ driveFileId, fileName }, "skipping drive file — already imported via bulk script");
+      return { skipped: true };
+    }
+
     // Combined: download from Drive + upload to our bucket. Buffers can't be
     // checkpointed across steps (Inngest serializes step output via JSON).
     const { jobId, sourceKind, storagePath } = await step.run("download-and-upload", async () => {

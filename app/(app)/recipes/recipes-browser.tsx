@@ -2,7 +2,7 @@
 
 import { useDeferredValue, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { CheckSquare, SlidersHorizontal, Search, Star, Trash2, X } from "lucide-react";
+import { CheckSquare, SlidersHorizontal, Search, Star, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ import { MultiSelectPopover } from "@/components/recipes/multi-select-popover";
 import { cn } from "@/lib/utils";
 import type { RecipeListItem } from "@/lib/services/recipe-service";
 import { getRecipeSourceName } from "@/lib/recipes/source-name";
-import { bulkDeleteRecipesAction } from "./actions";
+import { bulkDeleteRecipesAction, bulkPublishRecipesAction } from "./actions";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack", "dessert"] as const;
 const DIET_TYPES = [
@@ -88,6 +88,7 @@ export function RecipesBrowser({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmBulkDeleteOpen, setConfirmBulkDeleteOpen] = useState(false);
   const [bulkDeleting, startBulkDelete] = useTransition();
+  const [bulkPublishing, startBulkPublish] = useTransition();
 
   const [meal, setMeal] = useState<string | null>(null);
   const [diets, setDiets] = useState<string[]>([]);
@@ -258,6 +259,27 @@ export function RecipesBrowser({
     });
   }
 
+  function performBulkPublish() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    startBulkPublish(async () => {
+      const result = await bulkPublishRecipesAction({ recipeIds: ids });
+      if (!result.ok) {
+        toast.error(result.error ?? "Couldn't publish");
+        return;
+      }
+      setRecipes((prev) =>
+        prev.map((r) =>
+          (result.ids ?? []).includes(r.id) ? { ...r, status: "published" as const } : r,
+        ),
+      );
+      setSelectedIds(new Set());
+      setSelectMode(false);
+      toast.success(`Published ${result.published} ${result.published === 1 ? "recipe" : "recipes"}`);
+      router.refresh();
+    });
+  }
+
   return (
     <div className="space-y-4">
       {/* Search */}
@@ -399,8 +421,18 @@ export function RecipesBrowser({
                   type="button"
                   variant="outline"
                   size="sm"
+                  onClick={performBulkPublish}
+                  disabled={selectedIds.size === 0 || bulkPublishing || bulkDeleting}
+                >
+                  <Upload className="mr-1.5 h-3.5 w-3.5" />
+                  Publish {selectedIds.size > 0 ? `${selectedIds.size} ` : ""}selected
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
                   onClick={() => setConfirmBulkDeleteOpen(true)}
-                  disabled={selectedIds.size === 0 || bulkDeleting}
+                  disabled={selectedIds.size === 0 || bulkDeleting || bulkPublishing}
                   className="text-destructive hover:bg-destructive/10"
                 >
                   <Trash2 className="mr-1.5 h-3.5 w-3.5" />

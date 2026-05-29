@@ -504,24 +504,59 @@ export async function startDriveIndexAction(
     if (allFiles.length === 0) return { ok: true, queued: 0, skipped: 0 };
 
     // Fetch existing index status to skip already-done files (unless force).
+    // Two lookups: by Drive file ID (normal case) and by file name (for files
+    // already imported via the bulk-import script, which uses a sentinel ID).
     const { data: existingRows } = await supabase
       .from("drive_file_index")
-      .select("drive_file_id, index_status")
+      .select("drive_file_id, file_name, index_status")
       .eq("household_id", parsed.data.householdId)
       .in(
         "drive_file_id",
         allFiles.map((f) => f.driveFileId),
       );
 
+    const { data: bulkRows } = await supabase
+      .from("drive_file_index")
+      .select("drive_file_id, file_name, index_status")
+      .eq("household_id", parsed.data.householdId)
+      .like("drive_file_id", "bulk:%")
+      .in("file_name", allFiles.map((f) => f.fileName));
+
+    // Build a combined status map: keyed by Drive file ID and by file name.
     const existingStatus = new Map<string, string>();
+    const doneByFileName = new Map<string, string>(); // fileName → sentinel drive_file_id
     for (const row of existingRows ?? []) {
       existingStatus.set(row.drive_file_id, row.index_status);
+    }
+    for (const row of bulkRows ?? []) {
+      if (row.index_status === "done") {
+        doneByFileName.set(row.file_name, row.drive_file_id);
+      }
+    }
+
+    // For bulk-imported files that are done, upgrade their sentinel drive_file_id
+    // to the real Drive ID so future scans use the canonical ID.
+    const toUpgrade = allFiles.filter(
+      (f) => !existingStatus.has(f.driveFileId) && doneByFileName.has(f.fileName),
+    );
+    if (toUpgrade.length > 0) {
+      await Promise.all(
+        toUpgrade.map((f) =>
+          supabase
+            .from("drive_file_index")
+            .update({ drive_file_id: f.driveFileId, updated_at: new Date().toISOString() })
+            .eq("household_id", parsed.data.householdId)
+            .eq("drive_file_id", doneByFileName.get(f.fileName)!),
+        ),
+      );
     }
 
     const toIndex = parsed.data.force
       ? allFiles
       : allFiles.filter((f) => {
           const status = existingStatus.get(f.driveFileId);
+          // Also skip files matched by filename to a bulk-imported done row.
+          if (!status && doneByFileName.has(f.fileName)) return false;
           // Skip files already done or in progress; queue new/failed ones.
           return !status || status === "failed" || status === "pending";
         });

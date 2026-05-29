@@ -19,7 +19,8 @@
     "test:e2e:install": "playwright install --with-deps chromium",
     "test:seed": "tsx tests/scripts/seed-test-user.ts",
     "test:cleanup": "tsx tests/scripts/cleanup-test-user.ts",
-    "seed:recipes": "tsx scripts/seed-recipes.ts"
+    "seed:recipes": "tsx scripts/seed-recipes.ts",
+    "bulk:import": "tsx scripts/bulk-import.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
