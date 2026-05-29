@@ -4,7 +4,10 @@
  * Usage:
  *   npx tsx scripts/bulk-import.ts <pdf-directory> \
  *     --household-id=<uuid> \
- *     --created-by=<user-uuid>
+ *     --created-by=<user-uuid> \
+ *     [--port=3333]
+ *
+ * Opens a browser window with real-time progress (file names, status, errors).
  *
  * What it does per PDF:
  *   1. Skips if an ingestion_jobs row with external_file_id = filename already exists
@@ -12,8 +15,7 @@
  *   3. Creates an ingestion_jobs row (source_kind='pdf')
  *   4. Fires ingestion/file.uploaded → processUpload Inngest function takes over
  *      (skim → extract → normalize → persist → tag — identical to browser upload)
- *   5. Inserts a drive_file_index placeholder row so the Drive re-scan knows
- *      this file has been imported and won't re-process it
+ *   5. Inserts a drive_file_index placeholder so Drive re-scans skip this file
  *
  * Env required (loaded from .env.local):
  *   NEXT_PUBLIC_SUPABASE_URL
@@ -25,6 +27,8 @@ import { config as dotenv } from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
+import * as http from "http";
+import { exec } from "child_process";
 import { createClient } from "@supabase/supabase-js";
 import { Inngest } from "inngest";
 
@@ -54,14 +58,15 @@ const flags = Object.fromEntries(
     .slice(2)
     .filter((a) => a.startsWith("--"))
     .map((a) => {
-      const [k, v] = a.slice(2).split("=");
-      return [k, v];
+      const [k, ...rest] = a.slice(2).split("=");
+      return [k, rest.join("=")];
     }),
 );
 
 const pdfDirArg = positional[0];
 const householdIdArg = flags["household-id"];
 const createdByArg = flags["created-by"];
+const port = parseInt(flags["port"] ?? "3333", 10);
 
 if (!pdfDirArg || !householdIdArg || !createdByArg) {
   console.error(
@@ -87,22 +92,238 @@ const inngest = new Inngest({ id: "recipe-planner", eventKey: INNGEST_EVENT_KEY 
 const BUCKET = "recipe-uploads";
 const CONCURRENCY = 3;
 
+// ── SSE broadcaster ───────────────────────────────────────────────────────────
+
+type ImportEvent =
+  | { type: "start"; total: number; directory: string; household: string }
+  | { type: "file-start"; index: number; file: string }
+  | { type: "file-queued"; index: number; file: string; jobId: string }
+  | { type: "file-skipped"; index: number; file: string; existingJobId: string; existingStatus: string }
+  | { type: "file-failed"; index: number; file: string; stage: string; error: string }
+  | { type: "complete"; queued: number; skipped: number; failed: number; durationMs: number };
+
+const sseClients = new Set<http.ServerResponse>();
+
+function broadcast(event: ImportEvent) {
+  const data = `data: ${JSON.stringify(event)}\n\n`;
+  for (const res of sseClients) {
+    try {
+      res.write(data);
+    } catch {
+      sseClients.delete(res);
+    }
+  }
+}
+
+// ── HTML progress page ────────────────────────────────────────────────────────
+
+const HTML_PAGE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bulk PDF Import</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; display: inline-block; }
+    .fade-in { animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-900">
+  <div class="max-w-3xl mx-auto py-10 px-4 space-y-6">
+
+    <!-- Header -->
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">Bulk PDF Import</h1>
+      <p id="subtitle" class="text-sm text-gray-500 mt-1">Connecting…</p>
+    </div>
+
+    <!-- Progress bar + stats -->
+    <div id="progress-section" class="hidden space-y-3">
+      <div class="flex items-center justify-between text-sm font-medium">
+        <span id="progress-label">0 / 0 files</span>
+        <span id="pct-label" class="text-gray-500">0%</span>
+      </div>
+      <div class="h-2 rounded-full bg-gray-200 overflow-hidden">
+        <div id="progress-bar" class="h-full rounded-full bg-blue-500 transition-all duration-300" style="width:0%"></div>
+      </div>
+      <div class="flex gap-4 text-xs text-gray-500">
+        <span>✓ Queued: <b id="stat-queued" class="text-gray-800">0</b></span>
+        <span>↷ Skipped: <b id="stat-skipped" class="text-gray-800">0</b></span>
+        <span>✗ Failed: <b id="stat-failed" class="text-red-600">0</b></span>
+      </div>
+    </div>
+
+    <!-- Complete banner -->
+    <div id="complete-banner" class="hidden rounded-xl border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">
+      <b>Import complete.</b> Recipes are being extracted by Inngest in the background.
+      Open your app's Import page to monitor Inngest progress.
+    </div>
+
+    <!-- File list -->
+    <div id="file-list" class="space-y-1.5 text-sm"></div>
+
+  </div>
+
+  <script>
+    let total = 0;
+    let done = 0;
+    let stats = { queued: 0, skipped: 0, failed: 0 };
+    const rows = {};
+
+    const $id = (id) => document.getElementById(id);
+    const progressSection = $id('progress-section');
+    const fileList = $id('file-list');
+
+    function updateProgress() {
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      $id('progress-bar').style.width = pct + '%';
+      $id('progress-label').textContent = done + ' / ' + total + ' files';
+      $id('pct-label').textContent = pct + '%';
+      $id('stat-queued').textContent = stats.queued;
+      $id('stat-skipped').textContent = stats.skipped;
+      $id('stat-failed').textContent = stats.failed;
+    }
+
+    function statusIcon(state) {
+      if (state === 'processing') return '<span class="spin text-blue-500">↻</span>';
+      if (state === 'queued')     return '<span class="text-green-500">✓</span>';
+      if (state === 'skipped')    return '<span class="text-yellow-500">↷</span>';
+      if (state === 'failed')     return '<span class="text-red-500">✗</span>';
+      return '';
+    }
+
+    function statusColor(state) {
+      if (state === 'queued')  return 'bg-green-50 border-green-200';
+      if (state === 'skipped') return 'bg-yellow-50 border-yellow-200';
+      if (state === 'failed')  return 'bg-red-50 border-red-200';
+      return 'bg-white border-gray-200';
+    }
+
+    function renderRow(index, file, state, detail) {
+      const existing = rows[index];
+      const el = existing || document.createElement('div');
+      el.className = 'fade-in rounded-lg border px-3 py-2 flex items-start gap-2.5 ' + statusColor(state);
+      el.innerHTML =
+        '<div class="mt-0.5 w-5 text-base text-center shrink-0">' + statusIcon(state) + '</div>' +
+        '<div class="min-w-0 flex-1">' +
+          '<p class="font-medium truncate" title="' + file + '">' + file + '</p>' +
+          (detail ? '<p class="text-xs text-gray-500 mt-0.5">' + detail + '</p>' : '') +
+        '</div>';
+      if (!existing) {
+        rows[index] = el;
+        fileList.appendChild(el);
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    const source = new EventSource('/events');
+
+    source.onmessage = (e) => {
+      const ev = JSON.parse(e.data);
+
+      if (ev.type === 'start') {
+        total = ev.total;
+        progressSection.classList.remove('hidden');
+        $id('subtitle').textContent = ev.total + ' PDF files in ' + ev.directory;
+        updateProgress();
+      }
+
+      if (ev.type === 'file-start') {
+        renderRow(ev.index, ev.file, 'processing', 'Uploading & queuing…');
+      }
+
+      if (ev.type === 'file-queued') {
+        done++;
+        stats.queued++;
+        renderRow(ev.index, ev.file, 'queued', 'Queued → job ' + ev.jobId);
+        updateProgress();
+      }
+
+      if (ev.type === 'file-skipped') {
+        done++;
+        stats.skipped++;
+        renderRow(ev.index, ev.file, 'skipped', 'Already imported (job ' + ev.existingJobId + ', ' + ev.existingStatus + ')');
+        updateProgress();
+      }
+
+      if (ev.type === 'file-failed') {
+        done++;
+        stats.failed++;
+        renderRow(ev.index, ev.file, 'failed', ev.stage + ': ' + ev.error);
+        updateProgress();
+      }
+
+      if (ev.type === 'complete') {
+        $id('complete-banner').classList.remove('hidden');
+        $id('subtitle').textContent =
+          'Finished in ' + (ev.durationMs / 1000).toFixed(1) + 's — ' +
+          ev.queued + ' queued, ' + ev.skipped + ' skipped, ' + ev.failed + ' failed';
+        source.close();
+      }
+    };
+
+    source.onerror = () => {
+      $id('subtitle').textContent = 'Connection lost. Import may have finished.';
+    };
+  </script>
+</body>
+</html>`;
+
+// ── HTTP server ───────────────────────────────────────────────────────────────
+
+function startServer(): Promise<void> {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      if (req.url === "/events") {
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "Access-Control-Allow-Origin": "*",
+        });
+        res.write(": connected\n\n");
+        sseClients.add(res);
+        req.on("close", () => sseClients.delete(res));
+      } else {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(HTML_PAGE);
+      }
+    });
+
+    server.listen(port, "127.0.0.1", () => {
+      const url = `http://localhost:${port}`;
+      console.log(`\nProgress UI → ${url}`);
+      // Open browser — macOS: open, Linux: xdg-open, Windows: start
+      const cmd =
+        process.platform === "win32"
+          ? `start ${url}`
+          : process.platform === "darwin"
+          ? `open ${url}`
+          : `xdg-open ${url}`;
+      exec(cmd, (err) => {
+        if (err) console.log(`(Could not auto-open browser — visit ${url} manually)`);
+      });
+      // Give browser a moment to connect before starting import
+      setTimeout(resolve, 800);
+    });
+  });
+}
+
 // ── Per-file processing ───────────────────────────────────────────────────────
 
 let queued = 0;
 let skipped = 0;
 let failed = 0;
 
-async function processPdf(
-  filePath: string,
-  index: number,
-  total: number,
-  batchPrefix: string,
-): Promise<void> {
+async function processPdf(filePath: string, index: number, batchPrefix: string): Promise<void> {
   const filename = path.basename(filePath);
-  const tag = `[${String(index + 1).padStart(String(total).length, " ")}/${total}]`;
 
-  // ── Dedup: skip if already queued or processed ────────────────────────────
+  broadcast({ type: "file-start", index, file: filename });
+
+  // ── Dedup: skip if already queued or processed ──────────────────────────
   const { data: existing } = await supabase
     .from("ingestion_jobs")
     .select("id, status")
@@ -111,17 +332,23 @@ async function processPdf(
     .maybeSingle();
 
   if (existing) {
-    console.log(`${tag} ${filename} → SKIP (already imported, job ${existing.id}, status=${existing.status})`);
+    broadcast({
+      type: "file-skipped",
+      index,
+      file: filename,
+      existingJobId: existing.id,
+      existingStatus: existing.status,
+    });
     skipped++;
     return;
   }
 
-  // ── Upload PDF to Storage ─────────────────────────────────────────────────
+  // ── Upload PDF to Storage ────────────────────────────────────────────────
   let buffer: Buffer;
   try {
     buffer = fs.readFileSync(filePath);
   } catch (err) {
-    console.error(`${tag} ${filename} → FAIL (read): ${(err as Error).message}`);
+    broadcast({ type: "file-failed", index, file: filename, stage: "read", error: (err as Error).message });
     failed++;
     return;
   }
@@ -132,12 +359,12 @@ async function processPdf(
     .upload(storagePath, buffer, { contentType: "application/pdf", upsert: false });
 
   if (uploadErr) {
-    console.error(`${tag} ${filename} → FAIL (upload): ${uploadErr.message}`);
+    broadcast({ type: "file-failed", index, file: filename, stage: "upload", error: uploadErr.message });
     failed++;
     return;
   }
 
-  // ── Create ingestion_jobs row ─────────────────────────────────────────────
+  // ── Create ingestion_jobs row ────────────────────────────────────────────
   const { data: job, error: jobErr } = await supabase
     .from("ingestion_jobs")
     .insert({
@@ -153,29 +380,25 @@ async function processPdf(
     .single();
 
   if (jobErr || !job) {
-    console.error(`${tag} ${filename} → FAIL (job): ${jobErr?.message}`);
-    // Clean up the uploaded file
     await supabase.storage.from(BUCKET).remove([storagePath]);
+    broadcast({ type: "file-failed", index, file: filename, stage: "job-create", error: jobErr?.message ?? "no row returned" });
     failed++;
     return;
   }
 
-  // ── Fire Inngest event → processUpload takes over ─────────────────────────
+  // ── Fire Inngest event ───────────────────────────────────────────────────
   try {
     await inngest.send({
       name: "ingestion/file.uploaded" as const,
-      data: { jobId: job.id, HOUSEHOLD_ID, sourceKind: "pdf" as const },
+      data: { jobId: job.id, householdId: HOUSEHOLD_ID, sourceKind: "pdf" as const },
     });
   } catch (err) {
-    console.error(`${tag} ${filename} → FAIL (inngest): ${(err as Error).message}`);
+    broadcast({ type: "file-failed", index, file: filename, stage: "inngest", error: (err as Error).message });
     failed++;
     return;
   }
 
-  // ── Insert drive_file_index placeholder for Drive dedup ───────────────────
-  // Uses a sentinel drive_file_id (sha1 of filename) since we don't have
-  // the actual Drive file ID. startDriveIndexAction matches by file_name
-  // and upgrades this to the real ID when it finds the file on Drive.
+  // ── Insert drive_file_index placeholder ──────────────────────────────────
   const sentinelId = `bulk:${crypto.createHash("sha1").update(filename).digest("hex")}`;
   await supabase.from("drive_file_index").upsert(
     {
@@ -189,7 +412,7 @@ async function processPdf(
     { onConflict: "household_id,drive_file_id" },
   );
 
-  console.log(`${tag} ${filename} → job ${job.id} → queued ✓`);
+  broadcast({ type: "file-queued", index, file: filename, jobId: job.id });
   queued++;
 }
 
@@ -207,30 +430,37 @@ async function main() {
     process.exit(1);
   }
 
-  const batchPrefix = `bulk-${Date.now()}`;
-
   console.log(`\nBulk PDF import`);
   console.log(`  Directory : ${path.resolve(PDF_DIR)}`);
   console.log(`  PDFs found: ${allFiles.length}`);
   console.log(`  Household : ${HOUSEHOLD_ID}`);
-  console.log(`  Created by: ${CREATED_BY}`);
-  console.log(`  Batch ID  : ${batchPrefix}`);
-  console.log(`  Bucket    : ${BUCKET}/${HOUSEHOLD_ID}/${batchPrefix}/\n`);
 
-  // Process in concurrent batches
+  await startServer();
+
+  const batchPrefix = `bulk-${Date.now()}`;
+  const startTime = Date.now();
+
+  broadcast({
+    type: "start",
+    total: allFiles.length,
+    directory: path.resolve(PDF_DIR),
+    household: HOUSEHOLD_ID,
+  });
+
   for (let i = 0; i < allFiles.length; i += CONCURRENCY) {
     const batch = allFiles.slice(i, i + CONCURRENCY);
-    await Promise.all(
-      batch.map((f, j) => processPdf(f, i + j, allFiles.length, batchPrefix)),
-    );
+    await Promise.all(batch.map((f, j) => processPdf(f, i + j, batchPrefix)));
   }
 
-  console.log(`\n${"─".repeat(60)}`);
-  console.log(`Queued : ${queued}`);
-  console.log(`Skipped: ${skipped} (already imported)`);
-  console.log(`Failed : ${failed}`);
-  console.log(`\nMonitor in Inngest dashboard → Functions → "Process file upload"`);
-  console.log(`Recipes will appear in the review queue as Inngest processes them.`);
+  const durationMs = Date.now() - startTime;
+  broadcast({ type: "complete", queued, skipped, failed, durationMs });
+
+  console.log(`\nDone in ${(durationMs / 1000).toFixed(1)}s`);
+  console.log(`  Queued : ${queued}`);
+  console.log(`  Skipped: ${skipped}`);
+  console.log(`  Failed : ${failed}`);
+  console.log(`\nKeeping progress server alive — press Ctrl+C to exit.`);
+  // Keep process alive so the browser can still view the results
 }
 
 main().catch((err) => {
