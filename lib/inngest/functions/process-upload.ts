@@ -210,6 +210,7 @@ export const processUpload = inngest.createFunction(
     // they don't wait 24h for user input. They also cap page count and use a
     // cheaper model (ANTHROPIC_MODEL_BULK) to reduce cost and processing time.
     const bulkMode = event.data.bulkMode === true;
+    const useOpus = event.data.useOpus === true;
     const bulkMaxPages = event.data.maxPages; // undefined = no cap
     // startPage is 1-based; convert to 0-based slice offset
     const startOffset = Math.max(0, (event.data.startPage ?? 1) - 1);
@@ -381,7 +382,7 @@ export const processUpload = inngest.createFunction(
             chunks.length > 1
               ? `These are pages ${chunk[0]} – ${chunk[chunk.length - 1]} (chunk ${ci + 1} of ${chunks.length}) from a multi-page document. Some recipes may span chunk boundaries; extract what's visible here.`
               : undefined,
-          model: bulkMode ? env.ANTHROPIC_MODEL_BULK : undefined,
+          model: bulkMode && !useOpus ? env.ANTHROPIC_MODEL_BULK : undefined,
         });
         return {
           recipes: result.data.recipes ?? [],

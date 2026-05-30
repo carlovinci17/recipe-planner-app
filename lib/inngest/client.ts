@@ -18,6 +18,8 @@ type Events = {
       maxPages?: number;
       /** 1-based page number to start extraction from (skip earlier pages). */
       startPage?: number;
+      /** Force Opus instead of the bulk model for files Sonnet struggles with. */
+      useOpus?: boolean;
     };
   };
   "ingestion/url.requested": {

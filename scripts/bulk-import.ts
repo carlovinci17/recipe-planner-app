@@ -75,6 +75,8 @@ const startPage = parseInt(flags["start-page"] ?? "1", 10) || 1;
 const fileFilter = flags["file"]?.toLowerCase() ?? null;
 // If set, re-process files even if a non-failed job already exists for them.
 const forceReprocess = "force" in flags;
+// If set, use Opus instead of the cheaper bulk model (for complex layouts Sonnet misses).
+const useOpus = "use-opus" in flags;
 
 if (!pdfDirArg || !householdIdArg || !createdByArg) {
   console.error(
@@ -404,7 +406,7 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
   try {
     await inngest.send({
       name: "ingestion/file.uploaded" as const,
-      data: { jobId: job.id, householdId: HOUSEHOLD_ID, sourceKind: "pdf" as const, bulkMode: true, maxPages: maxPages || undefined, startPage: startPage > 1 ? startPage : undefined },
+      data: { jobId: job.id, householdId: HOUSEHOLD_ID, sourceKind: "pdf" as const, bulkMode: true, maxPages: maxPages || undefined, startPage: startPage > 1 ? startPage : undefined, useOpus: useOpus || undefined },
     });
   } catch (err) {
     broadcast({ type: "file-failed", index, file: relPath, stage: "inngest", error: (err as Error).message });
