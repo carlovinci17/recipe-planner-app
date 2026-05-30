@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +29,7 @@ import { TagEditor } from "@/components/recipes/tag-editor";
 import { DeleteRecipeButton } from "../delete-recipe-button";
 import { useUnsavedChangesGuard } from "@/lib/recipes/use-unsaved-changes-guard";
 import { CoverPicker } from "./cover-picker";
+import { clearRecipeCoverAction } from "../actions";
 
 type Recipe = Tables<"recipes">;
 type Ingredient = Tables<"recipe_ingredients">;
@@ -75,12 +76,14 @@ export function ReviewForm({
   const [sourceUrl, setSourceUrl] = useState(recipe.source_url ?? "");
   const [ingredients, setIngredients] = useState(initialIngredients);
   const [instructions, setInstructions] = useState(initialInstructions);
+  const [coverCleared, setCoverCleared] = useState(false);
+  const [clearingCover, startClearCover] = useTransition();
   // Review form hero is medium-sized; 1200px wide is plenty.
-  const cover = useSignedImage(recipe.cover_image_path, "recipe-uploads", {
-    width: 1200,
-    resize: "cover",
-    quality: 80,
-  });
+  const cover = useSignedImage(
+    coverCleared ? null : recipe.cover_image_path,
+    "recipe-uploads",
+    { width: 1200, resize: "cover", quality: 80 },
+  );
 
   function patchIngredient(idx: number, patch: Partial<Ingredient>) {
     setIngredients((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
@@ -463,18 +466,40 @@ export function ReviewForm({
             initialFocalX={recipe.cover_focal_x}
             initialFocalY={recipe.cover_focal_y}
           />
-        ) : cover ? (
-          // Single-image / URL imports: no multi-page picker, but still show
-          // the AI source as a preview so the user can sanity-check.
-          <details className="rounded-xl border bg-card">
-            <summary className="cursor-pointer p-3 text-sm font-medium">
-              AI source preview
-            </summary>
-            <div className="overflow-hidden rounded-b-xl bg-muted">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={cover} alt="Source page" className="h-auto w-full" />
+        ) : recipe.cover_image_path && !coverCleared ? (
+          // Single-image / URL imports: show cover with option to clear it.
+          <div className="rounded-xl border bg-card overflow-hidden">
+            <div className="flex items-center justify-between p-3">
+              <span className="text-sm font-medium">Cover image</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                disabled={clearingCover}
+                onClick={() =>
+                  startClearCover(async () => {
+                    const result = await clearRecipeCoverAction(recipe.id);
+                    if (result.ok) {
+                      setCoverCleared(true);
+                      toast.success("Cover removed");
+                    } else {
+                      toast.error(result.error ?? "Couldn't remove cover");
+                    }
+                  })
+                }
+              >
+                <X className="mr-1 h-3 w-3" />
+                Remove
+              </Button>
             </div>
-          </details>
+            {cover && (
+              <div className="bg-muted">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={cover} alt="Cover" className="h-auto w-full" />
+              </div>
+            )}
+          </div>
         ) : null}
 
         <div className="rounded-xl border bg-card p-4 text-sm">
