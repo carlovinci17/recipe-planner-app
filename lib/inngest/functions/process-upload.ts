@@ -211,11 +211,14 @@ export const processUpload = inngest.createFunction(
     // cheaper model (ANTHROPIC_MODEL_BULK) to reduce cost and processing time.
     const bulkMode = event.data.bulkMode === true;
     const bulkMaxPages = event.data.maxPages; // undefined = no cap
+    // startPage is 1-based; convert to 0-based slice offset
+    const startOffset = Math.max(0, (event.data.startPage ?? 1) - 1);
 
     const SKIM_PAGE_THRESHOLD = 3;
+    const pagesFromStart = startOffset > 0 ? pageImagePaths.slice(startOffset) : pageImagePaths;
     let pagesToExtract = bulkMode && bulkMaxPages
-      ? pageImagePaths.slice(0, bulkMaxPages)
-      : pageImagePaths;
+      ? pagesFromStart.slice(0, bulkMaxPages)
+      : pagesFromStart;
     // null when no skim ran (short docs go direct to deep extract).
     // Array of normalized titles when skim ran — used after extraction to
     // drop unrelated recipes the model returned from the same pages.

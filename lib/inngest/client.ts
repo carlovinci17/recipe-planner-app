@@ -16,6 +16,8 @@ type Events = {
       bulkMode?: boolean;
       /** Max pages to extract in bulk mode (default 25). */
       maxPages?: number;
+      /** 1-based page number to start extraction from (skip earlier pages). */
+      startPage?: number;
     };
   };
   "ingestion/url.requested": {

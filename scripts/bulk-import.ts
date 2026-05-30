@@ -69,6 +69,10 @@ const createdByArg = flags["created-by"];
 const port = parseInt(flags["port"] ?? "3333", 10);
 // 0 = no cap (process all pages). Default 50 covers most recipe collections.
 const maxPages = parseInt(flags["max-pages"] ?? "50", 10) || 0;
+// 1-based page to start extraction from (skip earlier pages).
+const startPage = parseInt(flags["start-page"] ?? "1", 10) || 1;
+// If set, only process files whose name contains this string (case-insensitive).
+const fileFilter = flags["file"]?.toLowerCase() ?? null;
 
 if (!pdfDirArg || !householdIdArg || !createdByArg) {
   console.error(
@@ -398,7 +402,7 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
   try {
     await inngest.send({
       name: "ingestion/file.uploaded" as const,
-      data: { jobId: job.id, householdId: HOUSEHOLD_ID, sourceKind: "pdf" as const, bulkMode: true, maxPages: maxPages || undefined },
+      data: { jobId: job.id, householdId: HOUSEHOLD_ID, sourceKind: "pdf" as const, bulkMode: true, maxPages: maxPages || undefined, startPage: startPage > 1 ? startPage : undefined },
     });
   } catch (err) {
     broadcast({ type: "file-failed", index, file: relPath, stage: "inngest", error: (err as Error).message });
@@ -437,7 +441,9 @@ async function main() {
     return results;
   }
 
-  const allFiles = collectPdfs(PDF_DIR).sort();
+  const allFiles = collectPdfs(PDF_DIR)
+    .filter((f) => !fileFilter || path.basename(f).toLowerCase().includes(fileFilter))
+    .sort();
 
   if (allFiles.length === 0) {
     console.error(`No PDF files found in ${PDF_DIR}`);
