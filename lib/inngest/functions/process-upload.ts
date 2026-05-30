@@ -138,7 +138,14 @@ export const processUpload = inngest.createFunction(
         job.source_kind === "pdf" || job.storage_path!.toLowerCase().endsWith(".pdf");
 
       if (isPdf) {
-        const images = await pdfBufferToPageImages({ buffer: originalBuffer });
+        // Rendering cap must cover at least startOffset + extraction range so
+        // pages beyond the default 25 are actually available for the AI.
+        // Bulk with no extraction cap → render all pages (undefined = no cap).
+        // Interactive imports → cap at 100 (generous for any cookbook).
+        const renderMaxPages = bulkMode
+          ? (bulkMaxPages ? startOffset + bulkMaxPages : undefined)
+          : 100;
+        const images = await pdfBufferToPageImages({ buffer: originalBuffer, maxPages: renderMaxPages });
         const paths: string[] = [];
         for (let i = 0; i < images.length; i++) {
           const path = await ingestionStorage.uploadDerivedImage({
