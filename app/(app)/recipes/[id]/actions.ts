@@ -179,6 +179,17 @@ export async function setRecipeSourcePageCoverAction(
   }
 }
 
+export async function clearRecipeCoverAction(recipeId: string) {
+  try {
+    await recipeService.update(recipeId, { cover_image_path: null });
+    revalidatePath(`/recipes/${recipeId}`);
+    return { ok: true as const };
+  } catch (err) {
+    logger.error({ err }, "clearRecipeCoverAction failed");
+    return { ok: false as const, error: (err as Error).message };
+  }
+}
+
 export async function removeRecipeImageAction(input: z.infer<typeof PathSchema>) {
   const parsed = PathSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Invalid input" };

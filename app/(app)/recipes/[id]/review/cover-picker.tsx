@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { ArrowLeft, Check, Crop, Image as ImageIcon, Scissors } from "lucide-react";
+import { ArrowLeft, Check, Crop, Image as ImageIcon, Scissors, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
 import { cn } from "@/lib/utils";
-import { setRecipeSourcePageCoverAction } from "../actions";
+import { clearRecipeCoverAction, setRecipeSourcePageCoverAction } from "../actions";
 import { FocalPointPicker } from "./focal-point-picker";
 import { CropTool } from "./crop-tool";
 
@@ -65,11 +65,20 @@ export function CoverPickerGrid({
 
   function pick(path: string) {
     if (pending) return;
-    // Re-tap on the already-selected thumb is a no-op for the server but
-    // still advances the wizard — that's the natural way to revisit the
-    // focal step without changing the underlying page.
+    // Tapping the already-selected page unselects it (clears the cover).
     if (path === selected) {
-      setStep("focus");
+      const previous = selected;
+      setSelected(null);
+      setStep("select");
+      start(async () => {
+        const result = await clearRecipeCoverAction(recipeId);
+        if (!result.ok) {
+          setSelected(previous);
+          toast.error(result.error ?? "Couldn't clear cover");
+        } else {
+          toast.info("Cover cleared");
+        }
+      });
       return;
     }
     const previous = selected;
@@ -430,8 +439,9 @@ function ThumbButton({
         {label}
       </span>
       {isSelected ? (
-        <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-          <Check className="h-3 w-3" />
+        <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors group-hover:bg-destructive">
+          <Check className="h-3 w-3 group-hover:hidden" />
+          <X className="hidden h-3 w-3 group-hover:block" />
         </span>
       ) : null}
     </button>
