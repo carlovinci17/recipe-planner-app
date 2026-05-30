@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useMemo, useState, useTransition } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CheckSquare, SlidersHorizontal, Star, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { RecipeSearchCombobox } from "@/components/recipes/recipe-search-combobox";
@@ -77,6 +77,7 @@ export function RecipesBrowser({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
   const [recipes, setRecipes] = useState(initialRecipes);
 
@@ -89,22 +90,50 @@ export function RecipesBrowser({
   const [confirmBulkDeleteOpen, setConfirmBulkDeleteOpen] = useState(false);
   const [bulkDeleting, startBulkDelete] = useTransition();
   const [bulkPublishing, startBulkPublish] = useTransition();
-  const [reviewOnly, setReviewOnly] = useState(false);
+
+  // ── Filters — initialised from URL so they survive navigation ──────────
+  // State is the source of truth for rendering; URL is kept in sync via
+  // window.history.replaceState (no re-render, no server round-trip).
+  const sp = (key: string) => searchParams.get(key);
+  const [reviewOnly, setReviewOnly] = useState(() => sp("review") === "1");
+  const [meal, setMeal] = useState<string | null>(() => sp("meal"));
+  const [diets, setDiets] = useState<string[]>(() => sp("diets")?.split(",").filter(Boolean) ?? []);
+  const [cuisines, setCuisines] = useState<string[]>(() => sp("cuisines")?.split(",").filter(Boolean) ?? []);
+  const [tags, setTags] = useState<string[]>(() => sp("tags")?.split(",").filter(Boolean) ?? []);
+  const [sources, setSources] = useState<string[]>(() => sp("sources")?.split(",").filter(Boolean) ?? []);
+  const [favOnly, setFavOnly] = useState(() => sp("fav") === "1");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [query, setQuery] = useState(initialQuery);
+  const deferredQuery = useDeferredValue(query);
+
+  /** Write current filter state to the URL without triggering re-render. */
+  function syncUrl(patch: {
+    meal?: string | null;
+    diets?: string[];
+    cuisines?: string[];
+    tags?: string[];
+    sources?: string[];
+    fav?: boolean;
+    review?: boolean;
+  }) {
+    const params = new URLSearchParams(window.location.search);
+    const set = (k: string, v: string | null | undefined) => {
+      if (v) params.set(k, v); else params.delete(k);
+    };
+    if ("meal" in patch) set("meal", patch.meal ?? null);
+    if ("diets" in patch) set("diets", patch.diets?.join(",") || null);
+    if ("cuisines" in patch) set("cuisines", patch.cuisines?.join(",") || null);
+    if ("tags" in patch) set("tags", patch.tags?.join(",") || null);
+    if ("sources" in patch) set("sources", patch.sources?.join(",") || null);
+    if ("fav" in patch) set("fav", patch.fav ? "1" : null);
+    if ("review" in patch) set("review", patch.review ? "1" : null);
+    window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
+  }
 
   const reviewCount = useMemo(
     () => recipes.filter((r) => r.status === "needs_review").length,
     [recipes],
   );
-
-  const [meal, setMeal] = useState<string | null>(null);
-  const [diets, setDiets] = useState<string[]>([]);
-  const [cuisines, setCuisines] = useState<string[]>([]);
-  const [tags, setTags] = useState<string[]>([]);
-  const [sources, setSources] = useState<string[]>([]);
-  const [favOnly, setFavOnly] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [query, setQuery] = useState(initialQuery);
-  const deferredQuery = useDeferredValue(query);
 
   // Option lists derived from the loaded recipes. Sources come from
   // source_url → friendly name (e.g. "https://recipetineats.com/..." →
@@ -146,22 +175,28 @@ export function RecipesBrowser({
   }, [recipes, reviewOnly, favOnly, meal, diets, cuisines, tags, sources]);
 
   function commitTextSearch(value: string) {
-    const next = new URLSearchParams();
-    if (value.trim()) next.set("q", value.trim());
+    // Preserve all active filter params when updating the text query.
+    const next = new URLSearchParams(window.location.search);
+    if (value.trim()) next.set("q", value.trim()); else next.delete("q");
     startTransition(() => router.push(`${pathname}?${next.toString()}`));
   }
 
   function removeChip(c: ChipRemoval) {
-    if (c.kind === "fav") setFavOnly(false);
-    else if (c.kind === "meal") setMeal(null);
-    else if (c.kind === "diet" && c.value)
-      setDiets((prev) => prev.filter((x) => x !== c.value));
-    else if (c.kind === "cuisine" && c.value)
-      setCuisines((prev) => prev.filter((x) => x !== c.value));
-    else if (c.kind === "tag" && c.value)
-      setTags((prev) => prev.filter((x) => x !== c.value));
-    else if (c.kind === "source" && c.value)
-      setSources((prev) => prev.filter((x) => x !== c.value));
+    if (c.kind === "fav") { setFavOnly(false); syncUrl({ fav: false }); }
+    else if (c.kind === "meal") { setMeal(null); syncUrl({ meal: null }); }
+    else if (c.kind === "diet" && c.value) {
+      const next = diets.filter((x) => x !== c.value);
+      setDiets(next); syncUrl({ diets: next });
+    } else if (c.kind === "cuisine" && c.value) {
+      const next = cuisines.filter((x) => x !== c.value);
+      setCuisines(next); syncUrl({ cuisines: next });
+    } else if (c.kind === "tag" && c.value) {
+      const next = tags.filter((x) => x !== c.value);
+      setTags(next); syncUrl({ tags: next });
+    } else if (c.kind === "source" && c.value) {
+      const next = sources.filter((x) => x !== c.value);
+      setSources(next); syncUrl({ sources: next });
+    }
   }
 
   function clearAll() {
@@ -171,6 +206,8 @@ export function RecipesBrowser({
     setTags([]);
     setSources([]);
     setFavOnly(false);
+    setReviewOnly(false);
+    syncUrl({ meal: null, diets: [], cuisines: [], tags: [], sources: [], fav: false, review: false });
     setQuery("");
     commitTextSearch("");
   }
@@ -304,7 +341,7 @@ export function RecipesBrowser({
         {reviewCount > 0 && (
           <button
             type="button"
-            onClick={() => setReviewOnly((v) => !v)}
+            onClick={() => { const n = !reviewOnly; setReviewOnly(n); syncUrl({ review: n }); }}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
               reviewOnly
@@ -347,18 +384,18 @@ export function RecipesBrowser({
           <div className="space-y-4 overflow-y-auto p-4 pb-8">
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground">Meal type</p>
-              <SegmentedControl value={meal} options={MEAL_TYPES as readonly string[]} onChange={(v) => setMeal(v)} />
+              <SegmentedControl value={meal} options={MEAL_TYPES as readonly string[]} onChange={(v) => { setMeal(v); syncUrl({ meal: v }); }} />
             </div>
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground">More filters</p>
               <div className="flex flex-wrap gap-2">
-                <Button variant={favOnly ? "default" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => setFavOnly((v) => !v)}>
+                <Button variant={favOnly ? "default" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => { const n = !favOnly; setFavOnly(n); syncUrl({ fav: n }); }}>
                   <Star className={cn("h-3.5 w-3.5", favOnly && "fill-current")} /> Favourites
                 </Button>
-                <MultiSelectPopover label="Diet" options={DIET_TYPES} selected={diets} onChange={setDiets} searchPlaceholder="Search diets..." />
-                <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={setCuisines} emptyMessage={allCuisines.length === 0 ? "No cuisines yet." : "No matches."} searchPlaceholder="Search cuisines..." />
-                <MultiSelectPopover label="Tags" options={allTags} selected={tags} onChange={setTags} emptyMessage={allTags.length === 0 ? "No tags yet." : "No matches."} searchPlaceholder="Search tags..." />
-                <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={setSources} emptyMessage={allSources.length === 0 ? "No sources yet." : "No matches."} searchPlaceholder="Search sources..." />
+                <MultiSelectPopover label="Diet" options={DIET_TYPES} selected={diets} onChange={(v) => { setDiets(v); syncUrl({ diets: v }); }} searchPlaceholder="Search diets..." />
+                <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={(v) => { setCuisines(v); syncUrl({ cuisines: v }); }} emptyMessage={allCuisines.length === 0 ? "No cuisines yet." : "No matches."} searchPlaceholder="Search cuisines..." />
+                <MultiSelectPopover label="Tags" options={allTags} selected={tags} onChange={(v) => { setTags(v); syncUrl({ tags: v }); }} emptyMessage={allTags.length === 0 ? "No tags yet." : "No matches."} searchPlaceholder="Search tags..." />
+                <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={(v) => { setSources(v); syncUrl({ sources: v }); }} emptyMessage={allSources.length === 0 ? "No sources yet." : "No matches."} searchPlaceholder="Search sources..." />
               </div>
             </div>
             {activeChips.length > 0 && (
@@ -386,7 +423,7 @@ export function RecipesBrowser({
         {reviewCount > 0 && (
           <button
             type="button"
-            onClick={() => setReviewOnly((v) => !v)}
+            onClick={() => { const n = !reviewOnly; setReviewOnly(n); syncUrl({ review: n }); }}
             className={cn(
               "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
               reviewOnly
@@ -401,15 +438,15 @@ export function RecipesBrowser({
             {reviewOnly && <X className="h-3 w-3 opacity-60" />}
           </button>
         )}
-        <SegmentedControl value={meal} options={MEAL_TYPES as readonly string[]} onChange={(v) => setMeal(v)} />
+        <SegmentedControl value={meal} options={MEAL_TYPES as readonly string[]} onChange={(v) => { setMeal(v); syncUrl({ meal: v }); }} />
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant={favOnly ? "default" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => setFavOnly((v) => !v)}>
+          <Button variant={favOnly ? "default" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => { const n = !favOnly; setFavOnly(n); syncUrl({ fav: n }); }}>
             <Star className={cn("h-3.5 w-3.5", favOnly && "fill-current")} /> Favourites
           </Button>
-          <MultiSelectPopover label="Diet" options={DIET_TYPES} selected={diets} onChange={setDiets} searchPlaceholder="Search diets..." />
-          <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={setCuisines} emptyMessage={allCuisines.length === 0 ? "No cuisines yet — add tags via the recipe editor." : "No matches."} searchPlaceholder="Search cuisines..." />
-          <MultiSelectPopover label="Tags" options={allTags} selected={tags} onChange={setTags} emptyMessage={allTags.length === 0 ? "No tags yet — add tags via the recipe editor." : "No matches."} searchPlaceholder="Search tags..." />
-          <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={setSources} emptyMessage={allSources.length === 0 ? "No sources yet — import a recipe from a URL to populate this." : "No matches."} searchPlaceholder="Search sources..." />
+          <MultiSelectPopover label="Diet" options={DIET_TYPES} selected={diets} onChange={(v) => { setDiets(v); syncUrl({ diets: v }); }} searchPlaceholder="Search diets..." />
+          <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={(v) => { setCuisines(v); syncUrl({ cuisines: v }); }} emptyMessage={allCuisines.length === 0 ? "No cuisines yet — add tags via the recipe editor." : "No matches."} searchPlaceholder="Search cuisines..." />
+          <MultiSelectPopover label="Tags" options={allTags} selected={tags} onChange={(v) => { setTags(v); syncUrl({ tags: v }); }} emptyMessage={allTags.length === 0 ? "No tags yet — add tags via the recipe editor." : "No matches."} searchPlaceholder="Search tags..." />
+          <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={(v) => { setSources(v); syncUrl({ sources: v }); }} emptyMessage={allSources.length === 0 ? "No sources yet — import a recipe from a URL to populate this." : "No matches."} searchPlaceholder="Search sources..." />
         </div>
         {hasAny ? (
           <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
