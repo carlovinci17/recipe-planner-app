@@ -77,6 +77,15 @@ const fileFilter = flags["file"]?.toLowerCase() ?? null;
 const forceReprocess = "force" in flags;
 // If set, use Opus instead of the cheaper bulk model (for complex layouts Sonnet misses).
 const useOpus = "use-opus" in flags;
+// If set, import only these page ranges from the --file target.
+// Format: "30-57,68-93,108-121"  Each range becomes a separate job.
+const pageRangesRaw = flags["pages"] ?? null;
+const pageRanges: Array<{ start: number; end: number; label: string }> | null = pageRangesRaw
+  ? pageRangesRaw.split(",").map((r: string) => {
+      const [s, e] = r.trim().split("-").map(Number);
+      return { start: s, end: e, label: r.trim() };
+    })
+  : null;
 
 if (!pdfDirArg || !householdIdArg || !createdByArg) {
   console.error(
@@ -328,56 +337,76 @@ let queued = 0;
 let skipped = 0;
 let failed = 0;
 
-async function processPdf(filePath: string, index: number, batchPrefix: string): Promise<void> {
+/**
+ * Queue one PDF (or one page-range slice of a PDF) for ingestion.
+ *
+ * @param range        Optional page range override — used when --pages is set.
+ *                     If provided, the job's external_file_id includes the range
+ *                     label so each range is tracked independently.
+ * @param sharedPath   Pre-uploaded storage path — pass this to skip the upload
+ *                     step when the same PDF is being queued for multiple ranges.
+ * @returns            The storage path used, so subsequent ranges can reuse it.
+ */
+async function processPdf(
+  filePath: string,
+  index: number,
+  batchPrefix: string,
+  range?: { start: number; end: number; label: string },
+  sharedPath?: string,
+): Promise<string | null> {
   const filename = path.basename(filePath);
-  // Show relative subfolder path in the UI so user can tell files apart across folders
   const relPath = path.relative(PDF_DIR, filePath);
+  const displayName = range ? `${relPath} [pages ${range.label}]` : relPath;
+  // Unique ID: include range label so each range is a separate job
+  const externalId = range ? `${filename}::${range.label}` : filename;
 
-  broadcast({ type: "file-start", index, file: relPath });
+  broadcast({ type: "file-start", index, file: displayName });
 
-  // ── Dedup: skip if already queued or processed ──────────────────────────
+  // ── Dedup ────────────────────────────────────────────────────────────────
   const { data: existing } = await supabase
     .from("ingestion_jobs")
     .select("id, status")
     .eq("household_id", HOUSEHOLD_ID)
-    .eq("external_file_id", filename)
+    .eq("external_file_id", externalId)
     .maybeSingle();
 
   if (existing && existing.status !== "failed" && !forceReprocess) {
     broadcast({
       type: "file-skipped",
       index,
-      file: relPath,
+      file: displayName,
       existingJobId: existing.id,
       existingStatus: existing.status,
     });
     skipped++;
-    return;
+    return sharedPath ?? null;
   }
-  // Delete existing row (failed or forced) so the new upload can proceed.
   if (existing) {
     await supabase.from("ingestion_jobs").delete().eq("id", existing.id);
   }
 
-  // ── Upload PDF to Storage ────────────────────────────────────────────────
-  let buffer: Buffer;
-  try {
-    buffer = fs.readFileSync(filePath);
-  } catch (err) {
-    broadcast({ type: "file-failed", index, file: relPath, stage: "read", error: (err as Error).message });
-    failed++;
-    return;
-  }
+  // ── Upload PDF to Storage (skip if already uploaded for a prior range) ───
+  let storagePath = sharedPath ?? "";
+  if (!sharedPath) {
+    let buffer: Buffer;
+    try {
+      buffer = fs.readFileSync(filePath);
+    } catch (err) {
+      broadcast({ type: "file-failed", index, file: displayName, stage: "read", error: (err as Error).message });
+      failed++;
+      return null;
+    }
 
-  const storagePath = `${HOUSEHOLD_ID}/${batchPrefix}/${filename}`;
-  const { error: uploadErr } = await supabase.storage
-    .from(BUCKET)
-    .upload(storagePath, buffer, { contentType: "application/pdf", upsert: false });
+    storagePath = `${HOUSEHOLD_ID}/${batchPrefix}/${filename}`;
+    const { error: uploadErr } = await supabase.storage
+      .from(BUCKET)
+      .upload(storagePath, buffer, { contentType: "application/pdf", upsert: false });
 
-  if (uploadErr) {
-    broadcast({ type: "file-failed", index, file: relPath, stage: "upload", error: uploadErr.message });
-    failed++;
-    return;
+    if (uploadErr) {
+      broadcast({ type: "file-failed", index, file: displayName, stage: "upload", error: uploadErr.message });
+      failed++;
+      return null;
+    }
   }
 
   // ── Create ingestion_jobs row ────────────────────────────────────────────
@@ -389,47 +418,54 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
       source_kind: "pdf" as const,
       storage_bucket: BUCKET,
       storage_path: storagePath,
-      external_file_id: filename,
+      external_file_id: externalId,
       status: "draft" as const,
     })
     .select("id")
     .single();
 
   if (jobErr || !job) {
-    await supabase.storage.from(BUCKET).remove([storagePath]);
-    broadcast({ type: "file-failed", index, file: relPath, stage: "job-create", error: jobErr?.message ?? "no row returned" });
+    if (!sharedPath) await supabase.storage.from(BUCKET).remove([storagePath]);
+    broadcast({ type: "file-failed", index, file: displayName, stage: "job-create", error: jobErr?.message ?? "no row returned" });
     failed++;
-    return;
+    return sharedPath ?? null;
   }
 
   // ── Fire Inngest event ───────────────────────────────────────────────────
+  const rangeStartPage = range ? range.start : (startPage > 1 ? startPage : undefined);
+  const rangeMaxPages = range ? (range.end - range.start + 1) : (maxPages || undefined);
+
   try {
     await inngest.send({
       name: "ingestion/file.uploaded" as const,
-      data: { jobId: job.id, householdId: HOUSEHOLD_ID, sourceKind: "pdf" as const, bulkMode: true, maxPages: maxPages || undefined, startPage: startPage > 1 ? startPage : undefined, useOpus: useOpus || undefined },
+      data: {
+        jobId: job.id,
+        householdId: HOUSEHOLD_ID,
+        sourceKind: "pdf" as const,
+        bulkMode: true,
+        maxPages: rangeMaxPages,
+        startPage: rangeStartPage,
+        useOpus: useOpus || undefined,
+      },
     });
   } catch (err) {
-    broadcast({ type: "file-failed", index, file: relPath, stage: "inngest", error: (err as Error).message });
+    broadcast({ type: "file-failed", index, file: displayName, stage: "inngest", error: (err as Error).message });
     failed++;
-    return;
+    return storagePath;
   }
 
-  // ── Insert drive_file_index placeholder ──────────────────────────────────
-  const sentinelId = `bulk:${crypto.createHash("sha1").update(filename).digest("hex")}`;
-  await supabase.from("drive_file_index").upsert(
-    {
-      household_id: HOUSEHOLD_ID,
-      drive_file_id: sentinelId,
-      file_name: filename,
-      folder_path: "",
-      mime_type: "application/pdf",
-      index_status: "pending",
-    },
-    { onConflict: "household_id,drive_file_id" },
-  );
+  // ── Drive index placeholder (one per filename, not per range) ────────────
+  if (!range || range.label === pageRanges?.[0]?.label) {
+    const sentinelId = `bulk:${crypto.createHash("sha1").update(filename).digest("hex")}`;
+    await supabase.from("drive_file_index").upsert(
+      { household_id: HOUSEHOLD_ID, drive_file_id: sentinelId, file_name: filename, folder_path: "", mime_type: "application/pdf", index_status: "pending" },
+      { onConflict: "household_id,drive_file_id" },
+    );
+  }
 
-  broadcast({ type: "file-queued", index, file: relPath, jobId: job.id });
+  broadcast({ type: "file-queued", index, file: displayName, jobId: job.id });
   queued++;
+  return storagePath;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -464,16 +500,33 @@ async function main() {
   const batchPrefix = `bulk-${Date.now()}`;
   const startTime = Date.now();
 
+  // When --pages is set, each file × each range = one entry in the work list
+  type WorkItem = { filePath: string; range?: { start: number; end: number; label: string } };
+  const workItems: WorkItem[] = pageRanges
+    ? allFiles.flatMap((f) => pageRanges.map((r) => ({ filePath: f, range: r })))
+    : allFiles.map((f) => ({ filePath: f }));
+
   broadcast({
     type: "start",
-    total: allFiles.length,
+    total: workItems.length,
     directory: path.resolve(PDF_DIR),
     household: HOUSEHOLD_ID,
   });
 
-  for (let i = 0; i < allFiles.length; i += CONCURRENCY) {
-    const batch = allFiles.slice(i, i + CONCURRENCY);
-    await Promise.all(batch.map((f, j) => processPdf(f, i + j, batchPrefix)));
+  // For --pages mode, the same PDF is uploaded once and reused across ranges.
+  const uploadedPaths = new Map<string, string>(); // filePath → storagePath
+
+  for (let i = 0; i < workItems.length; i += CONCURRENCY) {
+    const batch = workItems.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      batch.map(async ({ filePath, range }, j) => {
+        const sharedPath = range ? uploadedPaths.get(filePath) : undefined;
+        const resultPath = await processPdf(filePath, i + j, batchPrefix, range, sharedPath);
+        if (range && resultPath && !uploadedPaths.has(filePath)) {
+          uploadedPaths.set(filePath, resultPath);
+        }
+      }),
+    );
   }
 
   const durationMs = Date.now() - startTime;
