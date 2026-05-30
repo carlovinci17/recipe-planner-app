@@ -49,8 +49,23 @@ export function RecipeCard({
   return (
     <Link
       href={`/recipes/${recipe.id}`}
-      className="group flex overflow-hidden rounded-xl border bg-card shadow-sm transition-colors hover:bg-accent/40 flex-row items-stretch sm:flex-col"
+      className="group relative flex overflow-hidden rounded-xl border bg-card shadow-sm transition-colors hover:bg-accent/40 flex-row items-stretch sm:flex-col"
     >
+      {/* Favourite button — always visible, positioned relative to the whole card */}
+      <button
+        type="button"
+        onClick={toggleFavorite}
+        aria-label={isFavorite ? "Remove from favourites" : "Add to favourites"}
+        className={cn(
+          "absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition-colors",
+          isFavorite
+            ? "bg-amber-400 hover:bg-amber-500 text-white"
+            : "bg-background/80 hover:bg-amber-50 text-muted-foreground hover:text-amber-500 border border-border/60",
+        )}
+      >
+        <Star className={cn("h-3.5 w-3.5", isFavorite && "fill-current")} />
+      </button>
+
       {/* Desktop cover image — full width, hidden on mobile */}
       <div className="relative hidden aspect-[4/3] w-full overflow-hidden bg-muted sm:block">
         {cover ? (
@@ -74,19 +89,6 @@ export function RecipeCard({
             <SourcePill recipe={recipe} variant="overlay" size="xs" asLink={false} />
           </div>
         )}
-        <button
-          type="button"
-          onClick={toggleFavorite}
-          aria-label={isFavorite ? "Remove from favourites" : "Add to favourites"}
-          className={cn(
-            "absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full shadow-sm backdrop-blur-sm transition-colors",
-            isFavorite
-              ? "bg-amber-400/90 hover:bg-amber-500/90"
-              : "bg-background/80 hover:bg-background/95 opacity-0 group-hover:opacity-100",
-          )}
-        >
-          <Star className={cn("h-4 w-4", isFavorite ? "fill-white text-white" : "text-muted-foreground")} />
-        </button>
       </div>
 
       {/* Card body */}
@@ -147,19 +149,6 @@ export function RecipeCard({
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xl">🍽️</div>
         )}
-        <button
-          type="button"
-          onClick={toggleFavorite}
-          aria-label={isFavorite ? "Remove from favourites" : "Add to favourites"}
-          className={cn(
-            "absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full shadow-sm transition-colors",
-            isFavorite
-              ? "bg-amber-400/90"
-              : "bg-background/80 opacity-0 group-hover:opacity-100",
-          )}
-        >
-          <Star className={cn("h-3 w-3", isFavorite ? "fill-white text-white" : "text-muted-foreground")} />
-        </button>
       </div>
     </Link>
   );
