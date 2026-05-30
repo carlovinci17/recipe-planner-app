@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { AccountForm } from "./account-form";
+import { BackLink } from "@/components/ui/back-link";
 
 export const metadata = { title: "Account" };
 
@@ -19,6 +20,7 @@ export default async function AccountSettingsPage() {
 
   return (
     <div className="container max-w-xl space-y-6 py-6">
+      <BackLink href="/settings" label="Settings" />
       <h1 className="font-display text-2xl font-semibold">Account</h1>
       <Card>
         <CardHeader>

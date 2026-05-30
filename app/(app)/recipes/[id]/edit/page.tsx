@@ -3,6 +3,7 @@ import { recipeService } from "@/lib/services/recipe-service";
 import { getRecipePermissions } from "@/lib/services/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ReviewForm } from "../review/review-form";
+import { BackLink } from "@/components/ui/back-link";
 
 export const metadata = { title: "Edit recipe" };
 
@@ -45,6 +46,7 @@ export default async function EditRecipePage({ params }: { params: Promise<{ id:
 
   return (
     <div className="container max-w-5xl space-y-6 py-6">
+      <BackLink href={`/recipes/${id}`} label="Back to recipe" />
       <h1 className="font-display text-2xl font-semibold">Edit recipe</h1>
       <ReviewForm
         recipe={bundle.recipe}

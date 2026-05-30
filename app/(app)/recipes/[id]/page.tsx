@@ -14,6 +14,7 @@ import { RecipeGallery } from "@/components/recipes/recipe-gallery";
 import { SourcePill } from "@/components/recipes/source-pill";
 import { DeleteRecipeButton } from "./delete-recipe-button";
 import { RecipeRatings } from "./recipe-ratings";
+import { BackLink } from "@/components/ui/back-link";
 
 export default async function RecipeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -52,6 +53,7 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
 
   return (
     <div className="container max-w-4xl space-y-6 py-6">
+      <BackLink href="/recipes" label="Recipes" />
       <RecipeGallery
         recipe={recipe}
         title={recipe.title}

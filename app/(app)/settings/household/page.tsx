@@ -1,4 +1,5 @@
 import { getActiveHousehold } from "@/lib/services/active-household";
+import { BackLink } from "@/components/ui/back-link";
 import { householdService } from "@/lib/services/household-service";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -13,6 +14,7 @@ export default async function HouseholdSettingsPage() {
 
   return (
     <div className="container max-w-2xl space-y-6 py-6">
+      <BackLink href="/settings" label="Settings" />
       <div>
         <h1 className="font-display text-2xl font-semibold">{household.name}</h1>
         <p className="text-sm text-muted-foreground">Manage household members and invites.</p>

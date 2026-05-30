@@ -11,6 +11,7 @@ import { ImportPhoto } from "./import-photo";
 import { ImportBulk } from "./import-bulk";
 import { DriveIndexManager } from "./drive-index-manager";
 import { ActiveJobs } from "./active-jobs";
+import { BackLink } from "@/components/ui/back-link";
 
 export const metadata = { title: "Import recipe" };
 
@@ -34,6 +35,7 @@ export default async function ImportPage() {
 
   return (
     <div className="container max-w-3xl space-y-6 py-6">
+      <BackLink href="/recipes" label="Recipes" />
       <div>
         <h1 className="font-display text-2xl font-semibold">Import a recipe</h1>
         <p className="text-sm text-muted-foreground">

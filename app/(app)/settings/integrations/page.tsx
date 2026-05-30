@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AlertTriangle, Cloud } from "lucide-react";
+import { BackLink } from "@/components/ui/back-link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +36,7 @@ export default async function IntegrationsPage({
 
   return (
     <div className="container max-w-2xl space-y-6 py-6">
+      <BackLink href="/settings" label="Settings" />
       <div>
         <h1 className="font-display text-2xl font-semibold">Integrations</h1>
         <p className="text-sm text-muted-foreground">
