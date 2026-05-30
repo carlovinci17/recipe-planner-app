@@ -73,6 +73,8 @@ const maxPages = parseInt(flags["max-pages"] ?? "50", 10) || 0;
 const startPage = parseInt(flags["start-page"] ?? "1", 10) || 1;
 // If set, only process files whose name contains this string (case-insensitive).
 const fileFilter = flags["file"]?.toLowerCase() ?? null;
+// If set, re-process files even if a non-failed job already exists for them.
+const forceReprocess = "force" in flags;
 
 if (!pdfDirArg || !householdIdArg || !createdByArg) {
   console.error(
@@ -339,7 +341,7 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
     .eq("external_file_id", filename)
     .maybeSingle();
 
-  if (existing && existing.status !== "failed") {
+  if (existing && existing.status !== "failed" && !forceReprocess) {
     broadcast({
       type: "file-skipped",
       index,
@@ -350,8 +352,8 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
     skipped++;
     return;
   }
-  // Failed jobs are re-queued — delete the old row so the new upload can proceed.
-  if (existing?.status === "failed") {
+  // Delete existing row (failed or forced) so the new upload can proceed.
+  if (existing) {
     await supabase.from("ingestion_jobs").delete().eq("id", existing.id);
   }
 

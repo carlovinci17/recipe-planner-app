@@ -216,6 +216,11 @@ export const processUpload = inngest.createFunction(
 
     const SKIM_PAGE_THRESHOLD = 3;
     const pagesFromStart = startOffset > 0 ? pageImagePaths.slice(startOffset) : pageImagePaths;
+    if (pagesFromStart.length === 0) {
+      throw new NonRetriableError(
+        `startPage (${event.data.startPage}) exceeds this PDF's page count (${pageImagePaths.length} pages)`,
+      );
+    }
     let pagesToExtract = bulkMode && bulkMaxPages
       ? pagesFromStart.slice(0, bulkMaxPages)
       : pagesFromStart;
