@@ -411,9 +411,11 @@ async function processPdf(
     storagePath = `${HOUSEHOLD_ID}/${batchPrefix}/${filename}`;
     const { error: uploadErr } = await supabase.storage
       .from(BUCKET)
-      .upload(storagePath, buffer, { contentType: "application/pdf", upsert: false });
+      .upload(storagePath, buffer, { contentType: "application/pdf", upsert: true });
 
-    if (uploadErr) {
+    // upsert:true means "already exists" is fine (same PDF, same content).
+    // Only fail on genuine errors.
+    if (uploadErr && !uploadErr.message.includes("already exists")) {
       broadcast({ type: "file-failed", index, file: displayName, stage: "upload", error: uploadErr.message });
       failed++;
       return null;
@@ -525,20 +527,49 @@ async function main() {
     household: HOUSEHOLD_ID,
   });
 
-  // For --pages mode, the same PDF is uploaded once and reused across ranges.
+  // For --pages mode, process ranges for the SAME file sequentially so the
+  // first range uploads the PDF and subsequent ranges receive sharedPath.
+  // Different files can still run concurrently.
   const uploadedPaths = new Map<string, string>(); // filePath → storagePath
 
-  for (let i = 0; i < workItems.length; i += CONCURRENCY) {
-    const batch = workItems.slice(i, i + CONCURRENCY);
-    await Promise.all(
-      batch.map(async ({ filePath, range }, j) => {
-        const sharedPath = range ? uploadedPaths.get(filePath) : undefined;
-        const resultPath = await processPdf(filePath, i + j, batchPrefix, range, sharedPath);
-        if (range && resultPath && !uploadedPaths.has(filePath)) {
-          uploadedPaths.set(filePath, resultPath);
-        }
-      }),
-    );
+  if (pageRanges) {
+    // Group work items by filePath, process each file's ranges in order.
+    const byFile = new Map<string, WorkItem[]>();
+    for (const item of workItems) {
+      const list = byFile.get(item.filePath) ?? [];
+      list.push(item);
+      byFile.set(item.filePath, list);
+    }
+    const files = Array.from(byFile.entries());
+    for (let fi = 0; fi < files.length; fi += CONCURRENCY) {
+      await Promise.all(
+        files.slice(fi, fi + CONCURRENCY).map(async ([filePath, items]) => {
+          for (let ri = 0; ri < items.length; ri++) {
+            const { range } = items[ri]!;
+            const sharedPath = uploadedPaths.get(filePath);
+            const resultPath = await processPdf(
+              filePath,
+              workItems.indexOf(items[ri]!),
+              batchPrefix,
+              range,
+              sharedPath,
+            );
+            if (resultPath && !uploadedPaths.has(filePath)) {
+              uploadedPaths.set(filePath, resultPath);
+            }
+          }
+        }),
+      );
+    }
+  } else {
+    for (let i = 0; i < workItems.length; i += CONCURRENCY) {
+      const batch = workItems.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        batch.map(({ filePath, range }, j) =>
+          processPdf(filePath, i + j, batchPrefix, range, undefined),
+        ),
+      );
+    }
   }
 
   const durationMs = Date.now() - startTime;
