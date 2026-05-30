@@ -407,8 +407,8 @@ export function PlannerGrid({
       />
 
       <Dialog open={!!pickerCell} onOpenChange={(open) => !open && setPickerCell(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="flex max-h-[85vh] flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Add a meal</DialogTitle>
             <DialogDescription>
               {pickerCell
@@ -650,13 +650,14 @@ function RecipePicker({
   );
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
       <Input
         placeholder="Search your recipes..."
         value={query}
         onChange={(e) => setQuery(e.target.value)}
+        className="shrink-0"
       />
-      <div className="max-h-72 space-y-1 overflow-y-auto rounded-md border">
+      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-md border">
         {filtered.length === 0 ? (
           <div className="p-4 text-sm text-muted-foreground">No recipes match.</div>
         ) : (
@@ -678,7 +679,7 @@ function RecipePicker({
           ))
         )}
       </div>
-      <div className="space-y-1.5">
+      <div className="shrink-0 space-y-1.5">
         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Or quick-add</div>
         <div className="flex gap-2">
           <Input
