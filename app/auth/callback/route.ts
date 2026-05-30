@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   }
 
   const target = url.clone();
-  target.pathname = next.startsWith("/") ? next : "/dashboard";
+  target.pathname = next.startsWith("/") ? next : "/recipes";
   target.search = "";
   return NextResponse.redirect(target);
 }

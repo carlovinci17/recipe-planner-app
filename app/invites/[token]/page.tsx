@@ -48,11 +48,11 @@ export default async function InvitePage({
           a new one.
         </p>
         <Button className="mt-6" asChild>
-          <Link href="/dashboard">Go to dashboard</Link>
+          <Link href="/recipes">Go to recipes</Link>
         </Button>
       </div>
     );
   }
 
-  redirect("/dashboard");
+  redirect("/recipes");
 }

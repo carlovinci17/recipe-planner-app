@@ -21,7 +21,7 @@ export function OnboardingForm() {
     setBusy(false);
     if (result.ok) {
       toast.success("Household created");
-      router.push("/dashboard");
+      router.push("/recipes");
       router.refresh();
     } else {
       toast.error(result.error ?? "Could not create household");

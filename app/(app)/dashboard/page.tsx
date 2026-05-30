@@ -9,7 +9,7 @@ import { plannerService } from "@/lib/services/planner-service";
 import { shoppingService } from "@/lib/services/shopping-service";
 import { RecipeCard } from "@/components/recipes/recipe-card";
 
-export const metadata = { title: "Dashboard" };
+export const metadata = { title: "Home" };
 
 export default async function DashboardPage() {
   const household = await getActiveHousehold();

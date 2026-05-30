@@ -13,7 +13,7 @@ export default async function OnboardingPage() {
   if (!user) redirect("/login");
 
   const memberships = await householdService.listForCurrentUser();
-  if (memberships.length > 0) redirect("/dashboard");
+  if (memberships.length > 0) redirect("/recipes");
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background p-4">
