@@ -127,6 +127,19 @@ export const processUpload = inngest.createFunction(
       throw new NonRetriableError("Job missing storage location");
     }
 
+    // Bulk-mode flags derived from the event. Declared here (before any steps)
+    // so they're available inside the download-and-rasterize step callback.
+    const bulkMode = event.data.bulkMode === true;
+    const useOpus = event.data.useOpus === true;
+    const bulkMaxPages = event.data.maxPages; // undefined = no cap
+    // startPage is 1-based; convert to 0-based slice offset
+    const startOffset = Math.max(0, (event.data.startPage ?? 1) - 1);
+    // Rendering cap: must cover startOffset + extraction range so pages beyond
+    // the default 25 are available. Bulk with no extraction cap → no render cap.
+    const renderMaxPages = bulkMode
+      ? (bulkMaxPages ? startOffset + bulkMaxPages : undefined)
+      : 100;
+
     // ── 2-3. Download + rasterize (combined; Inngest can't checkpoint a Buffer) ──
     const pageImagePaths = await step.run("download-and-rasterize", async () => {
       const originalBuffer = await ingestionStorage.downloadFile({
@@ -138,13 +151,6 @@ export const processUpload = inngest.createFunction(
         job.source_kind === "pdf" || job.storage_path!.toLowerCase().endsWith(".pdf");
 
       if (isPdf) {
-        // Rendering cap must cover at least startOffset + extraction range so
-        // pages beyond the default 25 are actually available for the AI.
-        // Bulk with no extraction cap → render all pages (undefined = no cap).
-        // Interactive imports → cap at 100 (generous for any cookbook).
-        const renderMaxPages = bulkMode
-          ? (bulkMaxPages ? startOffset + bulkMaxPages : undefined)
-          : 100;
         const images = await pdfBufferToPageImages({ buffer: originalBuffer, maxPages: renderMaxPages });
         const paths: string[] = [];
         for (let i = 0; i < images.length; i++) {
@@ -216,12 +222,6 @@ export const processUpload = inngest.createFunction(
     // Bulk-mode jobs (set by the local import script) skip the skim pause so
     // they don't wait 24h for user input. They also cap page count and use a
     // cheaper model (ANTHROPIC_MODEL_BULK) to reduce cost and processing time.
-    const bulkMode = event.data.bulkMode === true;
-    const useOpus = event.data.useOpus === true;
-    const bulkMaxPages = event.data.maxPages; // undefined = no cap
-    // startPage is 1-based; convert to 0-based slice offset
-    const startOffset = Math.max(0, (event.data.startPage ?? 1) - 1);
-
     const SKIM_PAGE_THRESHOLD = 3;
     const pagesFromStart = startOffset > 0 ? pageImagePaths.slice(startOffset) : pageImagePaths;
     if (pagesFromStart.length === 0) {
