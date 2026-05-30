@@ -338,7 +338,7 @@ export function PlannerGrid({
       </div>
 
       <div className="overflow-x-auto">
-        <div className="grid min-w-[900px] grid-cols-[120px_repeat(7,1fr)] gap-2">
+        <div className="grid min-w-[640px] grid-cols-[72px_repeat(7,1fr)] gap-1.5">
           <div />
           {dates.map((d) => (
             <div key={d} className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -357,8 +357,8 @@ export function PlannerGrid({
               {dates.map((d) => {
                 const cellEntries = grouped.get(`${d}|${slot.id}`) ?? [];
                 return (
-                  <Card key={`${d}-${slot.id}`} className="min-h-[88px]">
-                    <CardContent className="flex flex-col gap-1.5 p-2">
+                  <Card key={`${d}-${slot.id}`} className="min-h-[72px]">
+                    <CardContent className="flex flex-wrap gap-1 p-1.5">
                       {cellEntries.map((entry) => (
                         <PlannerEntry
                           key={entry.id}
@@ -519,38 +519,39 @@ function PlannerEntry({
   });
   const focalStyle = entry.recipe ? coverObjectPositionStyle(entry.recipe) : undefined;
 
-  return (
-    <div className="group flex items-start gap-2 rounded-md border bg-background p-1.5 text-xs">
-      {entry.recipe ? (
-        <div className="h-9 w-9 shrink-0 overflow-hidden rounded bg-muted">
-          {cover ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={cover} alt="" style={focalStyle} className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-base">🍽️</div>
-          )}
-        </div>
-      ) : null}
-      <div className="min-w-0 flex-1 py-0.5">
-        <div className="truncate font-medium leading-tight">{title}</div>
-        {entry.recipe ? (
-          <Link
-            href={`/recipes/${entry.recipe.id}`}
-            className="text-[10px] text-muted-foreground hover:underline"
-          >
-            View recipe
-          </Link>
-        ) : null}
+  const inner = (
+    <div className="group relative aspect-square w-full overflow-hidden rounded-md border bg-muted">
+      {/* Cover image or placeholder */}
+      {cover ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={cover} alt="" style={focalStyle} className="h-full w-full object-cover" />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-xl">🍽️</div>
+      )}
+
+      {/* Title overlay at bottom */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-3">
+        <p className="truncate text-[10px] font-medium leading-tight text-white">{title}</p>
       </div>
+
+      {/* Remove button — top-right on hover */}
       <button
         type="button"
-        className="shrink-0 self-start opacity-0 transition-opacity group-hover:opacity-100"
+        className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
         onClick={onRemove}
         aria-label="Remove"
       >
-        <Trash2 className="h-3 w-3 text-muted-foreground" />
+        <Trash2 className="h-3 w-3 text-white" />
       </button>
     </div>
+  );
+
+  return entry.recipe ? (
+    <Link href={`/recipes/${entry.recipe.id}`} className="block w-[calc(50%-2px)] min-w-[48px]">
+      {inner}
+    </Link>
+  ) : (
+    <div className="w-[calc(50%-2px)] min-w-[48px]">{inner}</div>
   );
 }
 
