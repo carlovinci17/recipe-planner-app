@@ -210,10 +210,10 @@ export const processUpload = inngest.createFunction(
     // they don't wait 24h for user input. They also cap page count and use a
     // cheaper model (ANTHROPIC_MODEL_BULK) to reduce cost and processing time.
     const bulkMode = event.data.bulkMode === true;
-    const bulkMaxPages = event.data.maxPages ?? 25;
+    const bulkMaxPages = event.data.maxPages; // undefined = no cap
 
     const SKIM_PAGE_THRESHOLD = 3;
-    let pagesToExtract = bulkMode
+    let pagesToExtract = bulkMode && bulkMaxPages
       ? pageImagePaths.slice(0, bulkMaxPages)
       : pageImagePaths;
     // null when no skim ran (short docs go direct to deep extract).
