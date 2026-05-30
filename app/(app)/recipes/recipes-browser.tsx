@@ -2,9 +2,9 @@
 
 import { useDeferredValue, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { CheckSquare, SlidersHorizontal, Search, Star, Trash2, Upload, X } from "lucide-react";
+import { CheckSquare, SlidersHorizontal, Star, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
-import { Input } from "@/components/ui/input";
+import { RecipeSearchCombobox } from "@/components/recipes/recipe-search-combobox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -290,18 +290,14 @@ export function RecipesBrowser({
   return (
     <div className="space-y-4">
       {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commitTextSearch((e.target as HTMLInputElement).value);
-          }}
-          placeholder="Search recipes, ingredients, descriptions..."
-          className="pl-9"
-        />
-      </div>
+      <RecipeSearchCombobox
+        recipes={recipes}
+        initialQuery={query}
+        onSearch={(val) => {
+          setQuery(val);
+          commitTextSearch(val);
+        }}
+      />
 
       {/* ── Mobile: Filters button → bottom sheet ── */}
       <div className="flex items-center gap-2 sm:hidden">
