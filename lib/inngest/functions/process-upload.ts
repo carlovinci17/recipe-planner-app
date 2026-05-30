@@ -648,6 +648,17 @@ export const processUpload = inngest.createFunction(
     );
 
     if (persisted.length === 0) {
+      // If every failure is a FK violation on ingestion_job_id, the job row
+      // was deleted externally (e.g. --force re-run) while this function was
+      // still in-flight. Exit silently — the new run will handle it.
+      const allJobDeleted = failures.every(
+        (f) => f.error?.includes("recipes_ingestion_job_id_fkey"),
+      );
+      if (allJobDeleted) {
+        logger.warn({ jobId }, "job row deleted mid-flight (force reset) — exiting silently");
+        return { jobId, recipesFound: 0, skipped: "job_deleted" };
+      }
+
       // Show the actual reasons — much more useful than "All recipe
       // inserts failed". If all failures share the same error (typical
       // when a column is missing), dedupe to keep the message tight.
