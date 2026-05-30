@@ -143,7 +143,7 @@ export function RecipesBrowser({
       }
       return true;
     });
-  }, [recipes, favOnly, meal, diets, cuisines, tags, sources]);
+  }, [recipes, reviewOnly, favOnly, meal, diets, cuisines, tags, sources]);
 
   function commitTextSearch(value: string) {
     const next = new URLSearchParams();
