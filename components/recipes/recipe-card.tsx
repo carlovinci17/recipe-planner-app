@@ -1,13 +1,15 @@
 "use client";
 
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Clock, Star, Users } from "lucide-react";
 import type { RecipeListItem } from "@/lib/services/recipe-service";
 import { Badge } from "@/components/ui/badge";
-import { formatMinutes } from "@/lib/utils";
+import { formatMinutes, cn } from "@/lib/utils";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
 import { resolveCoverImage, coverObjectPositionStyle } from "@/lib/recipes/cover-image";
 import { SourcePill } from "@/components/recipes/source-pill";
+import { setRecipeFavoriteAction } from "@/app/(app)/recipes/[id]/actions";
 
 export function RecipeCard({
   recipe,
@@ -23,6 +25,8 @@ export function RecipeCard({
    */
   rating?: { avg: number; count: number };
 }) {
+  const [isFavorite, setIsFavorite] = useState(recipe.is_favorite);
+  const [, startFav] = useTransition();
   const coverRef = resolveCoverImage(recipe);
   // Listing card thumbs: cards are ~280–320px wide; 640 covers 2× DPI
   // with room to spare. Supabase's transform pipeline caches the variant.
@@ -33,6 +37,14 @@ export function RecipeCard({
   });
   const totalMin = (recipe.prep_time_min ?? 0) + (recipe.cook_time_min ?? 0);
   const focalStyle = coverObjectPositionStyle(recipe);
+
+  function toggleFavorite(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = !isFavorite;
+    setIsFavorite(next);
+    startFav(() => setRecipeFavoriteAction(recipe.id, next));
+  }
 
   return (
     <Link
@@ -62,11 +74,19 @@ export function RecipeCard({
             <SourcePill recipe={recipe} variant="overlay" size="xs" asLink={false} />
           </div>
         )}
-        {recipe.is_favorite ? (
-          <div className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-background/90 shadow-sm backdrop-blur-sm">
-            <Star className="h-4 w-4 fill-amber-500 text-amber-500" aria-label="Favourite" />
-          </div>
-        ) : null}
+        <button
+          type="button"
+          onClick={toggleFavorite}
+          aria-label={isFavorite ? "Remove from favourites" : "Add to favourites"}
+          className={cn(
+            "absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full shadow-sm backdrop-blur-sm transition-colors",
+            isFavorite
+              ? "bg-amber-400/90 hover:bg-amber-500/90"
+              : "bg-background/80 hover:bg-background/95 opacity-0 group-hover:opacity-100",
+          )}
+        >
+          <Star className={cn("h-4 w-4", isFavorite ? "fill-white text-white" : "text-muted-foreground")} />
+        </button>
       </div>
 
       {/* Card body */}
@@ -127,11 +147,19 @@ export function RecipeCard({
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xl">🍽️</div>
         )}
-        {recipe.is_favorite ? (
-          <div className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/90 shadow-sm">
-            <Star className="h-3 w-3 fill-amber-500 text-amber-500" aria-label="Favourite" />
-          </div>
-        ) : null}
+        <button
+          type="button"
+          onClick={toggleFavorite}
+          aria-label={isFavorite ? "Remove from favourites" : "Add to favourites"}
+          className={cn(
+            "absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full shadow-sm transition-colors",
+            isFavorite
+              ? "bg-amber-400/90"
+              : "bg-background/80 opacity-0 group-hover:opacity-100",
+          )}
+        >
+          <Star className={cn("h-3 w-3", isFavorite ? "fill-white text-white" : "text-muted-foreground")} />
+        </button>
       </div>
     </Link>
   );
