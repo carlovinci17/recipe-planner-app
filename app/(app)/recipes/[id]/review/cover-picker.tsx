@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { ArrowLeft, Check, Crop, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Check, Crop, Image as ImageIcon, Scissors } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
 import { cn } from "@/lib/utils";
 import { setRecipeSourcePageCoverAction } from "../actions";
 import { FocalPointPicker } from "./focal-point-picker";
+import { CropTool } from "./crop-tool";
 
-type CoverStep = "select" | "focus";
+type CoverStep = "select" | "crop" | "focus";
 
 /**
  * The actual thumbnail-grid UI. Extracted so it can be reused outside the
@@ -98,30 +99,28 @@ export function CoverPickerGrid({
         step={step}
         canAdvance={selected !== null}
         onStep={(next) => {
-          if (next === "focus" && selected === null) return;
+          if ((next === "crop" || next === "focus") && selected === null) return;
           setStep(next);
         }}
       />
 
-      {/* Horizontal slider. Two equal-width panels live inside a track that
-          translates -50% on step 2. `overflow-hidden` clips the off-screen
-          panel; `transition-transform` carries the slide animation. */}
+      {/* Horizontal slider — three equal panels, translate by 0 / -33% / -66% */}
       <div className="overflow-hidden">
         <div
           className={cn(
-            "flex w-[200%] transition-transform duration-300 ease-out",
-            step === "focus" ? "-translate-x-1/2" : "translate-x-0",
+            "flex w-[300%] transition-transform duration-300 ease-out",
+            step === "select" && "translate-x-0",
+            step === "crop"   && "-translate-x-1/3",
+            step === "focus"  && "-translate-x-2/3",
           )}
         >
-          {/* Step 1 — image grid */}
-          <div className="w-1/2 shrink-0 pr-2">
+          {/* Step 1 — page thumbnail grid */}
+          <div className="w-1/3 shrink-0 pr-2">
             <div className="space-y-3">
               {hasUserUploads ? (
                 <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-                  You have uploaded photos for this recipe — those take priority
-                  over source pages as the cover. Remove or reorder them in the
-                  uploader on the review page if you want a source page to show
-                  instead.
+                  You have uploaded photos — those take priority over source pages.
+                  Remove them in the uploader if you want a source page to show instead.
                 </div>
               ) : null}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -137,7 +136,17 @@ export function CoverPickerGrid({
                 ))}
               </div>
               {selected ? (
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setStep("crop")}
+                    disabled={pending}
+                  >
+                    <Scissors className="mr-1.5 h-3.5 w-3.5" />
+                    Crop image
+                  </Button>
                   <Button
                     type="button"
                     size="sm"
@@ -151,14 +160,44 @@ export function CoverPickerGrid({
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  Pick a page to continue to framing.
+                  Pick a page to crop or adjust framing.
                 </p>
               )}
             </div>
           </div>
 
-          {/* Step 2 — focal point picker for the chosen page */}
-          <div className="w-1/2 shrink-0 pl-2">
+          {/* Step 2 — crop tool */}
+          <div className="w-1/3 shrink-0 px-2">
+            <div className="space-y-3 rounded-md border bg-background p-3">
+              <div className="flex items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setStep("select")}
+                  className="-ml-2 h-8"
+                >
+                  <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+                  Back
+                </Button>
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {selectedLabel ? `Crop · ${selectedLabel}` : "Crop"}
+                </div>
+              </div>
+              {selected && step === "crop" ? (
+                <CropTool
+                  recipeId={recipeId}
+                  sourcePath={selected}
+                  onSaved={() => setStep("focus")}
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">Select a page first.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Step 3 — focal point picker */}
+          <div className="w-1/3 shrink-0 pl-2">
             <div className="space-y-3 rounded-md border bg-background p-3">
               <div className="flex items-center justify-between gap-2">
                 <Button
@@ -210,14 +249,22 @@ function StepBar({
       <StepChip
         active={step === "select"}
         index={1}
-        label="Select image"
+        label="Select page"
         onClick={() => onStep("select")}
       />
       <div className="h-px flex-1 bg-border" />
       <StepChip
-        active={step === "focus"}
+        active={step === "crop"}
         index={2}
-        label="Adjust framing"
+        label="Crop"
+        disabled={!canAdvance}
+        onClick={() => onStep("crop")}
+      />
+      <div className="h-px flex-1 bg-border" />
+      <StepChip
+        active={step === "focus"}
+        index={3}
+        label="Framing"
         disabled={!canAdvance}
         onClick={() => onStep("focus")}
       />

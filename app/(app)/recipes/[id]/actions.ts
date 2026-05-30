@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { recipeService } from "@/lib/services/recipe-service";
 import { ratingService } from "@/lib/services/rating-service";
+import { ingestionStorage } from "@/lib/ingestion/storage";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 
 export async function setRecipeFavoriteAction(recipeId: string, value: boolean) {
@@ -186,6 +188,73 @@ export async function removeRecipeImageAction(input: z.infer<typeof PathSchema>)
     return { ok: true as const };
   } catch (err) {
     logger.error({ err }, "removeRecipeImageAction failed");
+    return { ok: false as const, error: (err as Error).message };
+  }
+}
+
+const CropCoverSchema = z.object({
+  recipeId: z.string().uuid(),
+  sourcePath: z.string().min(1),
+  /** Crop region as percentages (0–100) of the source image dimensions. */
+  cropX: z.number().min(0).max(100),
+  cropY: z.number().min(0).max(100),
+  cropWidth: z.number().min(1).max(100),
+  cropHeight: z.number().min(1).max(100),
+});
+
+/**
+ * Crop a region from a source page image, optimise it via Sharp, store it
+ * in recipe-uploads, and set it as the recipe's cover.
+ */
+export async function cropAndSaveCoverAction(input: z.infer<typeof CropCoverSchema>) {
+  const parsed = CropCoverSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid input" };
+  const { recipeId, sourcePath, cropX, cropY, cropWidth, cropHeight } = parsed.data;
+
+  try {
+    const sharp = (await import("sharp")).default;
+
+    // Download source page image from Storage
+    const buffer = await ingestionStorage.downloadFile({
+      bucket: ingestionStorage.uploadsBucket,
+      path: sourcePath,
+    });
+
+    // Get actual pixel dimensions so we can convert % → px
+    const meta = await sharp(buffer).metadata();
+    const W = meta.width ?? 1200;
+    const H = meta.height ?? 1600;
+
+    const left = Math.max(0, Math.round((cropX / 100) * W));
+    const top = Math.max(0, Math.round((cropY / 100) * H));
+    const width = Math.min(W - left, Math.max(1, Math.round((cropWidth / 100) * W)));
+    const height = Math.min(H - top, Math.max(1, Math.round((cropHeight / 100) * H)));
+
+    const cropped = await sharp(buffer)
+      .extract({ left, top, width, height })
+      .resize({ width: 1200, withoutEnlargement: true })
+      .jpeg({ quality: 82, mozjpeg: true })
+      .toBuffer();
+
+    // Upload the cropped image alongside the source pages
+    const supabase = createSupabaseAdmin();
+    const croppedPath = sourcePath.replace(/\/[^/]+$/, `/cover-crop-${Date.now()}.jpg`);
+    const { error: upErr } = await supabase.storage
+      .from(ingestionStorage.uploadsBucket)
+      .upload(croppedPath, cropped, { contentType: "image/jpeg", upsert: true });
+    if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+
+    // Point the recipe's cover at the new cropped image, reset focal to center
+    await recipeService.update(recipeId, {
+      cover_image_path: croppedPath,
+      cover_focal_x: 50,
+      cover_focal_y: 50,
+    });
+
+    revalidatePath(`/recipes/${recipeId}`);
+    return { ok: true as const, croppedPath };
+  } catch (err) {
+    logger.error({ err }, "cropAndSaveCoverAction failed");
     return { ok: false as const, error: (err as Error).message };
   }
 }
