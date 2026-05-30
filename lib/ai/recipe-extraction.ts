@@ -30,6 +30,8 @@ import type { AIChatMessage, StructuredCallResult } from "./types";
 export async function extractRecipeFromImages(args: {
   imageUrls: string[];
   hint?: string;
+  /** Override the model. Defaults to ANTHROPIC_MODEL_VISION (Opus). Pass ANTHROPIC_MODEL_BULK for bulk imports. */
+  model?: string;
 }): Promise<StructuredCallResult<RecipeExtractionResult>> {
   const userParts: AIChatMessage["content"] = [
     {
@@ -52,7 +54,7 @@ export async function extractRecipeFromImages(args: {
   return ai.callStructured({
     schema: RecipeExtractionResultSchema,
     schemaName: "recipe_extraction",
-    model: env.ANTHROPIC_MODEL_VISION,
+    model: args.model ?? env.ANTHROPIC_MODEL_VISION,
     // Recipe pages from messy scans benefit from adaptive thinking.
     // Effort=medium balances accuracy with cost on multi-page PDFs.
     thinking: true,

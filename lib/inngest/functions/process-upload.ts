@@ -9,6 +9,7 @@ import { normalizeExtractedRecipe } from "@/lib/ingestion/normalize";
 import { persistDraftRecipe } from "@/lib/ingestion/persist-recipe";
 import type { ExtractedRecipe } from "@/lib/ai/schemas";
 import { logger } from "@/lib/logger";
+import { env } from "@/lib/env";
 import {
   extractJobIdFromFailureEvent,
   markIngestionJobFailed,
@@ -205,8 +206,16 @@ export const processUpload = inngest.createFunction(
     //
     // Skipped for short docs (single image, 1–2 pages) where the overhead
     // isn't worth the round trip.
+    // Bulk-mode jobs (set by the local import script) skip the skim pause so
+    // they don't wait 24h for user input. They also cap page count and use a
+    // cheaper model (ANTHROPIC_MODEL_BULK) to reduce cost and processing time.
+    const bulkMode = event.data.bulkMode === true;
+    const bulkMaxPages = event.data.maxPages ?? 25;
+
     const SKIM_PAGE_THRESHOLD = 3;
-    let pagesToExtract = pageImagePaths;
+    let pagesToExtract = bulkMode
+      ? pageImagePaths.slice(0, bulkMaxPages)
+      : pageImagePaths;
     // null when no skim ran (short docs go direct to deep extract).
     // Array of normalized titles when skim ran — used after extraction to
     // drop unrelated recipes the model returned from the same pages.
@@ -219,7 +228,7 @@ export const processUpload = inngest.createFunction(
       url: null,
     };
 
-    if (pageImagePaths.length >= SKIM_PAGE_THRESHOLD) {
+    if (pageImagePaths.length >= SKIM_PAGE_THRESHOLD && !bulkMode) {
       const skim = await step.run("skim-recipes", async () => {
         const urls = await ingestionStorage.signedUrls({
           bucket: ingestionStorage.uploadsBucket,
@@ -364,6 +373,7 @@ export const processUpload = inngest.createFunction(
             chunks.length > 1
               ? `These are pages ${chunk[0]} – ${chunk[chunk.length - 1]} (chunk ${ci + 1} of ${chunks.length}) from a multi-page document. Some recipes may span chunk boundaries; extract what's visible here.`
               : undefined,
+          model: bulkMode ? env.ANTHROPIC_MODEL_BULK : undefined,
         });
         return {
           recipes: result.data.recipes ?? [],

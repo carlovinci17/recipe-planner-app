@@ -12,6 +12,10 @@ type Events = {
       jobId: string;
       householdId: string;
       sourceKind: RecipeSourceKind;
+      /** Skip the skim pause and use the cheaper bulk model. Set by the local import script. */
+      bulkMode?: boolean;
+      /** Max pages to extract in bulk mode (default 25). */
+      maxPages?: number;
     };
   };
   "ingestion/url.requested": {

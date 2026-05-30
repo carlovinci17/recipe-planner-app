@@ -89,6 +89,12 @@ export function RecipesBrowser({
   const [confirmBulkDeleteOpen, setConfirmBulkDeleteOpen] = useState(false);
   const [bulkDeleting, startBulkDelete] = useTransition();
   const [bulkPublishing, startBulkPublish] = useTransition();
+  const [reviewOnly, setReviewOnly] = useState(false);
+
+  const reviewCount = useMemo(
+    () => recipes.filter((r) => r.status === "needs_review").length,
+    [recipes],
+  );
 
   const [meal, setMeal] = useState<string | null>(null);
   const [diets, setDiets] = useState<string[]>([]);
@@ -123,6 +129,7 @@ export function RecipesBrowser({
 
   const filtered = useMemo(() => {
     return recipes.filter((r) => {
+      if (reviewOnly && r.status !== "needs_review") return false;
       if (favOnly && !r.is_favorite) return false;
       if (meal && !r.meal_types.includes(meal)) return false;
       // Multi-select uses OR semantics within a category — recipe matches if
@@ -298,6 +305,23 @@ export function RecipesBrowser({
 
       {/* ── Mobile: Filters button → bottom sheet ── */}
       <div className="flex items-center gap-2 sm:hidden">
+        {reviewCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setReviewOnly((v) => !v)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+              reviewOnly
+                ? "border-amber-400 bg-amber-50 text-amber-800"
+                : "border-amber-300 bg-amber-50/60 text-amber-700",
+            )}
+          >
+            <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-400 text-[9px] font-bold text-white">
+              {reviewCount}
+            </span>
+            Review
+          </button>
+        )}
         <Button
           variant="outline"
           size="sm"
@@ -363,6 +387,24 @@ export function RecipesBrowser({
 
       {/* ── Desktop: inline filter rows (unchanged) ── */}
       <div className="hidden sm:space-y-4 sm:block">
+        {reviewCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setReviewOnly((v) => !v)}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              reviewOnly
+                ? "border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-600 dark:bg-amber-950/40 dark:text-amber-300"
+                : "border-amber-300 bg-amber-50/60 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/20 dark:text-amber-400",
+            )}
+          >
+            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold text-white dark:bg-amber-600">
+              {reviewCount}
+            </span>
+            Needs review
+            {reviewOnly && <X className="h-3 w-3 opacity-60" />}
+          </button>
+        )}
         <SegmentedControl value={meal} options={MEAL_TYPES as readonly string[]} onChange={(v) => setMeal(v)} />
         <div className="flex flex-wrap items-center gap-2">
           <Button variant={favOnly ? "default" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => setFavOnly((v) => !v)}>

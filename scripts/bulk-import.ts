@@ -396,7 +396,7 @@ async function processPdf(filePath: string, index: number, batchPrefix: string):
   try {
     await inngest.send({
       name: "ingestion/file.uploaded" as const,
-      data: { jobId: job.id, householdId: HOUSEHOLD_ID, sourceKind: "pdf" as const },
+      data: { jobId: job.id, householdId: HOUSEHOLD_ID, sourceKind: "pdf" as const, bulkMode: true, maxPages: 25 },
     });
   } catch (err) {
     broadcast({ type: "file-failed", index, file: relPath, stage: "inngest", error: (err as Error).message });

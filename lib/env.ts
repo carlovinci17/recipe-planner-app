@@ -28,6 +28,8 @@ const serverSchema = z.object({
   ANTHROPIC_MODEL_VISION: z.string().default("claude-opus-4-7"),
   ANTHROPIC_MODEL_TEXT: z.string().default("claude-opus-4-7"),
   ANTHROPIC_MODEL_FAST: z.string().default("claude-haiku-4-5"),
+  // Cheaper model used for bulk imports — skips Opus to reduce cost ~15×.
+  ANTHROPIC_MODEL_BULK: z.string().default("claude-sonnet-4-6"),
   // OpenAI — legacy, provider file kept on disk but not wired.
   OPENAI_API_KEY: optional(10),
   OPENAI_MODEL_VISION: z.string().default("gpt-5.5"),
