@@ -235,7 +235,12 @@ export const processUpload = inngest.createFunction(
     // null when no skim ran (short docs go direct to deep extract).
     // Array of normalized titles when skim ran — used after extraction to
     // drop unrelated recipes the model returned from the same pages.
-    let selectedTitlesNormalized: Set<string> | null = null;
+    // Pre-populate from allowedTitles if provided by the bulk import script —
+    // only keep extracted recipes whose titles match this list exactly.
+    let selectedTitlesNormalized: Set<string> | null =
+      event.data.allowedTitles && event.data.allowedTitles.length > 0
+        ? new Set(event.data.allowedTitles.map(normalizeTitle))
+        : null;
     // Batch-level source override the user typed in the skim dialog. When
     // set, it replaces the per-recipe AI/URL-derived source on every
     // persisted recipe. null on both fields means "no override".

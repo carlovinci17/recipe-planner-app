@@ -77,6 +77,17 @@ const fileFilter = flags["file"]?.toLowerCase() ?? null;
 const forceReprocess = "force" in flags;
 // If set, use Opus instead of the cheaper bulk model (for complex layouts Sonnet misses).
 const useOpus = "use-opus" in flags;
+// If set, read a text file (one recipe title per line) and only import
+// recipes whose titles match — all others extracted from the PDF are dropped.
+const recipesFilePath = flags["recipes-file"] ?? null;
+const allowedTitles: string[] | null = recipesFilePath
+  ? fs
+      .readFileSync(recipesFilePath, "utf8")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+  : null;
+
 // If set, import only these page ranges from the --file target.
 // Format: "30-57,68-93,108-121"  Each range becomes a separate job.
 const pageRangesRaw = flags["pages"] ?? null;
@@ -446,6 +457,7 @@ async function processPdf(
         maxPages: rangeMaxPages,
         startPage: rangeStartPage,
         useOpus: useOpus || undefined,
+        allowedTitles: allowedTitles ?? undefined,
       },
     });
   } catch (err) {

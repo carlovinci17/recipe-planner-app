@@ -20,6 +20,8 @@ type Events = {
       startPage?: number;
       /** Force Opus instead of the bulk model for files Sonnet struggles with. */
       useOpus?: boolean;
+      /** If set, only keep extracted recipes whose titles match this list. */
+      allowedTitles?: string[];
     };
   };
   "ingestion/url.requested": {
