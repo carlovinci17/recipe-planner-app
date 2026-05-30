@@ -420,7 +420,11 @@ export const processUpload = inngest.createFunction(
     // Dedupe across chunk boundaries — overlap can return the same recipe
     // from two chunks; keep the more complete version.
     const deduped = dedupeRecipes(allDetected);
-    let kept = deduped.filter((r) => r.is_recipe && r.confidence >= 0.3);
+    // Bulk mode uses Sonnet which tends to return lower confidence scores than
+    // Opus for the same content — lower the threshold so valid recipes aren't
+    // silently discarded.
+    const confidenceThreshold = bulkMode ? 0.1 : 0.3;
+    let kept = deduped.filter((r) => r.is_recipe && r.confidence >= confidenceThreshold);
 
     // If the user went through the skim picker, narrow `kept` to recipes
     // whose title matches one they selected. The deep extract sees a
@@ -431,6 +435,29 @@ export const processUpload = inngest.createFunction(
     }
 
     if (kept.length === 0) {
+      if (bulkMode) {
+        // In bulk mode, complete gracefully rather than hard-failing — the page
+        // range may simply not contain recipes. The user can re-run with
+        // --force and a different --start-page without a permanently failed job.
+        await step.run("mark-bulk-no-recipes", async () => {
+          await supabase
+            .from("ingestion_jobs")
+            .update({
+              status: "needs_review",
+              error:
+                deduped.length === 0
+                  ? "No recipes found in this page range — try --force with a different --start-page"
+                  : "Recipes detected but all below confidence threshold — try --force with a different page range",
+              raw_extraction: { recipes: deduped },
+              ai_model: usageModel,
+              prompt_tokens: usagePromptTokens,
+              completion_tokens: usageCompletionTokens,
+              cost_cents: usageCostCents || null,
+            })
+            .eq("id", jobId);
+        });
+        return { jobId, recipesFound: 0 };
+      }
       await step.run("mark-failed-no-recipes", async () => {
         await supabase
           .from("ingestion_jobs")
