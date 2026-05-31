@@ -30,9 +30,12 @@ function weekDates(weekStart: Date): Date[] {
 export function AddToPlannerButton({
   recipeId,
   householdId,
+  compact = false,
 }: {
   recipeId: string;
   householdId: string;
+  /** Render as a small icon-only button (for recipe cards). */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [weekStart, setWeekStart] = useState(() =>
@@ -72,10 +75,24 @@ export function AddToPlannerButton({
 
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
-        <CalendarPlus className="mr-2 h-4 w-4" />
-        Add to planner
-      </Button>
+      {compact ? (
+        <button
+          type="button"
+          aria-label="Add to planner"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(true); }}
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition-colors",
+            "bg-background/80 hover:bg-primary hover:text-primary-foreground border border-border/60",
+          )}
+        >
+          <CalendarPlus className="h-3.5 w-3.5" />
+        </button>
+      ) : (
+        <Button variant="outline" onClick={() => setOpen(true)}>
+          <CalendarPlus className="mr-2 h-4 w-4" />
+          Add to planner
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-sm">

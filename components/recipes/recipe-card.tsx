@@ -10,6 +10,7 @@ import { useSignedImage } from "@/components/recipes/use-signed-image";
 import { resolveCoverImage, coverObjectPositionStyle } from "@/lib/recipes/cover-image";
 import { SourcePill } from "@/components/recipes/source-pill";
 import { setRecipeFavoriteAction } from "@/app/(app)/recipes/[id]/actions";
+import { AddToPlannerButton } from "@/app/(app)/recipes/[id]/add-to-planner-button";
 
 export function RecipeCard({
   recipe,
@@ -51,20 +52,27 @@ export function RecipeCard({
       href={`/recipes/${recipe.id}`}
       className="group relative flex overflow-hidden rounded-xl border bg-card shadow-sm transition-colors hover:bg-accent/40 flex-row items-stretch sm:flex-col"
     >
-      {/* Favourite button — always visible, positioned relative to the whole card */}
-      <button
-        type="button"
-        onClick={toggleFavorite}
-        aria-label={isFavorite ? "Remove from favourites" : "Add to favourites"}
-        className={cn(
-          "absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition-colors",
-          isFavorite
-            ? "bg-amber-400 hover:bg-amber-500 text-white"
-            : "bg-background/80 hover:bg-amber-50 text-muted-foreground hover:text-amber-500 border border-border/60",
-        )}
-      >
-        <Star className={cn("h-3.5 w-3.5", isFavorite && "fill-current")} />
-      </button>
+      {/* Action buttons — top-right, stacked vertically */}
+      <div className="absolute right-2 top-2 z-10 flex flex-col gap-1">
+        <button
+          type="button"
+          onClick={toggleFavorite}
+          aria-label={isFavorite ? "Remove from favourites" : "Add to favourites"}
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition-colors",
+            isFavorite
+              ? "bg-amber-400 hover:bg-amber-500 text-white"
+              : "bg-background/80 hover:bg-amber-50 text-muted-foreground hover:text-amber-500 border border-border/60",
+          )}
+        >
+          <Star className={cn("h-3.5 w-3.5", isFavorite && "fill-current")} />
+        </button>
+        <AddToPlannerButton
+          recipeId={recipe.id}
+          householdId={recipe.household_id}
+          compact
+        />
+      </div>
 
       {/* Desktop cover image — full width, hidden on mobile */}
       <div className="relative hidden aspect-[4/3] w-full overflow-hidden bg-muted sm:block">
