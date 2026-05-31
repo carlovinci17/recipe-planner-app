@@ -86,6 +86,68 @@ export const ingestionService = {
     });
   },
 
+  /**
+   * Create a job for multiple photos uploaded as separate page images.
+   * Returns N signed upload URLs — browser PUTs each image directly to Storage,
+   * then calls completeMultiPhotoUpload to populate page_image_paths and start the pipeline.
+   */
+  async createMultiPhotoJob(args: {
+    householdId: string;
+    photos: Array<{ fileName: string; contentType: string }>;
+  }) {
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not authenticated");
+
+    const { data: job, error } = await supabase
+      .from("ingestion_jobs")
+      .insert({ household_id: args.householdId, created_by: user.id, source_kind: "image" as const, storage_bucket: UPLOADS_BUCKET })
+      .select("id")
+      .single();
+    if (error || !job) throw error ?? new Error("Failed to create job");
+
+    const uploadSlots = await Promise.all(
+      args.photos.map(async (photo, i) => {
+        const ext = photo.contentType === "image/png" ? "png" : "jpg";
+        const path = `${args.householdId}/${job.id}/page-${String(i).padStart(3, "0")}.${ext}`;
+        const { data: signed, error: signErr } = await supabase.storage
+          .from(UPLOADS_BUCKET)
+          .createSignedUploadUrl(path);
+        if (signErr || !signed) throw signErr ?? new Error(`Failed to sign upload ${i}`);
+        return { uploadUrl: signed.signedUrl, path, index: i };
+      }),
+    );
+
+    return { jobId: job.id, uploadSlots };
+  },
+
+  /**
+   * Called after all photos are uploaded. Populates page_image_paths and fires the pipeline.
+   * processUpload will skip download-and-rasterize when page_image_paths is already set.
+   */
+  async completeMultiPhotoUpload(args: {
+    jobId: string;
+    householdId: string;
+    pageImagePaths: string[];
+  }) {
+    const supabase = await createSupabaseServerClient();
+    await supabase
+      .from("ingestion_jobs")
+      .update({ page_image_paths: args.pageImagePaths })
+      .eq("id", args.jobId);
+
+    await supabase.from("ingestion_events").insert({
+      job_id: args.jobId,
+      kind: "file_uploaded",
+      payload: { source: "multi_photo", photo_count: args.pageImagePaths.length },
+    });
+
+    await inngest.send({
+      name: "ingestion/file.uploaded",
+      data: { jobId: args.jobId, householdId: args.householdId, sourceKind: "image" as const },
+    });
+  },
+
   async createUrlJob(args: { householdId: string; url: string }) {
     const supabase = await createSupabaseServerClient();
     const {

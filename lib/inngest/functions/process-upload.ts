@@ -123,7 +123,9 @@ export const processUpload = inngest.createFunction(
         .insert({ job_id: jobId, kind: "ai_processing_started", payload: {} });
     });
 
-    if (!job.storage_bucket || !job.storage_path) {
+    // Multi-photo imports pre-populate page_image_paths and have no single source file.
+    const hasPreRenderedPages = (job.page_image_paths ?? []).length > 0;
+    if (!hasPreRenderedPages && (!job.storage_bucket || !job.storage_path)) {
       throw new NonRetriableError("Job missing storage location");
     }
 
@@ -142,6 +144,11 @@ export const processUpload = inngest.createFunction(
 
     // ── 2-3. Download + rasterize (combined; Inngest can't checkpoint a Buffer) ──
     const pageImagePaths = await step.run("download-and-rasterize", async () => {
+      // Multi-photo: images already uploaded as page-NNN.jpg — skip rasterization.
+      if ((job.page_image_paths ?? []).length > 0) {
+        return job.page_image_paths!;
+      }
+
       const originalBuffer = await ingestionStorage.downloadFile({
         bucket: job.storage_bucket!,
         path: job.storage_path!,

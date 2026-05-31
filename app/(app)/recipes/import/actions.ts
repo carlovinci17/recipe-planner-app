@@ -594,6 +594,46 @@ export async function createPhotoJobAction(input: z.infer<typeof CreatePhotoJobS
   }
 }
 
+const CreateMultiPhotoJobSchema = z.object({
+  householdId: z.string().uuid(),
+  photos: z.array(z.object({
+    fileName: z.string().min(1).max(255),
+    contentType: z.string().min(1).max(100),
+  })).min(1).max(20),
+});
+
+export async function createMultiPhotoJobAction(input: z.infer<typeof CreateMultiPhotoJobSchema>) {
+  const parsed = CreateMultiPhotoJobSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid input" };
+  try {
+    await assertMembership(parsed.data.householdId);
+    const result = await ingestionService.createMultiPhotoJob(parsed.data);
+    return { ok: true as const, ...result };
+  } catch (err) {
+    logger.error({ err }, "createMultiPhotoJobAction failed");
+    return { ok: false as const, error: (err as Error).message };
+  }
+}
+
+const CompleteMultiPhotoUploadSchema = z.object({
+  jobId: z.string().uuid(),
+  householdId: z.string().uuid(),
+  pageImagePaths: z.array(z.string().min(1)).min(1).max(20),
+});
+
+export async function completeMultiPhotoUploadAction(input: z.infer<typeof CompleteMultiPhotoUploadSchema>) {
+  const parsed = CompleteMultiPhotoUploadSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid input" };
+  try {
+    await assertMembership(parsed.data.householdId);
+    await ingestionService.completeMultiPhotoUpload(parsed.data);
+    return { ok: true as const };
+  } catch (err) {
+    logger.error({ err }, "completeMultiPhotoUploadAction failed");
+    return { ok: false as const, error: (err as Error).message };
+  }
+}
+
 const CompletePhotoUploadSchema = z.object({
   jobId: z.string().uuid(),
   storagePath: z.string().min(1),
