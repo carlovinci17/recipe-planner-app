@@ -664,13 +664,7 @@ function PlannerEntryTile({
 
   const wrapClass = cn("w-full", isDragOverlay && "rotate-1 opacity-90 shadow-lg");
 
-  return entry.recipe && !isDragOverlay ? (
-    <Link href={`/recipes/${entry.recipe.id}`} title={title} className={cn("block", wrapClass)}>
-      {inner}
-    </Link>
-  ) : (
-    <div title={title} className={wrapClass}>{inner}</div>
-  );
+  return <div title={title} className={wrapClass}>{inner}</div>;
 }
 
 /**
