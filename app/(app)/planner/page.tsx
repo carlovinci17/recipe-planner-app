@@ -28,6 +28,7 @@ export default async function PlannerPage({
 
   return (
     <PlannerGrid
+      key={format(weekStart, "yyyy-MM-dd")}
       householdId={household.id}
       weekStartIso={format(weekStart, "yyyy-MM-dd")}
       previousWeekIso={format(addDays(weekStart, -7), "yyyy-MM-dd")}
