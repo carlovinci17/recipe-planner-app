@@ -155,6 +155,12 @@ export function PlannerGrid({
   const [pickerCell, setPickerCell] = useState<{ date: string; slot: MealSlot } | null>(null);
   const [pending, start] = useTransition();
   const [activeEntry, setActiveEntry] = useState<EntryWithRecipe | null>(null);
+  const [pendingDrop, setPendingDrop] = useState<{
+    entry: EntryWithRecipe;
+    newDate: string;
+    newSlot: MealSlot;
+    newPosition: number;
+  } | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -171,7 +177,6 @@ export function PlannerGrid({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    // over.id is `${date}|${slot}` for a cell drop
     const parts = String(over.id).split("|");
     if (parts.length !== 2) return;
     const [newDate, newSlot] = parts as [string, MealSlot];
@@ -180,21 +185,49 @@ export function PlannerGrid({
     if (!entry) return;
     if (entry.date === newDate && entry.slot === newSlot) return;
 
-    // Optimistic update
     const newPosition = entries.filter((e) => e.date === newDate && e.slot === newSlot).length;
+    // Show Copy / Move dialog instead of immediately acting.
+    setPendingDrop({ entry, newDate, newSlot, newPosition });
+  }
+
+  function confirmMove() {
+    if (!pendingDrop) return;
+    const { entry, newDate, newSlot, newPosition } = pendingDrop;
+    setPendingDrop(null);
+    // Optimistic update
     setEntries((prev) =>
       prev.map((e) => (e.id === entry.id ? { ...e, date: newDate, slot: newSlot as MealSlot, position: newPosition } : e)),
     );
-
     start(async () => {
       const result = await moveEntryAction({ entryId: entry.id, date: newDate, slot: newSlot, position: newPosition });
       if (!result.ok) {
-        // Revert on failure
         setEntries((prev) =>
           prev.map((e) => (e.id === entry.id ? { ...e, date: entry.date, slot: entry.slot, position: entry.position } : e)),
         );
         toast.error("Couldn't move meal");
       }
+    });
+  }
+
+  function confirmCopy() {
+    if (!pendingDrop) return;
+    const { entry, newDate, newSlot, newPosition } = pendingDrop;
+    setPendingDrop(null);
+    start(async () => {
+      const result = await addEntryAction({
+        householdId,
+        date: newDate,
+        slot: newSlot,
+        recipeId: entry.recipe_id ?? null,
+        customTitle: entry.custom_title ?? null,
+      });
+      if (!result.ok) {
+        toast.error("Couldn't copy meal");
+        return;
+      }
+      // Attach recipe info for immediate display
+      const recipe = entry.recipe ?? null;
+      setEntries((prev) => [...prev, { ...result.entry, recipe, position: newPosition } as EntryWithRecipe]);
     });
   }
 
@@ -467,6 +500,38 @@ export function PlannerGrid({
         // Inserts already flow in via realtime; we don't need to refetch.
         onApplied={() => {}}
       />
+
+      {/* Copy / Move dialog — shown after a drag-and-drop */}
+      <Dialog open={!!pendingDrop} onOpenChange={(open) => !open && setPendingDrop(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Copy or move?</DialogTitle>
+            <DialogDescription>
+              {pendingDrop ? (
+                <>
+                  <span className="font-medium text-foreground">
+                    {pendingDrop.entry.recipe?.title ?? pendingDrop.entry.custom_title ?? "Meal"}
+                  </span>
+                  {" → "}
+                  {format(parseISO(pendingDrop.newDate), "EEE d MMM")} · {pendingDrop.newSlot}
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <Button variant="outline" className="h-16 flex-col gap-1" onClick={confirmCopy}>
+              <span className="text-lg">📋</span>
+              <span className="font-medium">Copy</span>
+              <span className="text-[10px] text-muted-foreground">Keep original</span>
+            </Button>
+            <Button className="h-16 flex-col gap-1" onClick={confirmMove}>
+              <span className="text-lg">✂️</span>
+              <span className="font-medium">Move</span>
+              <span className="text-[10px] opacity-70">Remove original</span>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!pickerCell} onOpenChange={(open) => !open && setPickerCell(null)}>
         <DialogContent className="flex max-h-[85vh] flex-col">
