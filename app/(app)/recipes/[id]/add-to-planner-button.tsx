@@ -79,7 +79,7 @@ export function AddToPlannerButton({
         <button
           type="button"
           aria-label="Add to planner"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(true); }}
+          onClick={() => setOpen(true)}
           className={cn(
             "flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition-colors",
             "bg-background/80 hover:bg-primary hover:text-primary-foreground border border-border/60",

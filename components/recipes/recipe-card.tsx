@@ -39,20 +39,22 @@ export function RecipeCard({
   const totalMin = (recipe.prep_time_min ?? 0) + (recipe.cook_time_min ?? 0);
   const focalStyle = coverObjectPositionStyle(recipe);
 
-  function toggleFavorite(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
+  function toggleFavorite() {
     const next = !isFavorite;
     setIsFavorite(next);
     startFav(() => setRecipeFavoriteAction(recipe.id, next));
   }
 
   return (
-    <Link
-      href={`/recipes/${recipe.id}`}
-      className="group relative flex overflow-hidden rounded-xl border bg-card shadow-sm transition-colors hover:bg-accent/40 flex-row items-stretch sm:flex-col"
-    >
-      {/* Action buttons — top-right, stacked vertically */}
+    <div className="group relative flex overflow-hidden rounded-xl border bg-card shadow-sm transition-colors hover:bg-accent/40 flex-row items-stretch sm:flex-col">
+      {/* Overlay link covers the card — buttons sit above it via z-10 */}
+      <Link
+        href={`/recipes/${recipe.id}`}
+        aria-label={recipe.title}
+        className="absolute inset-0 z-0"
+      />
+
+      {/* Action buttons — above the overlay link */}
       <div className="absolute right-2 top-2 z-10 flex flex-col gap-1">
         <button
           type="button"
@@ -158,6 +160,6 @@ export function RecipeCard({
           <div className="flex h-full w-full items-center justify-center text-xl">🍽️</div>
         )}
       </div>
-    </Link>
+    </div>
   );
 }
