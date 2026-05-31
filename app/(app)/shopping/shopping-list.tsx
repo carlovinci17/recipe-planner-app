@@ -211,6 +211,27 @@ export function ShoppingList({
   }
 
   const [copied, setCopied] = useState(false);
+  const [copiedCategory, setCopiedCategory] = useState<string | null>(null);
+
+  async function copyCategoryItems(category: string, categoryItems: Item[]) {
+    const unchecked = categoryItems.filter((i) => !i.is_checked);
+    if (unchecked.length === 0) {
+      toast.info("All items in this category are already checked off.");
+      return;
+    }
+    const lines = mergeAndFormatItems(unchecked).filter(Boolean);
+    const label = CATEGORY_LABEL[category] ?? category;
+    const text = `${label}\n${lines.map((l) => `- ${l}`).join("\n")}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedCategory(category);
+      setTimeout(() => setCopiedCategory(null), 1500);
+      toast.success(`Copied ${lines.length} item${lines.length === 1 ? "" : "s"} from ${label}`);
+    } catch {
+      toast.error("Couldn't copy — your browser blocked clipboard access.");
+    }
+  }
+
   async function copyList() {
     // Format: one item per line. Skip checked items (they're already in your
     // basket). Group by category in the same order as the on-screen view.
@@ -298,8 +319,22 @@ export function ShoppingList({
                 <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   {CATEGORY_LABEL[category] ?? category}
                 </div>
-                <div className="text-[10px] text-muted-foreground">
-                  {list.length} {list.length === 1 ? "item" : "items"}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-muted-foreground">
+                    {list.length} {list.length === 1 ? "item" : "items"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => copyCategoryItems(category, list)}
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label={`Copy ${CATEGORY_LABEL[category] ?? category}`}
+                    title={`Copy ${CATEGORY_LABEL[category] ?? category}`}
+                  >
+                    {copiedCategory === category
+                      ? <Check className="h-3.5 w-3.5 text-green-500" />
+                      : <Copy className="h-3.5 w-3.5" />
+                    }
+                  </button>
                 </div>
               </div>
               {list.map((item) => {
@@ -426,6 +461,30 @@ function formatQtyUnit(qty: number, unit: string): string {
  *   Protein
  *   - Chicken breast (500g)
  */
+/**
+ * Merge duplicates in a list of items and return formatted "Ingredient (qty)" strings.
+ * Used for per-category copy.
+ */
+function mergeAndFormatItems(items: Item[]): string[] {
+  const merged = new Map<string, { name: string; units: Map<string, number> }>();
+  for (const item of items) {
+    const name = (item.ingredient ?? "").trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (!merged.has(key)) merged.set(key, { name, units: new Map() });
+    const entry = merged.get(key)!;
+    const unit = (item.unit ?? "").trim().toLowerCase() || "__none__";
+    entry.units.set(unit, (entry.units.get(unit) ?? 0) + (item.quantity ?? 0));
+  }
+  return Array.from(merged.values()).map(({ name, units }) => {
+    const qtyParts: string[] = [];
+    for (const [unit, total] of units) {
+      if (total > 0) qtyParts.push(formatQtyUnit(total, unit));
+    }
+    return qtyParts.length > 0 ? `${name} (${qtyParts.join(", ")})` : name;
+  });
+}
+
 function mergeAndGroupForCopy(items: Item[]): string {
   // Step 1: merge duplicates globally (by ingredient name, case-insensitive).
   // Keep the "best" category — prefer anything over "other".
