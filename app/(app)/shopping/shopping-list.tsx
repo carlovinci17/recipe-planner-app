@@ -186,16 +186,16 @@ export function ShoppingList({
   async function copyList() {
     // Format: one item per line. Skip checked items (they're already in your
     // basket). Group by category in the same order as the on-screen view.
-    const lines = items
+    const unchecked = items
       .filter((i) => !i.is_checked)
       .sort((a, b) => {
         const ai = CATEGORY_ORDER.indexOf(a.category ?? "other");
         const bi = CATEGORY_ORDER.indexOf(b.category ?? "other");
         if (ai !== bi) return ai - bi;
         return a.position - b.position;
-      })
-      .map(formatItemLine)
-      .filter((s) => s.length > 0);
+      });
+
+    const lines = mergeAndFormatItems(unchecked).filter((s) => s.length > 0);
 
     if (lines.length === 0) {
       toast.info("Nothing left to copy — all items are checked off.");
@@ -376,22 +376,49 @@ export function ShoppingList({
 }
 
 /**
- * Format a single shopping-list line for clipboard copy. Examples:
- *   "2 cups flour"
- *   "3 eggs"
- *   "Salt"
- *   "1.5 lb ground beef"
- *
- * Quantity is dropped when it's 0/null, units are dropped when missing,
- * trailing whitespace is collapsed.
+ * Format a quantity+unit string. Returns empty string if no quantity.
+ * Examples: "2 cups", "3", "1.5 lb"
  */
-function formatItemLine(item: Item): string {
-  const parts: string[] = [];
-  if (item.quantity != null && item.quantity > 0) {
-    // Render fractional quantities cleanly (1.5 stays 1.5; 1.0 becomes 1).
-    parts.push(Number.isInteger(item.quantity) ? String(item.quantity) : String(item.quantity));
+function formatQty(quantity: number | null | undefined, unit: string | null | undefined): string {
+  if (!quantity || quantity <= 0) return "";
+  const q = Number.isInteger(quantity) ? String(quantity) : String(quantity);
+  return unit ? `${q} ${unit}` : q;
+}
+
+/**
+ * Merge duplicate ingredients and format as "Ingredient (qty unit)" lines.
+ * Items with the same ingredient name (case-insensitive) are grouped.
+ * Quantities with the same unit are summed; different units listed separately.
+ * Examples:
+ *   "Salt (3 tablespoons)"
+ *   "Chicken breast (500g)"
+ *   "Olive oil (1 tablespoon, 2 cups)"
+ *   "Pepper"
+ */
+function mergeAndFormatItems(items: Item[]): string[] {
+  // Group by normalised ingredient name
+  const grouped = new Map<string, { name: string; units: Map<string, number> }>();
+
+  for (const item of items) {
+    const name = (item.ingredient ?? "").trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+
+    if (!grouped.has(key)) grouped.set(key, { name, units: new Map() });
+    const entry = grouped.get(key)!;
+
+    const unit = (item.unit ?? "").trim().toLowerCase() || "__none__";
+    const qty = item.quantity ?? 0;
+    entry.units.set(unit, (entry.units.get(unit) ?? 0) + qty);
   }
-  if (item.unit) parts.push(item.unit);
-  if (item.ingredient) parts.push(item.ingredient);
-  return parts.join(" ").trim();
+
+  return Array.from(grouped.values()).map(({ name, units }) => {
+    const qtyParts: string[] = [];
+    for (const [unit, total] of units) {
+      if (total <= 0) continue;
+      const q = Number.isInteger(total) ? String(total) : total.toFixed(2).replace(/\.?0+$/, "");
+      qtyParts.push(unit === "__none__" ? q : `${q} ${unit}`);
+    }
+    return qtyParts.length > 0 ? `${name} (${qtyParts.join(", ")})` : name;
+  });
 }
