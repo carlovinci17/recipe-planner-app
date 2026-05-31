@@ -211,7 +211,7 @@ export function PlannerGrid({
 
   function confirmCopy() {
     if (!pendingDrop) return;
-    const { entry, newDate, newSlot, newPosition } = pendingDrop;
+    const { entry, newDate, newSlot } = pendingDrop;
     setPendingDrop(null);
     start(async () => {
       const result = await addEntryAction({
@@ -225,9 +225,9 @@ export function PlannerGrid({
         toast.error("Couldn't copy meal");
         return;
       }
-      // Attach recipe info for immediate display
-      const recipe = entry.recipe ?? null;
-      setEntries((prev) => [...prev, { ...result.entry, recipe, position: newPosition } as EntryWithRecipe]);
+      // Do NOT manually update state here — the realtime INSERT subscription
+      // already handles it with dedup. Adding it here too causes a duplicate
+      // when realtime fires before this callback completes.
     });
   }
 
