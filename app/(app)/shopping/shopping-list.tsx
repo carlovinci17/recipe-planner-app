@@ -29,6 +29,146 @@ import { BuildFromPlannerButton } from "./build-from-planner-button";
 type List = Tables<"shopping_lists">;
 type Item = Tables<"shopping_list_items">;
 
+// ── Ingredient merging ────────────────────────────────────────────────────────
+
+type MergedShoppingItem = {
+  id: string;           // first constituent item's id (used as React key)
+  ids: string[];        // all constituent item ids (for toggle/remove)
+  ingredient: string;   // display name (first occurrence, title-cased)
+  displayQty: string;   // e.g. "4.5 tsp" or "200g"
+  quantity: number | null;
+  unit: string | null;
+  category: string | null;
+  is_checked: boolean;  // true only if ALL ids are checked
+  source_recipe_ids: string[];
+  mealCount: number;    // unique recipe count
+  position: number;
+};
+
+// Volume conversion: everything → tsp as the base unit.
+const TO_TSP: Record<string, number> = {
+  tsp: 1, teaspoon: 1, teaspoons: 1,
+  tbsp: 3, tablespoon: 3, tablespoons: 3,
+  cup: 48, cups: 48,
+  ml: 0.2, milliliter: 0.2, milliliters: 0.2, millilitre: 0.2, millilitres: 0.2,
+  l: 200, liter: 200, liters: 200, litre: 200, litres: 200,
+  "fl oz": 6, "fluid oz": 6,
+};
+// Weight conversion: everything → g as the base unit.
+const TO_G: Record<string, number> = {
+  g: 1, gram: 1, grams: 1,
+  kg: 1000, kilogram: 1000, kilograms: 1000,
+  oz: 28.35, ounce: 28.35, ounces: 28.35,
+  lb: 453.59, pound: 453.59, pounds: 453.59,
+};
+
+function normalizeUnit(unit: string): string {
+  return unit.trim().toLowerCase().replace(/\.$/, "");
+}
+
+function singularize(name: string): string {
+  const lower = name.toLowerCase().trim();
+  // Basic English plural rules — just enough for common ingredients.
+  if (lower.endsWith("ies") && lower.length > 4) return lower.slice(0, -3) + "y"; // berries→berry
+  if (lower.endsWith("ves") && lower.length > 4) return lower.slice(0, -3) + "f";  // leaves→leaf
+  if (lower.endsWith("ses") || lower.endsWith("xes") || lower.endsWith("zes")) return lower.slice(0, -2);
+  if (lower.endsWith("s") && !lower.endsWith("ss") && lower.length > 3) return lower.slice(0, -1);
+  return lower;
+}
+
+function mergeShoppingItems(items: Item[]): MergedShoppingItem[] {
+  const groups = new Map<string, Item[]>();
+
+  for (const item of items) {
+    const key = singularize(item.ingredient ?? "");
+    if (!key) continue;
+    const arr = groups.get(key) ?? [];
+    arr.push(item);
+    groups.set(key, arr);
+  }
+
+  return Array.from(groups.values()).map((group) => {
+    const first = group[0]!;
+    const allIds = group.map((i) => i.id);
+    const allChecked = group.every((i) => i.is_checked);
+    const allRecipeIds = [...new Set(group.flatMap((i) => i.source_recipe_ids ?? []))];
+    const mealCount = allRecipeIds.length;
+
+    // Try to sum quantities with unit conversion.
+    let totalTsp = 0, tspCount = 0;
+    let totalG = 0, gCount = 0;
+    let totalCount = 0, countCount = 0;
+
+    for (const item of group) {
+      const qty = item.quantity ?? 0;
+      const unit = normalizeUnit(item.unit ?? "");
+      if (TO_TSP[unit] !== undefined) { totalTsp += qty * TO_TSP[unit]!; tspCount++; }
+      else if (TO_G[unit] !== undefined) { totalG += qty * TO_G[unit]!; gCount++; }
+      else { totalCount += qty; countCount++; }
+    }
+
+    let displayQty = "";
+    let mergedQty: number | null = null;
+    let mergedUnit: string | null = null;
+
+    if (tspCount > 0 && gCount === 0 && countCount === 0) {
+      // All volume — display in friendliest unit.
+      if (totalTsp >= 48) {
+        mergedQty = Math.round((totalTsp / 48) * 10) / 10;
+        mergedUnit = mergedQty === 1 ? "cup" : "cups";
+      } else if (totalTsp >= 3) {
+        mergedQty = Math.round((totalTsp / 3) * 10) / 10;
+        mergedUnit = mergedQty === 1 ? "tbsp" : "tbsp";
+      } else {
+        mergedQty = Math.round(totalTsp * 10) / 10;
+        mergedUnit = "tsp";
+      }
+      displayQty = `${mergedQty} ${mergedUnit}`;
+    } else if (gCount > 0 && tspCount === 0 && countCount === 0) {
+      // All weight.
+      if (totalG >= 1000) {
+        mergedQty = Math.round((totalG / 1000) * 10) / 10;
+        mergedUnit = "kg";
+      } else {
+        mergedQty = Math.round(totalG * 10) / 10;
+        mergedUnit = "g";
+      }
+      displayQty = `${mergedQty}${mergedUnit}`;
+    } else if (countCount > 0 && tspCount === 0 && gCount === 0) {
+      // All counts / unitless.
+      mergedQty = Math.round(totalCount * 10) / 10;
+      mergedUnit = group.find((i) => i.unit)?.unit ?? null;
+      displayQty = mergedUnit ? `${mergedQty} ${mergedUnit}` : `${mergedQty}`;
+    } else if (group.length === 1) {
+      // Single item — show as-is.
+      mergedQty = first.quantity;
+      mergedUnit = first.unit;
+      displayQty = [first.quantity, first.unit].filter(Boolean).join(" ");
+    } else {
+      // Mixed units — just show comma-separated original quantities.
+      displayQty = group
+        .map((i) => [i.quantity, i.unit].filter(Boolean).join(" "))
+        .filter(Boolean)
+        .join(" + ");
+    }
+
+    return {
+      id: first.id,
+      ids: allIds,
+      ingredient: first.ingredient ?? "",
+      displayQty,
+      quantity: mergedQty,
+      unit: mergedUnit,
+      category: first.category,
+      is_checked: allChecked,
+      source_recipe_ids: allRecipeIds,
+      mealCount,
+      position: first.position,
+    };
+  }).sort((a, b) => a.position - b.position);
+}
+
+
 // Order reflects how a user actually shops:
 //   1. Perishables first (fruit, veggies, herbs, proteins, dairy)
 //   2. Bulk dry goods (grains, baking)
@@ -144,11 +284,18 @@ export function ShoppingList({
     };
   }, [list.id]);
 
+  // ── Ingredient merging ───────────────────────────────────────────────────
+  // Normalise names (lowercase, singular) so "Lemons", "lemon", "LEMON" all
+  // map to the same key. Items with the same key are merged: quantities are
+  // summed (with unit conversion for common cooking units) and source recipes
+  // are deduplicated.
+
+  const mergedItems = useMemo(() => mergeShoppingItems(items), [items]);
+
   const grouped = useMemo(() => {
-    const map = new Map<string, Item[]>();
-    for (const item of items) {
-      // Fall back to keyword-based categorisation when the DB has no category.
-      const key = item.category ?? categorizeIngredient(item.ingredient ?? "");
+    const map = new Map<string, MergedShoppingItem[]>();
+    for (const item of mergedItems) {
+      const key = item.category ?? categorizeIngredient(item.ingredient);
       const arr = map.get(key) ?? [];
       arr.push(item);
       map.set(key, arr);
@@ -156,13 +303,16 @@ export function ShoppingList({
     return Array.from(map.entries()).sort(
       (a, b) => CATEGORY_ORDER.indexOf(a[0]) - CATEGORY_ORDER.indexOf(b[0]),
     );
-  }, [items]);
+  }, [mergedItems]);
 
-  const remaining = items.filter((i) => !i.is_checked).length;
+  const remaining = mergedItems.filter((i) => !i.is_checked).length;
 
-  function toggle(item: Item) {
-    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, is_checked: !i.is_checked } : i)));
-    void toggleCheckedAction(item.id, !item.is_checked);
+  function toggle(item: MergedShoppingItem) {
+    const next = !item.is_checked;
+    setItems((prev) =>
+      prev.map((i) => (item.ids.includes(i.id) ? { ...i, is_checked: next } : i)),
+    );
+    item.ids.forEach((id) => void toggleCheckedAction(id, next));
   }
 
   function addItem() {
@@ -175,9 +325,9 @@ export function ShoppingList({
     });
   }
 
-  function remove(item: Item) {
-    setItems((prev) => prev.filter((i) => i.id !== item.id));
-    void removeItemAction(item.id);
+  function remove(item: MergedShoppingItem) {
+    setItems((prev) => prev.filter((i) => !item.ids.includes(i.id)));
+    item.ids.forEach((id) => void removeItemAction(id));
   }
 
   // Bulk operations: select all (toggle on/off based on current state) +
@@ -213,14 +363,16 @@ export function ShoppingList({
   const [copied, setCopied] = useState(false);
   const [copiedCategory, setCopiedCategory] = useState<string | null>(null);
 
-  async function copyCategoryItems(category: string, categoryItems: Item[]) {
+  async function copyCategoryItems(category: string, categoryItems: MergedShoppingItem[]) {
     const unchecked = categoryItems.filter((i) => !i.is_checked);
     if (unchecked.length === 0) {
       toast.info("All items in this category are already checked off.");
       return;
     }
-    const lines = mergeAndFormatItems(unchecked).filter(Boolean);
     const label = CATEGORY_LABEL[category] ?? category;
+    const lines = unchecked.map((i) =>
+      i.displayQty ? `${i.ingredient} (${i.displayQty})` : i.ingredient,
+    );
     const text = `${label}\n${lines.join("\n")}`;
     try {
       await navigator.clipboard.writeText(text);
@@ -338,11 +490,10 @@ export function ShoppingList({
                 </div>
               </div>
               {list.map((item) => {
-                // Resolve source recipe titles from the household-scoped map.
-                // Recipes deleted after the list was generated drop silently.
-                const sourceTitles = (item.source_recipe_ids ?? [])
+                const sourceTitles = item.source_recipe_ids
                   .map((id) => sourceRecipeTitles[id])
                   .filter((t): t is string => !!t);
+                const uniqueTitles = [...new Set(sourceTitles)];
                 return (
                   <div
                     key={item.id}
@@ -360,25 +511,17 @@ export function ShoppingList({
                         <span className={item.is_checked ? "line-through" : ""}>
                           {item.ingredient}
                         </span>
-                        {item.quantity || item.unit ? (
-                          <span className="text-xs text-muted-foreground">
-                            {item.quantity ?? ""} {item.unit ?? ""}
-                          </span>
+                        {item.displayQty ? (
+                          <span className="text-xs text-muted-foreground">{item.displayQty}</span>
                         ) : null}
                       </div>
-                      {sourceTitles.length > 0 ? (
+                      {uniqueTitles.length > 0 ? (
                         <div
                           className="mt-0.5 truncate text-[11px] text-muted-foreground"
-                          title={sourceTitles.join(", ")}
+                          title={uniqueTitles.join(", ")}
                         >
-                          from{" "}
-                          {sourceTitles.length === 1 ? (
-                            <span className="italic">{sourceTitles[0]}</span>
-                          ) : (
-                            <>
-                              <span className="italic">{sourceTitles[0]}</span>
-                              <span> +{sourceTitles.length - 1} more</span>
-                            </>
+                          {item.mealCount > 1 ? `for ${item.mealCount} meals` : (
+                            <>from <span className="italic">{uniqueTitles[0]}</span></>
                           )}
                         </div>
                       ) : null}
