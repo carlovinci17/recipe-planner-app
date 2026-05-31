@@ -56,6 +56,33 @@ const CATEGORY_ORDER = [
   "other",
 ];
 
+/**
+ * Keyword-based ingredient categoriser. Returns the best-matching category
+ * from CATEGORY_ORDER. Used as a fallback when the DB item has no category.
+ */
+const CATEGORY_KEYWORDS: Array<[string, string[]]> = [
+  ["fruit", ["apple","apricot","avocado","banana","berry","berries","blueberr","cherry","date","fig","grape","guava","kiwi","lemon","lime","lychee","mango","melon","nectarine","orange","papaya","passionfruit","peach","pear","pineapple","plum","pomegranate","raspberry","strawberr","watermelon","zest"]],
+  ["veggies", ["artichoke","asparagus","bean sprout","beetroot","bok choy","broccoli","brussels","cabbage","capsicum","carrot","cauliflower","celery","corn","courgette","cucumber","eggplant","fennel","garlic","kale","leek","lettuce","mushroom","onion","parsnip","pea","pepper","potato","pumpkin","radish","shallot","silverbeet","spinach","spring onion","squash","sweet potato","tomato","turnip","zucchini"]],
+  ["herbs", ["basil","bay leaf","chive","cilantro","coriander","dill","ginger","lemongrass","marjoram","mint","oregano","parsley","rosemary","sage","tarragon","thyme"]],
+  ["protein", ["chicken","beef","duck","egg","falafel","lamb","lentil","mince","pork","steak","tempeh","tofu","turkey","veal","venison"]],
+  ["seafood", ["anchov","calamari","clam","cod","crab","fish","haddock","lobster","mussel","octopus","oyster","prawn","salmon","sardine","scallop","shrimp","squid","tuna","trout","whitebait"]],
+  ["dairy", ["butter","cheese","cream","creme","custard","ghee","kefir","milk","mozzarella","parmesan","ricotta","sour cream","whey","yoghurt","yogurt"]],
+  ["grains", ["barley","bread","bulgur","couscous","flour","noodle","oat","pasta","polenta","quinoa","rice","rye","semolina","spelt","tortilla","wrap"]],
+  ["baking", ["baking powder","baking soda","bicarbonate","chocolate chip","cocoa","coconut flour","icing sugar","maple syrup","molasses","sugar","vanilla","yeast"]],
+  ["beverage", ["beer","broth","coffee","juice","milk","stock","tea","water","wine"]],
+  ["condiment", ["hoisin","hot sauce","ketchup","mayo","mayonnaise","mustard","relish","salsa","soy sauce","sriracha","tahini","tamari","teriyaki","worcestershire"]],
+  ["spices", ["allspice","anise","cardamom","cayenne","chilli","chili","cinnamon","clove","cumin","curry","fenugreek","nutmeg","paprika","pepper","saffron","salt","star anise","sumac","turmeric","za'atar"]],
+  ["pantry", ["coconut cream","coconut milk","honey","lard","miso","oil","olive oil","rice vinegar","sesame oil","sesame seed","sunflower oil","vegetable oil","vinegar"]],
+];
+
+function categorizeIngredient(name: string): string {
+  const lower = name.toLowerCase();
+  for (const [cat, keywords] of CATEGORY_KEYWORDS) {
+    if (keywords.some((kw) => lower.includes(kw))) return cat;
+  }
+  return "other";
+}
+
 // Human-friendly section labels.
 const CATEGORY_LABEL: Record<string, string> = {
   fruit: "Fruit",
@@ -120,7 +147,8 @@ export function ShoppingList({
   const grouped = useMemo(() => {
     const map = new Map<string, Item[]>();
     for (const item of items) {
-      const key = item.category ?? "other";
+      // Fall back to keyword-based categorisation when the DB has no category.
+      const key = item.category ?? categorizeIngredient(item.ingredient ?? "");
       const arr = map.get(key) ?? [];
       arr.push(item);
       map.set(key, arr);
@@ -412,7 +440,7 @@ function mergeAndGroupForCopy(items: Item[]): string {
     const name = (item.ingredient ?? "").trim();
     if (!name) continue;
     const key = name.toLowerCase();
-    const cat = item.category ?? "other";
+    const cat = item.category ?? categorizeIngredient(name);
 
     if (!merged.has(key)) {
       merged.set(key, { name, category: cat, units: new Map(), position: item.position });
