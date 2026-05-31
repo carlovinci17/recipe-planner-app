@@ -171,7 +171,7 @@ export function AppShell({
 
       <div className="flex flex-1">
         {/* Desktop sidebar */}
-        <aside className="hidden w-56 shrink-0 flex-col border-r p-3 md:flex md:sticky md:top-0 md:h-screen md:overflow-y-auto">
+        <aside className="hidden w-56 shrink-0 flex-col border-r p-3 md:flex md:sticky md:top-14 md:h-[calc(100vh-3.5rem)] md:overflow-y-auto">
           <nav className="flex flex-col gap-1">
             {NAV.map((item) => {
               const Icon = item.icon;
