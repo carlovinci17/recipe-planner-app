@@ -538,7 +538,7 @@ function PlannerEntry({
       <button
         type="button"
         className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={onRemove}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
         aria-label="Remove"
       >
         <Trash2 className="h-3 w-3 text-white" />
