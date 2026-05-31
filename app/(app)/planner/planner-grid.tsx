@@ -631,8 +631,15 @@ function PlannerEntryTile({
   });
   const focalStyle = entry.recipe ? coverObjectPositionStyle(entry.recipe) : undefined;
 
-  const inner = (
-    <div className="group relative h-16 w-full overflow-hidden rounded-md border bg-muted">
+  const wrapClass = cn("w-full", isDragOverlay && "rotate-1 opacity-90 shadow-lg");
+
+  return (
+    <div title={title} className={cn(wrapClass, "group relative overflow-hidden rounded-md border bg-muted h-16")}>
+      {/* Overlay link — navigates to recipe, sits beneath remove button */}
+      {entry.recipe && !isDragOverlay ? (
+        <Link href={`/recipes/${entry.recipe.id}`} className="absolute inset-0 z-0" aria-label={title} />
+      ) : null}
+
       {/* Cover image or placeholder */}
       {cover ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -642,18 +649,18 @@ function PlannerEntryTile({
       )}
 
       {/* Title overlay — truncated by default, full on hover */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-1.5 pb-1 pt-4">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-1.5 pb-1 pt-4">
         <p className="truncate text-[10px] font-medium leading-tight text-white group-hover:whitespace-normal group-hover:overflow-visible">
           {title}
         </p>
       </div>
 
-      {/* Remove button — top-right on hover, hidden during drag overlay */}
+      {/* Remove button — above the link via z-10 */}
       {!isDragOverlay && onRemove && (
         <button
           type="button"
-          className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
+          className="absolute right-0.5 top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+          onClick={onRemove}
           aria-label="Remove"
         >
           <Trash2 className="h-3 w-3 text-white" />
@@ -661,10 +668,6 @@ function PlannerEntryTile({
       )}
     </div>
   );
-
-  const wrapClass = cn("w-full", isDragOverlay && "rotate-1 opacity-90 shadow-lg");
-
-  return <div title={title} className={wrapClass}>{inner}</div>;
 }
 
 /**
