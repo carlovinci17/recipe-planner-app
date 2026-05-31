@@ -1,4 +1,6 @@
 import type { NextConfig } from "next";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { version } = require("./package.json") as { version: string };
 
 const supabaseHost = (() => {
   try {
@@ -11,6 +13,10 @@ const supabaseHost = (() => {
 
 const config: NextConfig = {
   reactStrictMode: true,
+  env: {
+    NEXT_PUBLIC_APP_VERSION: version,
+    NEXT_PUBLIC_GIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "",
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "25mb",

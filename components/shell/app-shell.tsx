@@ -171,7 +171,7 @@ export function AppShell({
 
       <div className="flex flex-1">
         {/* Desktop sidebar */}
-        <aside className="hidden w-56 shrink-0 border-r p-3 md:block">
+        <aside className="hidden w-56 shrink-0 flex-col border-r p-3 md:flex">
           <nav className="flex flex-col gap-1">
             {NAV.map((item) => {
               const Icon = item.icon;
@@ -192,6 +192,16 @@ export function AppShell({
               );
             })}
           </nav>
+          <div className="mt-auto px-3 pb-2 pt-4">
+            <p className="select-none text-[10px] text-muted-foreground/50">
+              v{process.env.NEXT_PUBLIC_APP_VERSION ?? "—"}
+              {process.env.NEXT_PUBLIC_GIT_SHA ? (
+                <span className="ml-1 font-mono opacity-70">
+                  {process.env.NEXT_PUBLIC_GIT_SHA}
+                </span>
+              ) : null}
+            </p>
+          </div>
         </aside>
 
         <main className="flex-1 pb-24 md:pb-8">{children}</main>
