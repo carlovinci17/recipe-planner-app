@@ -186,28 +186,21 @@ export function ShoppingList({
   async function copyList() {
     // Format: one item per line. Skip checked items (they're already in your
     // basket). Group by category in the same order as the on-screen view.
-    const unchecked = items
-      .filter((i) => !i.is_checked)
-      .sort((a, b) => {
-        const ai = CATEGORY_ORDER.indexOf(a.category ?? "other");
-        const bi = CATEGORY_ORDER.indexOf(b.category ?? "other");
-        if (ai !== bi) return ai - bi;
-        return a.position - b.position;
-      });
+    const unchecked = items.filter((i) => !i.is_checked);
 
-    const lines = mergeAndFormatItems(unchecked).filter((s) => s.length > 0);
-
-    if (lines.length === 0) {
+    if (unchecked.length === 0) {
       toast.info("Nothing left to copy — all items are checked off.");
       return;
     }
 
-    const text = lines.join("\n");
+    const text = mergeAndGroupForCopy(unchecked);
+    const itemCount = new Set(unchecked.map((i) => (i.ingredient ?? "").toLowerCase())).size;
+
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-      toast.success(`Copied ${lines.length} ${lines.length === 1 ? "item" : "items"}`);
+      toast.success(`Copied ${itemCount} ${itemCount === 1 ? "item" : "items"}`);
     } catch {
       toast.error("Couldn't copy — your browser blocked clipboard access.");
     }
@@ -386,39 +379,80 @@ function formatQty(quantity: number | null | undefined, unit: string | null | un
 }
 
 /**
- * Merge duplicate ingredients and format as "Ingredient (qty unit)" lines.
- * Items with the same ingredient name (case-insensitive) are grouped.
- * Quantities with the same unit are summed; different units listed separately.
- * Examples:
- *   "Salt (3 tablespoons)"
- *   "Chicken breast (500g)"
- *   "Olive oil (1 tablespoon, 2 cups)"
- *   "Pepper"
+ * Format a quantity+unit combination. Returns empty string if no quantity.
  */
-function mergeAndFormatItems(items: Item[]): string[] {
-  // Group by normalised ingredient name
-  const grouped = new Map<string, { name: string; units: Map<string, number> }>();
+function formatQtyUnit(qty: number, unit: string): string {
+  const q = Number.isInteger(qty) ? String(qty) : qty.toFixed(2).replace(/\.?0+$/, "");
+  return unit === "__none__" ? q : `${q} ${unit}`;
+}
+
+/**
+ * Merge duplicate ingredients globally, then group by category.
+ * Returns a formatted multi-section string with category headers.
+ *
+ * Format:
+ *   Veggies
+ *   - Broccoli (2 cups)
+ *   - Spinach
+ *
+ *   Protein
+ *   - Chicken breast (500g)
+ */
+function mergeAndGroupForCopy(items: Item[]): string {
+  // Step 1: merge duplicates globally (by ingredient name, case-insensitive).
+  // Keep the "best" category — prefer anything over "other".
+  const merged = new Map<string, {
+    name: string;
+    category: string;
+    units: Map<string, number>;
+    position: number;
+  }>();
 
   for (const item of items) {
     const name = (item.ingredient ?? "").trim();
     if (!name) continue;
     const key = name.toLowerCase();
+    const cat = item.category ?? "other";
 
-    if (!grouped.has(key)) grouped.set(key, { name, units: new Map() });
-    const entry = grouped.get(key)!;
-
+    if (!merged.has(key)) {
+      merged.set(key, { name, category: cat, units: new Map(), position: item.position });
+    } else {
+      const existing = merged.get(key)!;
+      // Upgrade category if existing is "other" and new one is more specific
+      if (existing.category === "other" && cat !== "other") existing.category = cat;
+    }
+    const entry = merged.get(key)!;
     const unit = (item.unit ?? "").trim().toLowerCase() || "__none__";
-    const qty = item.quantity ?? 0;
-    entry.units.set(unit, (entry.units.get(unit) ?? 0) + qty);
+    entry.units.set(unit, (entry.units.get(unit) ?? 0) + (item.quantity ?? 0));
   }
 
-  return Array.from(grouped.values()).map(({ name, units }) => {
-    const qtyParts: string[] = [];
-    for (const [unit, total] of units) {
-      if (total <= 0) continue;
-      const q = Number.isInteger(total) ? String(total) : total.toFixed(2).replace(/\.?0+$/, "");
-      qtyParts.push(unit === "__none__" ? q : `${q} ${unit}`);
-    }
-    return qtyParts.length > 0 ? `${name} (${qtyParts.join(", ")})` : name;
-  });
+  // Step 2: group merged items by category in CATEGORY_ORDER.
+  const byCat = new Map<string, Array<{ name: string; units: Map<string, number> }>>();
+  for (const cat of CATEGORY_ORDER) byCat.set(cat, []);
+
+  for (const { name, category, units, position: _pos } of merged.values()) {
+    const cat = CATEGORY_ORDER.includes(category) ? category : "other";
+    byCat.get(cat)!.push({ name, units });
+  }
+
+  // Step 3: format sections.
+  const sections: string[] = [];
+  for (const cat of CATEGORY_ORDER) {
+    const catItems = byCat.get(cat)!;
+    if (catItems.length === 0) continue;
+
+    const label = CATEGORY_LABEL[cat] ?? cat;
+    const lines = catItems.map(({ name, units }) => {
+      const qtyParts: string[] = [];
+      for (const [unit, total] of units) {
+        if (total > 0) qtyParts.push(formatQtyUnit(total, unit));
+      }
+      const detail = qtyParts.length > 0 ? ` (${qtyParts.join(", ")})` : "";
+      return `- ${name}${detail}`;
+    });
+
+    sections.push(`${label}\n${lines.join("\n")}`);
+  }
+
+  return sections.join("\n\n");
 }
