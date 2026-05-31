@@ -83,24 +83,24 @@ function categorizeIngredient(name: string): string {
   return "other";
 }
 
-// Human-friendly section labels.
+// Human-friendly section labels with emoji.
 const CATEGORY_LABEL: Record<string, string> = {
-  fruit: "Fruit",
-  veggies: "Veggies",
-  produce: "Produce", // legacy
-  herbs: "Herbs",
-  protein: "Protein",
-  meat: "Meat",
-  seafood: "Seafood",
-  dairy: "Dairy",
-  grains: "Grains",
-  baking: "Baking",
-  frozen: "Frozen",
-  beverage: "Beverages",
-  condiment: "Condiments",
-  spices: "Spices",
-  pantry: "Items found at home",
-  other: "Other",
+  fruit:     "🍎 Fruit",
+  veggies:   "🥦 Veggies",
+  produce:   "🥬 Produce",
+  herbs:     "🌿 Herbs",
+  protein:   "🍗 Protein",
+  meat:      "🥩 Meat",
+  seafood:   "🐟 Seafood",
+  dairy:     "🥛 Dairy",
+  grains:    "🌾 Grains",
+  baking:    "🎂 Baking",
+  frozen:    "🧊 Frozen",
+  beverage:  "🥤 Beverages",
+  condiment: "🧴 Condiments",
+  spices:    "🧂 Spices",
+  pantry:    "🏠 Items found at home",
+  other:     "🛒 Other",
 };
 
 export function ShoppingList({
@@ -221,7 +221,7 @@ export function ShoppingList({
     }
     const lines = mergeAndFormatItems(unchecked).filter(Boolean);
     const label = CATEGORY_LABEL[category] ?? category;
-    const text = `${label}\n${lines.map((l) => `- ${l}`).join("\n")}`;
+    const text = `${label}\n${lines.join("\n")}`;
     try {
       await navigator.clipboard.writeText(text);
       setCopiedCategory(category);
@@ -535,7 +535,7 @@ function mergeAndGroupForCopy(items: Item[]): string {
         if (total > 0) qtyParts.push(formatQtyUnit(total, unit));
       }
       const detail = qtyParts.length > 0 ? ` (${qtyParts.join(", ")})` : "";
-      return `- ${name}${detail}`;
+      return `${name}${detail}`;
     });
 
     sections.push(`${label}\n${lines.join("\n")}`);
