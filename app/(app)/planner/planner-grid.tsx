@@ -571,7 +571,7 @@ function DroppableCell({ id, children }: { id: string; children: React.ReactNode
       ref={setNodeRef}
       className={cn("min-h-[72px] transition-colors", isOver && "border-primary/60 bg-primary/5")}
     >
-      <CardContent className="flex flex-wrap gap-1 p-1.5">{children}</CardContent>
+      <CardContent className="flex flex-col gap-1 p-1.5">{children}</CardContent>
     </Card>
   );
 }
@@ -626,13 +626,13 @@ function PlannerEntryTile({
   // recipe's focal point to the 36px-square slot. 128px wide covers
   // retina + the focal-driven crop overhead without extra bytes.
   const cover = useSignedImage(coverRef?.path ?? null, coverRef?.bucket ?? "recipe-uploads", {
-    width: 128,
-    quality: 70,
+    width: 640,
+    quality: 75,
   });
   const focalStyle = entry.recipe ? coverObjectPositionStyle(entry.recipe) : undefined;
 
   const inner = (
-    <div className="group relative aspect-square w-full overflow-hidden rounded-md border bg-muted">
+    <div className="group relative h-16 w-full overflow-hidden rounded-md border bg-muted">
       {/* Cover image or placeholder */}
       {cover ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -641,9 +641,11 @@ function PlannerEntryTile({
         <div className="flex h-full w-full items-center justify-center text-xl">🍽️</div>
       )}
 
-      {/* Title overlay at bottom */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-3">
-        <p className="truncate text-[10px] font-medium leading-tight text-white">{title}</p>
+      {/* Title overlay — truncated by default, full on hover */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-1.5 pb-1 pt-4">
+        <p className="truncate text-[10px] font-medium leading-tight text-white group-hover:whitespace-normal group-hover:overflow-visible">
+          {title}
+        </p>
       </div>
 
       {/* Remove button — top-right on hover, hidden during drag overlay */}
@@ -660,14 +662,14 @@ function PlannerEntryTile({
     </div>
   );
 
-  const wrapClass = cn("w-[calc(50%-2px)] min-w-[48px]", isDragOverlay && "rotate-2 opacity-90 shadow-lg");
+  const wrapClass = cn("w-full", isDragOverlay && "rotate-1 opacity-90 shadow-lg");
 
   return entry.recipe && !isDragOverlay ? (
-    <Link href={`/recipes/${entry.recipe.id}`} className={cn("block", wrapClass)}>
+    <Link href={`/recipes/${entry.recipe.id}`} title={title} className={cn("block", wrapClass)}>
       {inner}
     </Link>
   ) : (
-    <div className={wrapClass}>{inner}</div>
+    <div title={title} className={wrapClass}>{inner}</div>
   );
 }
 
