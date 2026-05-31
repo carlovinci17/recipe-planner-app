@@ -15,6 +15,7 @@ import { SourcePill } from "@/components/recipes/source-pill";
 import { DeleteRecipeButton } from "./delete-recipe-button";
 import { RecipeRatings } from "./recipe-ratings";
 import { BackLink } from "@/components/ui/back-link";
+import { AddToPlannerButton } from "./add-to-planner-button";
 
 export default async function RecipeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -67,7 +68,8 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
             <p className="mt-1 max-w-2xl text-muted-foreground">{recipe.description}</p>
           ) : null}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <AddToPlannerButton recipeId={recipe.id} householdId={recipe.household_id} />
           <FavoriteButton recipeId={recipe.id} initial={recipe.is_favorite} />
           {perms.canEdit ? (
             <Button variant="outline" asChild>

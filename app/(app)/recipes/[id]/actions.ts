@@ -4,9 +4,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { recipeService } from "@/lib/services/recipe-service";
 import { ratingService } from "@/lib/services/rating-service";
+import { plannerService } from "@/lib/services/planner-service";
 import { ingestionStorage } from "@/lib/ingestion/storage";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
+import type { MealSlot } from "@/types/database.types";
 
 export async function setRecipeFavoriteAction(recipeId: string, value: boolean) {
   await recipeService.setFavorite(recipeId, value);
@@ -266,6 +268,31 @@ export async function cropAndSaveCoverAction(input: z.infer<typeof CropCoverSche
     return { ok: true as const, croppedPath };
   } catch (err) {
     logger.error({ err }, "cropAndSaveCoverAction failed");
+    return { ok: false as const, error: (err as Error).message };
+  }
+}
+
+const AddToPlannerSchema = z.object({
+  householdId: z.string().uuid(),
+  recipeId: z.string().uuid(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  slot: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+});
+
+export async function addToPlannerAction(input: z.infer<typeof AddToPlannerSchema>) {
+  const parsed = AddToPlannerSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid input" };
+  try {
+    const entry = await plannerService.addEntry({
+      householdId: parsed.data.householdId,
+      recipeId: parsed.data.recipeId,
+      date: parsed.data.date,
+      slot: parsed.data.slot as MealSlot,
+    });
+    revalidatePath("/planner");
+    return { ok: true as const, entry };
+  } catch (err) {
+    logger.error({ err }, "addToPlannerAction failed");
     return { ok: false as const, error: (err as Error).message };
   }
 }
