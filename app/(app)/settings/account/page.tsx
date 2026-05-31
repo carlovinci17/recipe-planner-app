@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { AccountForm } from "./account-form";
 import { BackLink } from "@/components/ui/back-link";
+import { ThemeSwitcher } from "@/components/shell/theme-switcher";
 
 export const metadata = { title: "Account" };
 
@@ -31,6 +32,18 @@ export default async function AccountSettingsPage() {
             email={profile?.email ?? user.email ?? ""}
             displayName={profile?.display_name ?? ""}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Appearance</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Choose how the app looks. System follows your device setting.
+          </p>
+          <ThemeSwitcher />
         </CardContent>
       </Card>
     </div>
