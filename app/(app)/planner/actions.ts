@@ -42,6 +42,26 @@ export async function addEntryAction(input: z.infer<typeof AddSchema>) {
   }
 }
 
+const MoveSchema = z.object({
+  entryId: z.string().uuid(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  slot: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+  position: z.number().int().min(0),
+});
+
+export async function moveEntryAction(input: z.infer<typeof MoveSchema>) {
+  const parsed = MoveSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid input" };
+  try {
+    await plannerService.moveEntry(parsed.data);
+    revalidatePath("/planner");
+    return { ok: true as const };
+  } catch (err) {
+    logger.error({ err }, "moveEntryAction failed");
+    return { ok: false as const, error: (err as Error).message };
+  }
+}
+
 export async function removeEntryAction(entryId: string) {
   try {
     await plannerService.removeEntry(entryId);

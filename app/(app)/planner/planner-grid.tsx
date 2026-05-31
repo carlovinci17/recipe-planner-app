@@ -32,8 +32,22 @@ import type { RecipeListItem } from "@/lib/services/recipe-service";
 import { coverObjectPositionStyle, resolveCoverImage } from "@/lib/recipes/cover-image";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
 import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+  useDraggable,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
+import {
   addEntryAction,
   generateShoppingListRangeAction,
+  moveEntryAction,
   removeEntryAction,
 } from "./actions";
 import { AIChefDialog } from "./ai-chef-dialog";
@@ -140,6 +154,49 @@ export function PlannerGrid({
   const [entries, setEntries] = useState(initialEntries as EntryWithRecipe[]);
   const [pickerCell, setPickerCell] = useState<{ date: string; slot: MealSlot } | null>(null);
   const [pending, start] = useTransition();
+  const [activeEntry, setActiveEntry] = useState<EntryWithRecipe | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+
+  function handleDragStart(event: DragStartEvent) {
+    const entry = entries.find((e) => e.id === event.active.id);
+    setActiveEntry(entry ?? null);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveEntry(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    // over.id is `${date}|${slot}` for a cell drop
+    const parts = String(over.id).split("|");
+    if (parts.length !== 2) return;
+    const [newDate, newSlot] = parts as [string, MealSlot];
+
+    const entry = entries.find((e) => e.id === active.id);
+    if (!entry) return;
+    if (entry.date === newDate && entry.slot === newSlot) return;
+
+    // Optimistic update
+    const newPosition = entries.filter((e) => e.date === newDate && e.slot === newSlot).length;
+    setEntries((prev) =>
+      prev.map((e) => (e.id === entry.id ? { ...e, date: newDate, slot: newSlot as MealSlot, position: newPosition } : e)),
+    );
+
+    start(async () => {
+      const result = await moveEntryAction({ entryId: entry.id, date: newDate, slot: newSlot, position: newPosition });
+      if (!result.ok) {
+        // Revert on failure
+        setEntries((prev) =>
+          prev.map((e) => (e.id === entry.id ? { ...e, date: entry.date, slot: entry.slot, position: entry.position } : e)),
+        );
+        toast.error("Couldn't move meal");
+      }
+    });
+  }
 
   // Realtime sync
   // Realtime: merge changes directly into local state. Avoid router.refresh()
@@ -337,6 +394,7 @@ export function PlannerGrid({
         </div>
       </div>
 
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="overflow-x-auto">
         <div className="grid min-w-[640px] grid-cols-[72px_repeat(7,1fr)] gap-1.5">
           <div />
@@ -357,27 +415,26 @@ export function PlannerGrid({
               {dates.map((d) => {
                 const cellEntries = grouped.get(`${d}|${slot.id}`) ?? [];
                 return (
-                  <Card key={`${d}-${slot.id}`} className="min-h-[72px]">
-                    <CardContent className="flex flex-wrap gap-1 p-1.5">
-                      {cellEntries.map((entry) => (
-                        <PlannerEntry
-                          key={entry.id}
-                          entry={entry}
-                          onRemove={() => handleRemove(entry.id)}
-                        />
-                      ))}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-full justify-start text-muted-foreground"
-                        onClick={() => setPickerCell({ date: d, slot: slot.id })}
-                      >
-                        <Plus className="mr-1 h-3.5 w-3.5" />
-                        Add
-                      </Button>
-                    </CardContent>
-                  </Card>
+                  <DroppableCell key={`${d}-${slot.id}`} id={`${d}|${slot.id}`}>
+                    {cellEntries.map((entry) => (
+                      <DraggableEntry
+                        key={entry.id}
+                        entry={entry}
+                        onRemove={() => handleRemove(entry.id)}
+                        isDragging={activeEntry?.id === entry.id}
+                      />
+                    ))}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-full justify-start text-muted-foreground"
+                      onClick={() => setPickerCell({ date: d, slot: slot.id })}
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" />
+                      Add
+                    </Button>
+                  </DroppableCell>
                 );
               })}
             </div>
@@ -395,6 +452,11 @@ export function PlannerGrid({
           ) : null}
         </div>
       </div>
+
+      <DragOverlay dropAnimation={null}>
+        {activeEntry ? <PlannerEntryTile entry={activeEntry} isDragOverlay /> : null}
+      </DragOverlay>
+      </DndContext>
 
       <AIChefDialog
         householdId={householdId}
@@ -500,12 +562,62 @@ export function PlannerGrid({
   );
 }
 
+// ── Drag & Drop wrappers ─────────────────────────────────────────────────────
+
+function DroppableCell({ id, children }: { id: string; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <Card
+      ref={setNodeRef}
+      className={cn("min-h-[72px] transition-colors", isOver && "border-primary/60 bg-primary/5")}
+    >
+      <CardContent className="flex flex-wrap gap-1 p-1.5">{children}</CardContent>
+    </Card>
+  );
+}
+
+function DraggableEntry({
+  entry,
+  onRemove,
+  isDragging,
+}: {
+  entry: EntryWithRecipe;
+  onRemove: () => void;
+  isDragging: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: entry.id });
+  const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={cn("touch-none", isDragging && "opacity-30")}
+    >
+      <PlannerEntryTile entry={entry} onRemove={onRemove} />
+    </div>
+  );
+}
+
 function PlannerEntry({
   entry,
   onRemove,
 }: {
   entry: EntryWithRecipe;
   onRemove: () => void;
+}) {
+  return <PlannerEntryTile entry={entry} onRemove={onRemove} />;
+}
+
+function PlannerEntryTile({
+  entry,
+  onRemove,
+  isDragOverlay,
+}: {
+  entry: EntryWithRecipe;
+  onRemove?: () => void;
+  isDragOverlay?: boolean;
 }) {
   const title = entry.recipe?.title ?? entry.custom_title ?? "Meal";
   const coverRef = entry.recipe ? resolveCoverImage(entry.recipe) : null;
@@ -534,24 +646,28 @@ function PlannerEntry({
         <p className="truncate text-[10px] font-medium leading-tight text-white">{title}</p>
       </div>
 
-      {/* Remove button — top-right on hover */}
-      <button
-        type="button"
-        className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
-        aria-label="Remove"
-      >
-        <Trash2 className="h-3 w-3 text-white" />
-      </button>
+      {/* Remove button — top-right on hover, hidden during drag overlay */}
+      {!isDragOverlay && onRemove && (
+        <button
+          type="button"
+          className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
+          aria-label="Remove"
+        >
+          <Trash2 className="h-3 w-3 text-white" />
+        </button>
+      )}
     </div>
   );
 
-  return entry.recipe ? (
-    <Link href={`/recipes/${entry.recipe.id}`} className="block w-[calc(50%-2px)] min-w-[48px]">
+  const wrapClass = cn("w-[calc(50%-2px)] min-w-[48px]", isDragOverlay && "rotate-2 opacity-90 shadow-lg");
+
+  return entry.recipe && !isDragOverlay ? (
+    <Link href={`/recipes/${entry.recipe.id}`} className={cn("block", wrapClass)}>
       {inner}
     </Link>
   ) : (
-    <div className="w-[calc(50%-2px)] min-w-[48px]">{inner}</div>
+    <div className={wrapClass}>{inner}</div>
   );
 }
 
