@@ -140,8 +140,10 @@ export function AppShell({
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <Link href="/recipes" className="font-display text-lg font-semibold">
+          <Link href="/recipes" className="flex items-center gap-2 font-display text-lg font-semibold">
             BiteBuddy
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/app-icon.png" alt="" className="h-7 w-7 rounded-lg" aria-hidden="true" />
           </Link>
         </div>
 
