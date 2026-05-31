@@ -2,7 +2,7 @@
   "name": "BiteBuddy",
   "short_name": "BiteBuddy",
   "description": "Your household's recipes, planner, and shopping list.",
-  "start_url": "/dashboard",
+  "start_url": "/recipes",
   "display": "standalone",
   "background_color": "#fafaf6",
   "theme_color": "#c75c2e",
