@@ -157,7 +157,11 @@ export function RecipesBrowser({
   }, [recipes]);
 
   const filtered = useMemo(() => {
+    const q = deferredQuery.trim().toLowerCase();
     return recipes.filter((r) => {
+      // Client-side text filter — mirrors the fuzzy search so pressing Enter
+      // shows the same results in the grid immediately without a server round-trip.
+      if (q && !r.title.toLowerCase().includes(q)) return false;
       if (reviewOnly && r.status !== "needs_review") return false;
       if (favOnly && !r.is_favorite) return false;
       if (meal && !r.meal_types.includes(meal)) return false;
@@ -172,7 +176,7 @@ export function RecipesBrowser({
       }
       return true;
     });
-  }, [recipes, reviewOnly, favOnly, meal, diets, cuisines, tags, sources]);
+  }, [recipes, deferredQuery, reviewOnly, favOnly, meal, diets, cuisines, tags, sources]);
 
   function commitTextSearch(value: string) {
     // Preserve all active filter params when updating the text query.
