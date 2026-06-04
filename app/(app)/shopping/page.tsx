@@ -39,7 +39,7 @@ export default async function ShoppingPage() {
         lists={allLists}
         activeListId={active?.list.id ?? null}
       />
-      <main>
+      <main className="min-w-0">
         {active ? (
           <ShoppingList
             // Re-mount when the active list changes so internal `items` state

@@ -177,7 +177,9 @@ export function PlannerGrid({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const parts = String(over.id).split("|");
+    const rawId = String(over.id);
+    const cellId = rawId.startsWith("mob:") ? rawId.slice(4) : rawId;
+    const parts = cellId.split("|");
     if (parts.length !== 2) return;
     const [newDate, newSlot] = parts as [string, MealSlot];
 
@@ -400,7 +402,7 @@ export function PlannerGrid({
             Week of {format(parseISO(weekStartIso), "MMM d")}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="icon" asChild>
             <Link href={`/planner?week=${previousWeekIso}`} aria-label="Previous week">
               <ChevronLeft className="h-4 w-4" />
@@ -411,14 +413,28 @@ export function PlannerGrid({
               <ChevronRight className="h-4 w-4" />
             </Link>
           </Button>
-          <Button variant="outline" onClick={() => setAiChefOpen(true)}>
+          {/* Icon-only on mobile, full label on sm+ */}
+          <Button variant="outline" size="icon" className="sm:hidden" aria-label="Ask AI Chef" onClick={() => setAiChefOpen(true)}>
+            <ChefHat className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" className="hidden sm:flex" onClick={() => setAiChefOpen(true)}>
             <ChefHat className="mr-2 h-4 w-4" /> Ask AI Chef
           </Button>
           <Button
+            size="icon"
+            className="sm:hidden"
+            aria-label="Build shopping list"
             onClick={() => {
-              if (!listStart) {
-                setListStart(new Date().toISOString().slice(0, 10));
-              }
+              if (!listStart) setListStart(new Date().toISOString().slice(0, 10));
+              setShoppingDialogOpen(true);
+            }}
+          >
+            <ShoppingBasket className="h-4 w-4" />
+          </Button>
+          <Button
+            className="hidden sm:flex"
+            onClick={() => {
+              if (!listStart) setListStart(new Date().toISOString().slice(0, 10));
               setShoppingDialogOpen(true);
             }}
           >
@@ -428,67 +444,126 @@ export function PlannerGrid({
       </div>
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="overflow-x-auto">
-        <div className="grid min-w-[640px] grid-cols-[72px_repeat(7,1fr)] gap-1.5">
-          <div />
-          {dates.map((d) => (
-            <div key={d} className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              <div>{format(parseISO(d), "EEE")}</div>
-              <div className="font-display text-base font-semibold text-foreground">
-                {format(parseISO(d), "d")}
+        {/* Mobile: vertical day-by-day layout */}
+        <div className="space-y-3 md:hidden">
+          {dates.map((d, idx) => {
+            const dayMacros = dailyMacros[idx];
+            return (
+              <div key={d} className="overflow-hidden rounded-xl border">
+                <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2.5">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-display text-base font-semibold">
+                      {format(parseISO(d), "EEEE")}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {format(parseISO(d), "d MMM")}
+                    </span>
+                  </div>
+                  {showMacrosRow && dayMacros?.hasAny ? (
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {Math.round(dayMacros.calories)} kcal
+                    </span>
+                  ) : null}
+                </div>
+                {SLOTS.map((slot) => {
+                  const cellEntries = grouped.get(`${d}|${slot.id}`) ?? [];
+                  return (
+                    <div key={slot.id} className="border-b last:border-b-0">
+                      <div className="flex items-center justify-between px-3 py-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          {slot.label}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => setPickerCell({ date: d, slot: slot.id })}
+                          aria-label={`Add ${slot.label}`}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <MobileDroppableSlot id={`mob:${d}|${slot.id}`}>
+                        {cellEntries.map((entry) => (
+                          <DraggableEntry
+                            key={entry.id}
+                            entry={entry}
+                            onRemove={() => handleRemove(entry.id)}
+                            isDragging={activeEntry?.id === entry.id}
+                          />
+                        ))}
+                      </MobileDroppableSlot>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-          ))}
-
-          {SLOTS.map((slot) => (
-            <div key={slot.id} className="contents">
-              <div className="flex items-start pt-2 text-sm font-medium text-muted-foreground">
-                {slot.label}
-              </div>
-              {dates.map((d) => {
-                const cellEntries = grouped.get(`${d}|${slot.id}`) ?? [];
-                return (
-                  <DroppableCell key={`${d}-${slot.id}`} id={`${d}|${slot.id}`}>
-                    {cellEntries.map((entry) => (
-                      <DraggableEntry
-                        key={entry.id}
-                        entry={entry}
-                        onRemove={() => handleRemove(entry.id)}
-                        isDragging={activeEntry?.id === entry.id}
-                      />
-                    ))}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-full justify-start text-muted-foreground"
-                      onClick={() => setPickerCell({ date: d, slot: slot.id })}
-                    >
-                      <Plus className="mr-1 h-3.5 w-3.5" />
-                      Add
-                    </Button>
-                  </DroppableCell>
-                );
-              })}
-            </div>
-          ))}
-
-          {showMacrosRow ? (
-            <div className="contents">
-              <div className="flex items-start pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Day total
-              </div>
-              {dates.map((d, idx) => (
-                <DayMacrosCell key={`totals-${d}`} macros={dailyMacros[idx]!} />
-              ))}
-            </div>
-          ) : null}
+            );
+          })}
         </div>
-      </div>
 
-      <DragOverlay dropAnimation={null}>
-        {activeEntry ? <PlannerEntryTile entry={activeEntry} isDragOverlay /> : null}
-      </DragOverlay>
+        {/* Desktop: horizontal grid */}
+        <div className="hidden overflow-x-auto md:block">
+          <div className="grid min-w-[640px] grid-cols-[72px_repeat(7,1fr)] gap-1.5">
+            <div />
+            {dates.map((d) => (
+              <div key={d} className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <div>{format(parseISO(d), "EEE")}</div>
+                <div className="font-display text-base font-semibold text-foreground">
+                  {format(parseISO(d), "d")}
+                </div>
+              </div>
+            ))}
+
+            {SLOTS.map((slot) => (
+              <div key={slot.id} className="contents">
+                <div className="flex items-start pt-2 text-sm font-medium text-muted-foreground">
+                  {slot.label}
+                </div>
+                {dates.map((d) => {
+                  const cellEntries = grouped.get(`${d}|${slot.id}`) ?? [];
+                  return (
+                    <DroppableCell key={`${d}-${slot.id}`} id={`${d}|${slot.id}`}>
+                      {cellEntries.map((entry) => (
+                        <DraggableEntry
+                          key={entry.id}
+                          entry={entry}
+                          onRemove={() => handleRemove(entry.id)}
+                          isDragging={activeEntry?.id === entry.id}
+                        />
+                      ))}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-full justify-start text-muted-foreground"
+                        onClick={() => setPickerCell({ date: d, slot: slot.id })}
+                      >
+                        <Plus className="mr-1 h-3.5 w-3.5" />
+                        Add
+                      </Button>
+                    </DroppableCell>
+                  );
+                })}
+              </div>
+            ))}
+
+            {showMacrosRow ? (
+              <div className="contents">
+                <div className="flex items-start pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Day total
+                </div>
+                {dates.map((d, idx) => (
+                  <DayMacrosCell key={`totals-${d}`} macros={dailyMacros[idx]!} />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <DragOverlay dropAnimation={null}>
+          {activeEntry ? <PlannerEntryTile entry={activeEntry} isDragOverlay /> : null}
+        </DragOverlay>
       </DndContext>
 
       <AIChefDialog
@@ -638,6 +713,21 @@ function DroppableCell({ id, children }: { id: string; children: React.ReactNode
     >
       <CardContent className="flex flex-col gap-1 p-1.5">{children}</CardContent>
     </Card>
+  );
+}
+
+function MobileDroppableSlot({ id, children }: { id: string; children?: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "min-h-[2rem] space-y-1.5 px-3 pb-2.5 transition-colors",
+        isOver && "bg-primary/5",
+      )}
+    >
+      {children}
+    </div>
   );
 }
 

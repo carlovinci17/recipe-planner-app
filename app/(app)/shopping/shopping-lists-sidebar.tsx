@@ -139,7 +139,7 @@ export function ShoppingListsSidebar({
           No lists yet — start one with the New button or build from the planner.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="max-h-52 space-y-3 overflow-y-auto md:max-h-none">
           {grouped.map((group) => (
             <div key={group.label} className="space-y-1">
               <div className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">

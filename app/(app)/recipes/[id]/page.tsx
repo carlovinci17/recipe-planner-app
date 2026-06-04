@@ -63,12 +63,12 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl font-semibold">{recipe.title}</h1>
+          <h1 className="font-display text-2xl font-semibold md:text-3xl">{recipe.title}</h1>
           {recipe.description ? (
             <p className="mt-1 max-w-2xl text-muted-foreground">{recipe.description}</p>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           <AddToPlannerButton recipeId={recipe.id} householdId={recipe.household_id} />
           <FavoriteButton recipeId={recipe.id} initial={recipe.is_favorite} />
           {perms.canEdit ? (
