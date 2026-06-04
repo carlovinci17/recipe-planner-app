@@ -444,47 +444,47 @@ export function PlannerGrid({
       </div>
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        {/* Mobile: vertical day-by-day layout */}
-        <div className="space-y-3 md:hidden">
-          {dates.map((d, idx) => {
-            const dayMacros = dailyMacros[idx];
-            return (
-              <div key={d} className="overflow-hidden rounded-xl border">
-                <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2.5">
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-display text-base font-semibold">
-                      {format(parseISO(d), "EEEE")}
+        {/* Mobile: days as rows, slots as columns */}
+        <div className="md:hidden">
+          {/* Slot column headers */}
+          <div className="mb-1 grid grid-cols-[3rem_repeat(4,1fr)] gap-1">
+            <div />
+            {SLOTS.map((slot) => (
+              <div
+                key={slot.id}
+                className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                {slot.label}
+              </div>
+            ))}
+          </div>
+
+          {/* Day rows */}
+          <div className="space-y-1">
+            {dates.map((d, idx) => {
+              const dayMacros = dailyMacros[idx];
+              return (
+                <div key={d} className="grid grid-cols-[3rem_repeat(4,1fr)] gap-1">
+                  {/* Day label */}
+                  <div className="flex flex-col items-center justify-start pt-1.5">
+                    <span className="text-[10px] font-medium uppercase leading-tight text-muted-foreground">
+                      {format(parseISO(d), "EEE")}
                     </span>
-                    <span className="text-sm text-muted-foreground">
-                      {format(parseISO(d), "d MMM")}
+                    <span className="font-display text-sm font-semibold leading-tight">
+                      {format(parseISO(d), "d")}
                     </span>
+                    {showMacrosRow && dayMacros?.hasAny ? (
+                      <span className="mt-0.5 text-[9px] tabular-nums text-muted-foreground">
+                        {Math.round(dayMacros.calories)}
+                      </span>
+                    ) : null}
                   </div>
-                  {showMacrosRow && dayMacros?.hasAny ? (
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {Math.round(dayMacros.calories)} kcal
-                    </span>
-                  ) : null}
-                </div>
-                {SLOTS.map((slot) => {
-                  const cellEntries = grouped.get(`${d}|${slot.id}`) ?? [];
-                  return (
-                    <div key={slot.id} className="border-b last:border-b-0">
-                      <div className="flex items-center justify-between px-3 py-2">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          {slot.label}
-                        </span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0"
-                          onClick={() => setPickerCell({ date: d, slot: slot.id })}
-                          aria-label={`Add ${slot.label}`}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <MobileDroppableSlot id={`mob:${d}|${slot.id}`}>
+
+                  {/* Slot cells */}
+                  {SLOTS.map((slot) => {
+                    const cellEntries = grouped.get(`${d}|${slot.id}`) ?? [];
+                    return (
+                      <MobileDroppableSlot key={slot.id} id={`mob:${d}|${slot.id}`}>
                         {cellEntries.map((entry) => (
                           <DraggableEntry
                             key={entry.id}
@@ -493,13 +493,23 @@ export function PlannerGrid({
                             isDragging={activeEntry?.id === entry.id}
                           />
                         ))}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-full p-0 text-muted-foreground"
+                          onClick={() => setPickerCell({ date: d, slot: slot.id })}
+                          aria-label={`Add ${slot.label}`}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
                       </MobileDroppableSlot>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Desktop: horizontal grid */}
@@ -722,7 +732,7 @@ function MobileDroppableSlot({ id, children }: { id: string; children?: React.Re
     <div
       ref={setNodeRef}
       className={cn(
-        "min-h-[2rem] space-y-1.5 px-3 pb-2.5 transition-colors",
+        "min-h-[3rem] space-y-0.5 rounded-md transition-colors",
         isOver && "bg-primary/5",
       )}
     >
