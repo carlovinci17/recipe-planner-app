@@ -61,7 +61,18 @@ export function RecipeSearchCombobox({
   const suggestions = useMemo(() => {
     if (query.trim().length < 2) return [];
     return recipes
-      .map((r) => ({ recipe: r, score: fuzzyScore(query, r.title) }))
+      .map((r) => {
+        const fields = [
+          r.title,
+          r.description ?? "",
+          r.tags.join(" "),
+          r.cuisines.join(" "),
+          r.meal_types.join(" "),
+          r.diet_types.join(" "),
+        ];
+        const score = Math.max(...fields.map((f) => fuzzyScore(query, f)));
+        return { recipe: r, score };
+      })
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 8)

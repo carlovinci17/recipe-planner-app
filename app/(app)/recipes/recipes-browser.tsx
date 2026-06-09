@@ -161,7 +161,17 @@ export function RecipesBrowser({
     return recipes.filter((r) => {
       // Client-side text filter — mirrors the fuzzy search so pressing Enter
       // shows the same results in the grid immediately without a server round-trip.
-      if (q && !r.title.toLowerCase().includes(q)) return false;
+      if (q) {
+        const haystack = [
+          r.title,
+          r.description ?? "",
+          r.tags.join(" "),
+          r.cuisines.join(" "),
+          r.meal_types.join(" "),
+          r.diet_types.join(" "),
+        ].join(" ").toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       if (reviewOnly && r.status !== "needs_review") return false;
       if (favOnly && !r.is_favorite) return false;
       if (meal && !r.meal_types.includes(meal)) return false;
