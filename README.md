@@ -1,3 +1,6 @@
+> ⚠️ **In Development** — this project is under active development and not yet stable.
+> Expect breaking changes, incomplete features, and rough edges.
+
 # Recipe Planner
 
 AI-native household recipe planning. Drop messy PDFs, screenshots, scans, or URLs in — get clean,
