@@ -22,6 +22,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | 0.8 | Quality baseline (docs/tests/lint) | 0 | Operational Excellence | ⬜ | — |
 | 0.9 | Workshop the CLI toolbelt | 0 | — | ⬜ | — |
 | [0.10](00-10-tooling-rnd.md) | Tooling R&D, validation & selection (ongoing) | 0 | Operational Excellence | ✅ Done | `3aaa7058-fd84-8147-9b17-eb357b5eaab3` |
+| [1.4](01-4-database-decision.md) | Settle the database (ADR-0001) | 1 | Cost Optimization | ✅ Done | `3aaa7058-fd84-8134-9699-c0b2b1ff441e` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
