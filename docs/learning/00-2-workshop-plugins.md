@@ -1,6 +1,6 @@
 # Lesson 0.2 — Workshop & adopt the skills/plugins
 
-**Date:** 2026-07-25   **Module:** 0   **WAF pillar(s):** Operational Excellence   **Token cost:** negligible (workshop/docs)   **Status:** 🧪 Testing — `mattpocock-skills` installed (project scope), trialing on ADR-001
+**Date:** 2026-07-25   **Module:** 0   **WAF pillar(s):** Operational Excellence   **Token cost:** negligible (workshop/docs)   **Status:** ✅ Done — verdict: `grilling` **adopted** (proved out on ADR-0001); `superpowers` deferred; `domain-modeling` adopted but not yet exercised (trial on ADR-0002)
 
 ## What we did
 Learned how Claude Code is extended, then ran a selection *workshop* rather than installing on
@@ -57,5 +57,8 @@ a `.claude/settings.json` in the starter repo.
 ## Evidence / links
 - Scorecard: `docs/tooling-decisions.md`
 - Marketplace: `mattpocock/skills` (`/plugin marketplace add mattpocock/skills`)
-- Installed: `mattpocock-skills@mattpocock` v1.2.0 (project scope). Next: trial `grilling` +
-  `domain-modeling` on ADR-001, then mark ✅ with a verdict.
+- Installed: `mattpocock-skills@mattpocock` v1.2.0 (project scope).
+- **Verdict (2026-07-27):** `grilling` **adopted** — it ran the ADR-0001 database decision and
+  caught two things a straight decision would have missed (trigram = rot; Postgres-on-Container-Apps
+  = data-loss trap). `superpowers` deferred to end of Module 0. `domain-modeling` adopted in
+  principle but **not yet exercised** (ADR-0001 written directly) — trial it on ADR-0002.

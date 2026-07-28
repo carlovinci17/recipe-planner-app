@@ -13,7 +13,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | Lesson | Title | Module | WAF pillar(s) | Status | Notion page ID |
 |---|---|---|---|---|---|
 | [0.1](00-1-plan-before-you-build.md) | Plan before you build | 0 | Operational Excellence | ✅ Done | `3a8a7058-fd84-81f2-874d-fe40f6b41644` |
-| [0.2](00-2-workshop-plugins.md) | Workshop & adopt the skills/plugins | 0 | Operational Excellence | 🚧 In progress | `3a8a7058-fd84-818d-bae1-d2fe8815d710` |
+| [0.2](00-2-workshop-plugins.md) | Workshop & adopt the skills/plugins | 0 | Operational Excellence | ✅ Done | `3a8a7058-fd84-818d-bae1-d2fe8815d710` |
 | 0.3 | Workshop the MCP servers | 0 | — | ⬜ | — |
 | 0.4 | Working habits that compound | 0 | — | ⬜ | — |
 | 0.5 | Model selection & cost discipline | 0 | Cost Optimization | ⬜ | — |
