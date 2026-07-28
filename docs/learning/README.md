@@ -26,6 +26,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [1.2](01-2-data-audit.md) | Audit the data (evidence before decisions) | 1 | Cost Optimization | ✅ Done | `3aba7058-fd84-8175-a40d-e8b69f2ed793` |
 | [1.3](01-3-waf-applied.md) | The Well-Architected Framework, applied | 1 | (all five) | ✅ Done | `3aba7058-fd84-8145-bd97-ddbf3c6eac5b` |
 | [1.4](01-4-database-decision.md) | Settle the database (ADR-0001) | 1 | Cost Optimization | ✅ Done | `3aaa7058-fd84-8134-9699-c0b2b1ff441e` |
+| [2.1](02-1-bicep-azd.md) | Bicep basics + azd | 2 | Operational Excellence | ✅ Done | `3aba7058-fd84-81b0-9f43-d01374b9ec88` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
