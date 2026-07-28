@@ -24,6 +24,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [0.10](00-10-tooling-rnd.md) | Tooling R&D, validation & selection (ongoing) | 0 | Operational Excellence | ✅ Done | `3aaa7058-fd84-8147-9b17-eb357b5eaab3` |
 | [1.1](01-1-read-by-seams.md) | Read a codebase by its seams | 1 | Operational Excellence | ✅ Done | `3aaa7058-fd84-81b2-89b9-d3a3ffce0536` |
 | [1.2](01-2-data-audit.md) | Audit the data (evidence before decisions) | 1 | Cost Optimization | ✅ Done | `3aba7058-fd84-8175-a40d-e8b69f2ed793` |
+| [1.3](01-3-waf-applied.md) | The Well-Architected Framework, applied | 1 | (all five) | ✅ Done | `3aba7058-fd84-8145-bd97-ddbf3c6eac5b` |
 | [1.4](01-4-database-decision.md) | Settle the database (ADR-0001) | 1 | Cost Optimization | ✅ Done | `3aaa7058-fd84-8134-9699-c0b2b1ff441e` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
