@@ -2,7 +2,9 @@
 
 **Skills in play:** `/security-review` touchpoint. Azure facts verified via Microsoft Learn.
 
-**Date:** 2026-07-29   **Module:** 2   **WAF pillar(s):** Security   **Token cost:** negligible   **Status:** 🚧 Ready to run (do it via **CLI** *or* **Portal**) — proof pending
+**Date:** 2026-07-29   **Module:** 2   **WAF pillar(s):** Security   **Token cost:** negligible   **Status:** ✅ Done (via Portal) — verified: secret round-trips; identity has read-only role
+
+**Provisioned (this project):** vault `kv-recipe-planner` (`https://kv-recipe-planner.vault.azure.net/`, RBAC) · identity `id-recipe-planner` (clientId `58d11ec5-7086-4739-9b1b-4a8a864fff0a`, principalId `a1871a67-13e2-41f9-8913-533cf01e1c21`, role: Key Vault Secrets User). The **clientId** is what wires the identity into Container Apps in 2.4.
 
 ## Concept
 | Thing | What it is | Role it gets |
