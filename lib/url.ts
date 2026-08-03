@@ -12,9 +12,14 @@ import type { NextRequest } from "next/server";
  */
 export function publicUrl(request: NextRequest): URL {
   const url = request.nextUrl.clone();
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const raw = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   const proto = request.headers.get("x-forwarded-proto");
-  if (host) url.host = host;
+  if (raw) {
+    // hostname only — never carry the internal container port (:3000).
+    url.hostname = raw.split(":")[0];
+    // ingress serves on 443/80; an explicit :3000 in a redirect is unreachable.
+    url.port = "";
+  }
   if (proto) url.protocol = `${proto}:`;
   return url;
 }
