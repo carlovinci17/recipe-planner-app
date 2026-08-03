@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { publicUrl } from "@/lib/url";
 
 /**
  * OAuth callback. Exchanges the `code` for a session and redirects to `next`.
@@ -14,14 +15,14 @@ export async function GET(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
-      const failUrl = url.clone();
+      const failUrl = publicUrl(request);
       failUrl.pathname = "/login";
       failUrl.search = `?error=${encodeURIComponent(error.message)}`;
       return NextResponse.redirect(failUrl);
     }
   }
 
-  const target = url.clone();
+  const target = publicUrl(request);
   target.pathname = next.startsWith("/") ? next : "/recipes";
   target.search = "";
   return NextResponse.redirect(target);

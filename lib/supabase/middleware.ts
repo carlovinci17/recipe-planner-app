@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import type { Database } from "@/types/database.types";
 import { env } from "@/lib/env";
+import { publicUrl } from "@/lib/url";
 
 const PUBLIC_PATHS = [
   "/",
@@ -54,14 +55,14 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (!user && !isPublicPath(pathname)) {
-    const url = request.nextUrl.clone();
+    const url = publicUrl(request);
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
 
   if (user && (pathname === "/login" || pathname === "/signup")) {
-    const url = request.nextUrl.clone();
+    const url = publicUrl(request);
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
   }
