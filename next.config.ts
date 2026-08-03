@@ -13,6 +13,7 @@ const supabaseHost = (() => {
 
 const config: NextConfig = {
   reactStrictMode: true,
+  output: "standalone",
   env: {
     NEXT_PUBLIC_APP_VERSION: version,
     NEXT_PUBLIC_GIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "",
@@ -27,7 +28,13 @@ const config: NextConfig = {
     minimumCacheTTL: 3600,
     remotePatterns: [
       ...(supabaseHost
-        ? [{ protocol: "https" as const, hostname: supabaseHost, pathname: "/storage/v1/object/**" }]
+        ? [
+            {
+              protocol: "https" as const,
+              hostname: supabaseHost,
+              pathname: "/storage/v1/object/**",
+            },
+          ]
         : []),
       { protocol: "https", hostname: "lh3.googleusercontent.com" },
       { protocol: "https", hostname: "images.unsplash.com" },
