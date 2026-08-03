@@ -38,6 +38,9 @@ when its service is replaced:
 - [ ] `@supabase/*` packages · `supabase` CLI dep · `inngest` — remove when unused.
 - [ ] `db:reset` / `db:push` / `db:diff` / `db:types` scripts (Supabase CLI) → Drizzle equivalents (Module 3).
 
+## External dashboards (transitional bridges)
+- [ ] **Supabase → Auth → URL Configuration:** remove the Azure Container Apps redirect URL `https://recipe-planner.delightfulrock-67fe0b09.australiaeast.azurecontainerapps.io/**` — added in Module 2 so the *current* Supabase-auth sign-in works on Azure; auth is replaced in Module 4.
+
 ## Repo / infra
 - [ ] `supabase/` directory (migrations, config, seed) — retire after schema port + data migration (Modules 3, 9).
 - [ ] Vercel config & `VERCEL_*` env references (e.g. `next.config.ts` uses `VERCEL_GIT_COMMIT_SHA`) → Azure build metadata.
