@@ -40,6 +40,7 @@ when its service is replaced:
 
 ## External dashboards (transitional bridges)
 - [ ] **Supabase → Auth → URL Configuration:** remove the Azure Container Apps redirect URL `https://recipe-planner.delightfulrock-67fe0b09.australiaeast.azurecontainerapps.io/**` — added in Module 2 so the *current* Supabase-auth sign-in works on Azure; auth is replaced in Module 4.
+  - **Watch-note (2026-08-03):** Supabase **Site URL** = `https://bitebuddy-ai.vercel.app/` (current Vercel prod). Consequences if things break: (a) email-auth links (confirmation / magic link / password reset) go to **Vercel, not Azure** — so email signup tested on Azure lands on Vercel; (b) if Google sign-in on Azure **bounces you to the Vercel app** instead of staying on Azure, the Azure **Redirect URL** allowlist entry isn't matching — re-check it. Google OAuth itself is unaffected by Site URL.
 
 ## Repo / infra
 - [ ] `supabase/` directory (migrations, config, seed) — retire after schema port + data migration (Modules 3, 9).
