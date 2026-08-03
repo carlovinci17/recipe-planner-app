@@ -16,7 +16,7 @@ export function publicUrl(request: NextRequest): URL {
   const proto = request.headers.get("x-forwarded-proto");
   if (raw) {
     // hostname only — never carry the internal container port (:3000).
-    url.hostname = raw.split(":")[0];
+    url.hostname = raw.split(":")[0] ?? raw;
     // ingress serves on 443/80; an explicit :3000 in a redirect is unreachable.
     url.port = "";
   }
