@@ -20,7 +20,7 @@ value · 4) Cost & maintenance · 5) Reversibility.
 | Tool | Need | Fit | Learn | Cost | Rev | Verdict | Why |
 |---|---|---|---|---|---|---|---|
 | Microsoft Learn MCP | | | | | | ✅ adopt | In active use verifying Azure facts (WAF pillars, Bicep, azd, Container Apps). Free, zero-maintenance |
-| Azure MCP | | | | | | 🕓 defer to Module 2 | Needs deployed resources + creds first |
+| Azure MCP | 5 | 5 | 4 | 5 | 5 | ✅ adopt | Installed + tested in Lesson 2.7 (`npx @azure/mcp@latest`, auth via `az login`); lists/queries our live estate directly. Official, free |
 | Azure Diagram Builder MCP | | | | | | 🕓 defer to end of Module 2 | Self-hosted; value is WAF review + cost + Bicep gen |
 | Notion MCP (official) | | | | | | ✅ adopt | In active use syncing every lesson artefact to the learning hub |
 
@@ -30,10 +30,11 @@ value · 4) Cost & maintenance · 5) Reversibility.
 | azd (Azure Developer CLI) | | | | | | ✅ adopt | Installed 1.28.1 (Module 2). Provision Bicep + deploy Container Apps in one tool |
 | az (Azure CLI) | | | | | | ✅ adopt | Installed 2.87.0, logged in; created rg-recipe-planner. Foundational |
 | func (Azure Functions Core Tools) | | | | | | ⬜ pending (Module 6) | Local Durable Functions dev; replaces Inngest CLI |
-| docker | | | | | | ⬜ pending (Module 2) | Build the standalone image locally |
+| docker | | | | | | ✅ adopt | Used in Lesson 2.4 to build/run the standalone image locally before CI |
 | gh (GitHub CLI) | | | | | | ✅ adopt | Already used in this repo |
 | drizzle-kit | | | | | | ⬜ pending (Module 3) | Migrations + Studio; replaces `supabase db` + `db:types` |
 | gitleaks | | | | | | ⬜ pending (Module 0/2) | Pre-commit secret scan; this repo had a real secret scare |
 | trufflehog | | | | | | ⬜ pending (Module 2) | CI history scan for live leaked secrets |
 | trivy | | | | | | ⬜ pending (Module 2) | Scan Dockerfile + Bicep for misconfig |
 | Infracost | | | | | | ❌ reject | Terraform-first; use Diagram Builder MCP for Bicep cost |
+| Azure VS Code extension (GUI) | 4 | 5 | 4 | 5 | 5 | ✅ adopt | Lesson 2.7 — in-editor resource tree + log streaming; good for hands-on exploration. Doesn't replace Bicep/IaC. Pair with the Bicep extension for authoring |

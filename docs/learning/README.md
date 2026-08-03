@@ -32,6 +32,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [2.4](02-4-container-apps.md) | Container Apps + Dockerfile (app live on Azure) | 2 | Ops · Security · Cost | ✅ Done | `3b1a7058-fd84-817f-bf27-ffa23784082e` |
 | [2.5](02-5-cicd-autodeploy.md) | CI/CD: auto-deploy GitHub → Azure (OIDC) | 2 | Ops · Security | ✅ Done (deploy); gates TODO | `3b1a7058-fd84-814d-b257-d65ba7ea8265` |
 | [2.6](02-6-observability.md) | Observability (Application Insights) | 2 | Operational Excellence | ⚠️ Partial (resource+logs; tracing revisit) | `3b1a7058-fd84-8116-acda-c297ce39a206` |
+| [2.7](02-7-azure-mcp.md) | Install the Azure MCP (+ VS Code ext) | 2 | Operational Excellence | ✅ Done | _pending_ |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
