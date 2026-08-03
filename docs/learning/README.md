@@ -29,6 +29,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [2.1](02-1-bicep-azd.md) | Bicep basics + azd | 2 | Operational Excellence | ✅ Done | `3aba7058-fd84-81b0-9f43-d01374b9ec88` |
 | [2.2](02-2-resource-groups.md) | Resource groups & tagging | 2 | Operational Excellence · Cost | ✅ Done | `3aba7058-fd84-815c-b1c0-e242407c9c0b` |
 | [2.3](02-3-managed-identity-key-vault.md) | Managed Identity + Key Vault | 2 | Security | ✅ Done | `3b0a7058-fd84-81ac-9929-c43b07759815` |
+| [2.4](02-4-container-apps.md) | Container Apps + Dockerfile (app live on Azure) | 2 | Ops · Security · Cost | ✅ Done | `3b1a7058-fd84-817f-bf27-ffa23784082e` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
