@@ -19,6 +19,14 @@ nothing is forgotten.
 - [ ] `Dockerfile` — the `NEXT_PUBLIC_SUPABASE_*` build args → Azure equivalents.
 - [ ] `next.config.ts` — the `supabaseHost` image `remotePatterns` entry (Supabase Storage) → Azure Blob host.
 
+## Key Vault secrets (loaded in Lesson 2.4 / 4c for the transition)
+These were loaded so the *current* app runs on Azure while still using Supabase/Inngest. Remove each
+when its service is replaced:
+- [ ] `supabase-service-role-key`, `supabase-jwt-secret` — remove when off Supabase (Modules 3 / 9).
+- [ ] `inngest-event-key` — remove when off Inngest (Module 6).
+- [ ] `anthropic-api-key` — replaced by Azure AI Foundry credentials (Module 7).
+- [ ] `google-client-id`, `google-client-secret` — likely **retained**, but re-homed under Entra External ID federation (Module 4) — verify before removing (Google sign-in is kept).
+
 ## App code
 - [ ] `lib/supabase/` (client / server / admin) — replaced by the Drizzle + Azure data layer (Module 3).
 - [ ] `lib/inngest/` — replaced by Azure Durable Functions (Module 6).
