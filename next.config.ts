@@ -40,7 +40,7 @@ const config: NextConfig = {
       { protocol: "https", hostname: "images.unsplash.com" },
     ],
   },
-  serverExternalPackages: ["pdfjs-dist", "sharp", "pino", "@napi-rs/canvas"],
+  serverExternalPackages: ["pdfjs-dist", "sharp", "pino", "@napi-rs/canvas", "@azure/monitor-opentelemetry"],
   // pdfjs-dist loads its worker via a runtime string reference that Vercel's
   // file tracer can't see. Explicitly include it so it's present in the
   // serverless function bundle.
