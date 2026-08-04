@@ -28,3 +28,6 @@ supabase/.temp/
 # (commands/, agents/, project CLAUDE.md) can still be committed.
 .claude/settings.local.json
 .env.prod
+
+# Generated ARM template (build artefact from Bicep)
+infra/main.json
