@@ -14,13 +14,28 @@
 - **Container Apps metrics** (CPU/mem/replicas/requests) in Azure Monitor.
 - The App Insights **resource exists** and is ready to receive data.
 
-## What didn't work (the timeboxed gap) ⚠️
-No telemetry of any type reaches App Insights — Live Metrics stays blank even under active traffic. The
-instrumented image runs with no crash and no logged instrumentation error, but the SDK isn't emitting.
-This is the known **Next.js-standalone + Azure Monitor OpenTelemetry** finickiness: the exporter is
-fiddly to initialise/hook inside Next's standalone server (either the connection string doesn't resolve
-at runtime, or the exporter doesn't wrap Next's request handling). Flagged as a risk before we started;
-per the plan we **timeboxed** rather than rabbit-hole, since nothing is blocked.
+## What didn't work — now precisely diagnosed ⚠️
+No telemetry of any type reaches App Insights (Live Metrics stays blank under active traffic). We later
+added verbose startup logging to `instrumentation.ts` and confirmed the exact failure point:
+
+```
+[instrumentation] register() ran · NEXT_RUNTIME=nodejs · hasConnString=true · connLen=252
+[instrumentation] useAzureMonitor() initialized ✅
+```
+
+So **init is perfect** — the hook runs, the connection string resolves from Key Vault (252 chars), and
+`useAzureMonitor()` returns without error. The failure is **downstream: nothing exports**. This is the
+known **Next.js-standalone + Azure Monitor OpenTelemetry composition gap** — Next.js registers its *own*
+OTel tracer provider, and the Azure Monitor exporter doesn't capture/export its spans. Timeboxed per the
+plan; nothing is blocked (console logs still flow to Log Analytics).
+
+**Fix direction (for the revisit):** wire OpenTelemetry manually (or via `@vercel/otel`) with the Azure
+Monitor *exporter*, rather than relying on `useAzureMonitor()`'s auto-instrumentation inside Next
+standalone — so Next's spans and the Azure exporter share one provider.
+
+**Bonus finding from the diagnostic:** the deploy that carried the debug build surfaced an *unrelated*
+real bug — the **ghcr pull PAT had expired** (`ImagePullUnauthorized`), silently breaking new deploys
+while CI stayed green. Rotated via `az containerapp registry set`. See Lesson 2.4's PAT section.
 
 ## To revisit (later)
 - Cleaner path: the **Container Apps OpenTelemetry agent** (preview) — a managed env-level agent that pipes OTel to App Insights, avoiding wrestling the exporter into the build.
