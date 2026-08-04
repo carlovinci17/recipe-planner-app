@@ -29,6 +29,19 @@ GitHub push → CI builds image → ghcr.io (private)
 | Compute | Container Apps env `cae-recipe-planner`; app `recipe-planner`, ingress on **3000**, scale rules |
 | Secrets | 5 **Key Vault references** on the app → mapped to env-var names; resolved by `id-recipe-planner` (Secrets User) |
 
+## The ghcr pull PAT — a credential that expires 🔑
+- **What:** a GitHub Personal Access Token (`read:packages` scope).
+- **Where it's used:** stored as the container app's **registry credential** (the secret `reg-pswd-…`). Azure Container Apps uses it to **pull the private image** from ghcr.io on **every new revision / deploy**.
+- **Why it exists:** the ghcr package is **private** (our 2.4 choice); private pulls need auth. Unlike **Azure** Container Registry, ghcr can't authenticate via a **managed identity** — so a PAT is the only option. It's the one non-passwordless piece in the whole setup.
+- **The gotcha (learned live):** it **expires**. When it does, new revisions fail with `ImagePullUnauthorized` → `ActivationFailed`; the failed revision doesn't serve (Container Apps keeps the last-good one, so **no outage** — but deploys silently stop working). **Sneaky:** CI shows *green* because the image *push* (via `GITHUB_TOKEN`) succeeds; the *pull* fails separately, on Azure's side. Rotate with `az containerapp registry set … --password <new-PAT>`.
+
+**Three GitHub credentials — don't confuse them:**
+| Credential | Job | Rotation |
+|---|---|---|
+| ghcr **pull** PAT | Azure *pulls* the private image (2.4) | **Expires — must rotate** |
+| CI `GITHUB_TOKEN` | GitHub Actions *pushes* the image (2.5) | Auto, per run |
+| OIDC federated identity | GitHub Actions *deploys* to Azure (2.5) | Passwordless — none |
+
 ## Gotchas that cost real time (the actual learning)
 1. **`next build` needs the two required `NEXT_PUBLIC_*` at build time** — Zod env validation runs at import; pass them as `--build-arg`.
 2. **Redirects behind a TLS-terminating proxy.** Container Apps terminates HTTPS at the ingress and forwards plain HTTP to the container on `0.0.0.0:3000`, so `request.nextUrl` is the *internal* address. Redirects went to `http://0.0.0.0:3000/…`, then (after a partial fix) `https://<fqdn>:3000/…`. Fix: rebuild the redirect origin from `x-forwarded-host`/`-proto` **and strip the port** (`lib/url.ts` `publicUrl()`).
