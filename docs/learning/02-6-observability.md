@@ -1,49 +1,38 @@
 # Lesson 2.6 — Observability (Application Insights)
 
-**Skills in play:** Microsoft Learn MCP (verified: Container Apps has no auto-instrumentation agent) · `diagnosing-bugs` (timeboxed).
+**Skills in play:** Microsoft Learn MCP (verified: Container Apps has no auto-instrumentation agent) · `diagnosing-bugs` (and a sharp lesson in *mis*-diagnosis — see below).
 
-**Date:** 2026-08-03   **Module:** 2   **WAF pillar(s):** Operational Excellence   **Token cost:** low   **Status:** ⚠️ **Partial (timeboxed)** — App Insights resource + platform logs/metrics ✅; live OTel request-tracing not emitting → **revisit**
+**Date:** 2026-08-03 (resolved 2026-08-04)   **Module:** 2   **WAF pillar(s):** Operational Excellence   **Token cost:** low   **Status:** ✅ **Done** — App Insights receiving requests, dependencies, traces + Live Metrics from the live app.
 
 ## What we did
 - Created **Application Insights** `appi-recipe-planner` (workspace-based, linked to the Log Analytics workspace the Container Apps environment already provisioned).
 - Stored its connection string in **Key Vault**; wired it onto the container app as a Key Vault reference secret → env var `APPLICATIONINSIGHTS_CONNECTION_STRING` (same passwordless pattern as Lesson 2.3).
-- Instrumented the app: `@azure/monitor-opentelemetry` + a Next.js `instrumentation.ts` calling `useAzureMonitor()`, with the package in `serverExternalPackages`. Local build clean; auto-deployed via the 2.5 pipeline.
+- Instrumented the app: `@azure/monitor-opentelemetry` (the Azure Monitor OpenTelemetry **Distro**) + a Next.js `instrumentation.ts` calling `useAzureMonitor()`, with the package in `serverExternalPackages`.
 
-## What works today ✅
-- **Console logs → Log Analytics.** Container Apps ships pino stdout to the workspace (`ContainerAppConsoleLogs` table / `az containerapp logs show`). This is how we read logs throughout Module 2.
-- **Container Apps metrics** (CPU/mem/replicas/requests) in Azure Monitor.
-- The App Insights **resource exists** and is ready to receive data.
+## What works ✅ (verified in the portal, 2026-08-04)
+- **Live Metrics** — real-time stream shows `1 server online` (revision `0000010`), ~1.3 req/sec, ~2.5 dependency calls/sec, live sample telemetry.
+- **Transaction Search** — 234 traces / ~1.48k spans in a 30-min window; each request (`GET /recipes`, `/recipes/[id]/edit`, …) is a clickable end-to-end trace.
+- **Dependencies auto-instrumented** — outbound `fetch` to Supabase (`…supabase.co/rest/v1/…`) shows as tracked dependencies. (Useful for Module 3: you'll *watch* these Supabase calls disappear as the DB moves to Neon.)
+- **Console logs → Log Analytics** still flow independently (how we read logs all through Module 2).
+- Sampling is on by default (portal shows the "data is being sampled" notice) — expected, cost-saving, nothing to fix.
 
-## What didn't work — now precisely diagnosed ⚠️
-No telemetry of any type reaches App Insights (Live Metrics stays blank under active traffic). We later
-added verbose startup logging to `instrumentation.ts` and confirmed the exact failure point:
+## The plot twist: we misdiagnosed this first ⚠️→✅
+Initially telemetry looked completely dead — Live Metrics blank, zero traces — even under traffic. We ran `diagnosing-bugs`, added startup logging, and concluded it was a **"Next.js-standalone + Azure Monitor OTel composition gap"** (Next owns the tracer provider; the Azure exporter doesn't see its spans). **That conclusion was wrong.**
 
-```
-[instrumentation] register() ran · NEXT_RUNTIME=nodejs · hasConnString=true · connLen=252
-[instrumentation] useAzureMonitor() initialized ✅
-```
+The real culprit was the **expired ghcr pull PAT** (Lesson 2.4). While it was expired, new revisions failed to pull the image (`ImagePullUnauthorized` → `ActivationFailed`), so the *instrumented* image we thought we were testing **was never the one actually serving traffic** — Container Apps kept an older revision alive. We were reading blank telemetry from a build that didn't have working instrumentation, and blaming the SDK.
 
-So **init is perfect** — the hook runs, the connection string resolves from Key Vault (252 chars), and
-`useAzureMonitor()` returns without error. The failure is **downstream: nothing exports**. This is the
-known **Next.js-standalone + Azure Monitor OpenTelemetry composition gap** — Next.js registers its *own*
-OTel tracer provider, and the Azure Monitor exporter doesn't capture/export its spans. Timeboxed per the
-plan; nothing is blocked (console logs still flow to Log Analytics).
+Once the PAT was rotated and revision **`0000010`** (clean `useAzureMonitor()` wiring) deployed *and pulled correctly*, telemetry flowed **exactly as Microsoft documents** — no `@vercel/otel`, no manual exporter, no code change needed.
 
-**Fix direction (for the revisit):** wire OpenTelemetry manually (or via `@vercel/otel`) with the Azure
-Monitor *exporter*, rather than relying on `useAzureMonitor()`'s auto-instrumentation inside Next
-standalone — so Next's spans and the Azure exporter share one provider.
-
-**Bonus finding from the diagnostic:** the deploy that carried the debug build surfaced an *unrelated*
-real bug — the **ghcr pull PAT had expired** (`ImagePullUnauthorized`), silently breaking new deploys
-while CI stayed green. Rotated via `az containerapp registry set`. See Lesson 2.4's PAT section.
-
-## To revisit (later)
-- Cleaner path: the **Container Apps OpenTelemetry agent** (preview) — a managed env-level agent that pipes OTel to App Insights, avoiding wrestling the exporter into the build.
-- Or debug the in-process init: confirm the connection-string env resolves at runtime (container `exec`), and whether `register()` runs + `http` is patched before Next loads it.
+**The lesson (worth more than the feature):** don't trust a diagnosis while a *confounding failure* is still in play. A broken deploy pipeline made a working SDK look broken. Fix the plumbing you *know* is broken before theorising about the thing you *think* is broken. **Verify what's actually running beats reasoning about what should be running.**
 
 ## Cost note
-App Insights is pay-per-GB ingested; near-zero at demo volume. It stays — it's the target observability, not transitional.
+App Insights is pay-per-GB ingested; near-zero at demo volume, and default sampling keeps it there. It stays — it's the target observability, not transitional.
+
+## Minor cosmetic note
+Some dependency rows show `NaN ms` duration in the live sample list (a quirk of the OTel `fetch` instrumentation under Next). Cosmetic only — Transaction Search shows correct durations. Not chasing it.
 
 ## Evidence / links
-- Verified via Microsoft Learn: [Observability in Container Apps](https://learn.microsoft.com/azure/container-apps/observability) ("Container Apps doesn't support the Application Insights auto-instrumentation agent… instrument your application code using SDKs"), [Enable Azure Monitor OpenTelemetry](https://learn.microsoft.com/azure/azure-monitor/app/opentelemetry-enable).
+- Verified via Microsoft Learn: [Observability in Container Apps](https://learn.microsoft.com/azure/container-apps/observability), [Enable Azure Monitor OpenTelemetry](https://learn.microsoft.com/azure/azure-monitor/app/opentelemetry-enable), [Live Metrics is a Distro feature](https://learn.microsoft.com/azure/azure-monitor/app/opentelemetry-configuration#live-metrics).
+- Portal (2026-08-04): Live Metrics `1 server online`; Transaction Search 234 traces / 1.48k spans.
 - Repo: `instrumentation.ts`, `next.config.ts` (`serverExternalPackages`), `package.json`.
+- Live: `https://recipe-planner.delightfulrock-67fe0b09.australiaeast.azurecontainerapps.io`

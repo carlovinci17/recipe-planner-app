@@ -1,12 +1,12 @@
 /**
  * Next.js instrumentation hook — initializes Azure Monitor (Application Insights).
  *
- * KNOWN GAP (Lesson 2.6): this initializes *cleanly* — `register()` runs, the connection
- * string resolves from Key Vault, and `useAzureMonitor()` returns without error — but **no
- * telemetry exports** under Next.js standalone. Next registers its own OpenTelemetry tracer
- * provider and the Azure exporter doesn't capture its spans. Wiring is kept here, ready for the
- * fix (manual OTel setup / `@vercel/otel` with the Azure Monitor exporter). Console logs from the
- * app still flow to Log Analytics regardless.
+ * `useAzureMonitor()` (the Azure Monitor OpenTelemetry Distro) auto-instruments the Next.js
+ * server: incoming requests, outbound fetch/dependencies, and Live Metrics all flow to App
+ * Insights — verified live in the portal (Lesson 2.6). Driven by
+ * APPLICATIONINSIGHTS_CONNECTION_STRING, which resolves from Key Vault via the container app's
+ * managed identity. (An earlier "no telemetry" scare was an expired-image-pull-PAT red herring,
+ * not an SDK gap — see Lesson 2.6.)
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.APPLICATIONINSIGHTS_CONNECTION_STRING) {
