@@ -1,14 +1,25 @@
 /**
- * Next.js instrumentation hook — runs once when the server starts.
- * Initializes Azure Monitor (Application Insights) so requests, dependencies,
- * exceptions, and logs are traced. The connection string is read from
- * APPLICATIONINSIGHTS_CONNECTION_STRING (sourced from Key Vault on Container Apps).
- *
- * Guarded to the Node.js runtime — OpenTelemetry needs Node, not the Edge runtime.
+ * Next.js instrumentation hook — initializes Azure Monitor (App Insights).
+ * Temporarily verbose to diagnose why telemetry isn't emitting.
  */
 export async function register() {
+  console.log(
+    `[instrumentation] register() ran · NEXT_RUNTIME=${process.env.NEXT_RUNTIME} · ` +
+      `hasConnString=${!!process.env.APPLICATIONINSIGHTS_CONNECTION_STRING} · ` +
+      `connLen=${process.env.APPLICATIONINSIGHTS_CONNECTION_STRING?.length ?? 0}`,
+  );
+
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.APPLICATIONINSIGHTS_CONNECTION_STRING) {
-    const { useAzureMonitor } = await import("@azure/monitor-opentelemetry");
-    useAzureMonitor();
+    try {
+      const { useAzureMonitor } = await import("@azure/monitor-opentelemetry");
+      useAzureMonitor();
+      console.log("[instrumentation] useAzureMonitor() initialized ✅");
+    } catch (e) {
+      console.log(`[instrumentation] useAzureMonitor() FAILED: ${(e as Error).message}`);
+    }
+  } else {
+    console.log(
+      "[instrumentation] guard SKIPPED init (runtime not nodejs, or conn string missing)",
+    );
   }
 }
