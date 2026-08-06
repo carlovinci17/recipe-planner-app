@@ -5,6 +5,8 @@ import {
   createTestUser,
   deleteTestUser,
   seedHousehold,
+  seedIngredient,
+  seedInstruction,
   seedRecipe,
   type SeededUser,
 } from "./helpers";
@@ -131,5 +133,57 @@ describe("recipeService.list — cross-household isolation (RLS)", () => {
   it("returns nothing when B queries A's household id directly (RLS blocks it)", async () => {
     const rows = await recipeService.list({ householdId: householdA });
     expect(rows).toEqual([]);
+  });
+});
+
+/**
+ * CHARACTERIZATION test — the detail read path. getById fetches the recipe plus
+ * its ingredients and instructions, each ordered by `position`, and uses
+ * `.single()` (which throws when the row is missing).
+ */
+describe("recipeService.getById — current behaviour", () => {
+  let user: SeededUser;
+  let householdId: string;
+  let recipeId: string;
+
+  beforeAll(async () => {
+    user = await createTestUser();
+    const authed = await authedClientFor(user);
+    householdId = await seedHousehold(authed);
+    recipeId = await seedRecipe(authed, {
+      householdId,
+      createdBy: user.id,
+      title: "Detailed Recipe",
+    });
+
+    // Insert out of order to prove the service orders by `position`.
+    await seedIngredient(authed, { recipeId, position: 1, ingredient: "sugar", unit: "g", quantity: 50 });
+    await seedIngredient(authed, { recipeId, position: 0, ingredient: "flour", unit: "g", quantity: 200 });
+    await seedInstruction(authed, { recipeId, position: 1, text: "Bake" });
+    await seedInstruction(authed, { recipeId, position: 0, text: "Mix" });
+
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      authed as unknown as Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    );
+  }, 30_000);
+
+  afterAll(async () => {
+    if (householdId) await adminClient().from("households").delete().eq("id", householdId);
+    if (user) await deleteTestUser(user.id);
+  });
+
+  it("returns the recipe with ingredients and instructions ordered by position", async () => {
+    const { recipe, ingredients, instructions } = await recipeService.getById(recipeId);
+    expect(recipe.id).toBe(recipeId);
+    expect(ingredients.map((i) => i.position)).toEqual([0, 1]);
+    expect(ingredients[0]?.ingredient).toBe("flour");
+    expect(instructions.map((s) => s.position)).toEqual([0, 1]);
+    expect(instructions[0]?.text).toBe("Mix");
+  });
+
+  it("throws when the recipe id does not exist (.single())", async () => {
+    await expect(
+      recipeService.getById("00000000-0000-0000-0000-000000000000"),
+    ).rejects.toBeDefined();
   });
 });

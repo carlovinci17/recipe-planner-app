@@ -87,3 +87,60 @@ export async function seedRecipe(
   if (error || !data) throw error ?? new Error("seedRecipe failed");
   return data.id;
 }
+
+/** Insert a recipe ingredient (as the authed user). */
+export async function seedIngredient(
+  authed: SupabaseClient<Database>,
+  args: { recipeId: string; position: number; rawText?: string; ingredient?: string; unit?: string; quantity?: number },
+): Promise<void> {
+  const { error } = await authed.from("recipe_ingredients").insert({
+    recipe_id: args.recipeId,
+    position: args.position,
+    raw_text: args.rawText ?? args.ingredient ?? "ingredient",
+    ingredient: args.ingredient ?? null,
+    unit: args.unit ?? null,
+    quantity: args.quantity ?? null,
+  });
+  if (error) throw error;
+}
+
+/** Insert a recipe instruction step (as the authed user). */
+export async function seedInstruction(
+  authed: SupabaseClient<Database>,
+  args: { recipeId: string; position: number; text: string },
+): Promise<void> {
+  const { error } = await authed.from("recipe_instructions").insert({
+    recipe_id: args.recipeId,
+    position: args.position,
+    text: args.text,
+  });
+  if (error) throw error;
+}
+
+/** Insert a planner entry (as the authed user); returns its id. */
+export async function seedPlannerEntry(
+  authed: SupabaseClient<Database>,
+  args: {
+    householdId: string;
+    createdBy: string;
+    recipeId: string;
+    date: string;
+    slot?: Tables<"planner_entries">["slot"];
+    servings?: number;
+  },
+): Promise<string> {
+  const { data, error } = await authed
+    .from("planner_entries")
+    .insert({
+      household_id: args.householdId,
+      created_by: args.createdBy,
+      recipe_id: args.recipeId,
+      date: args.date,
+      slot: args.slot ?? "dinner",
+      servings: args.servings ?? null,
+    })
+    .select("id")
+    .single();
+  if (error || !data) throw error ?? new Error("seedPlannerEntry failed");
+  return data.id;
+}

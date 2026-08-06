@@ -49,6 +49,12 @@ Same guarantee (a forgotten `WHERE` still can't cross households), different plu
 `generate_shopping_list_from_planner` (+ a range variant). All use `auth.uid()` internally → same
 `current_setting` treatment when ported.
 
+⚠️ **Porting gotcha (caught by a characterization test):** `generate_shopping_list_from_planner` is
+**redefined** in a later migration (`20260509000200_shopping_list_range.sql`) — the *live* version is
+range-based and names lists `"Shopping <start>-<end>"`, not the original `"Week of …"`. Port the
+**latest** definition. Lesson: read the migration that wins, not the first one you find — the test
+pinned the truth.
+
 ## Where the risk actually is
 The 74 query sites are mechanical-ish. The real risk is (a) the RLS bridge and (b) the subtle
 behaviours above — which is why we write characterization tests **first**. Quality issues found along
