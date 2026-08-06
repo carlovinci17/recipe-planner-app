@@ -4,6 +4,7 @@ out
 dist
 .env
 .env.local
+.env.test
 .env.*.local
 # Google OAuth client secrets — must never land in the repo. Real secret
 # was moved to ~/Secrets/google-oauth/ on 2026-05-12.
