@@ -2,7 +2,7 @@
 
 **Skills in play:** `codebase-design` · `/security-review` mindset (RLS is the security boundary).
 
-**Date:** 2026-08-06   **Module:** 3   **WAF pillar(s):** Security, Reliability   **Token cost:** low   **Status:** 🟡 In progress — `recipeService.list` ported & proven; remaining reads/writes/RPCs to follow the same pattern.
+**Date:** 2026-08-06   **Module:** 3   **WAF pillar(s):** Security, Reliability   **Token cost:** low   **Status:** 🟡 In progress — `recipeService.list` **and** `getById` ported & proven; writes/RPCs to follow the same pattern.
 
 ## The problem
 PostgREST scopes every query by the JWT via `auth.uid()`. Drizzle connects **directly** to Postgres —

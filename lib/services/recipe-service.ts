@@ -1,7 +1,7 @@
 import "server-only";
-import { and, desc, eq, gte, inArray, isNull, sql as dsql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, sql as dsql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { recipes } from "@/lib/db/schema";
+import { recipeIngredients, recipeInstructions, recipes } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import type { Tables, UpdateTables } from "@/types/database.types";
 
@@ -43,6 +43,12 @@ export type RecipeFilters = {
   status?: Tables<"recipes">["status"];
 };
 
+export type RecipeDetail = {
+  recipe: Tables<"recipes">;
+  ingredients: Tables<"recipe_ingredients">[];
+  instructions: Tables<"recipe_instructions">[];
+};
+
 export const recipeService = {
   /**
    * List recipes for a household. Behind a stable signature this dispatches to
@@ -54,33 +60,8 @@ export const recipeService = {
     return env.DATABASE_URL ? listViaDrizzle(args) : listViaSupabase(args);
   },
 
-  async getById(recipeId: string) {
-    const supabase = await createSupabaseServerClient();
-    const { data: recipe, error } = await supabase
-      .from("recipes")
-      .select("*")
-      .eq("id", recipeId)
-      .single();
-    if (error) throw error;
-
-    const [{ data: ingredients }, { data: instructions }] = await Promise.all([
-      supabase
-        .from("recipe_ingredients")
-        .select("*")
-        .eq("recipe_id", recipeId)
-        .order("position"),
-      supabase
-        .from("recipe_instructions")
-        .select("*")
-        .eq("recipe_id", recipeId)
-        .order("position"),
-    ]);
-
-    return {
-      recipe,
-      ingredients: ingredients ?? [],
-      instructions: instructions ?? [],
-    };
+  async getById(recipeId: string): Promise<RecipeDetail> {
+    return env.DATABASE_URL ? getByIdViaDrizzle(recipeId) : getByIdViaSupabase(recipeId);
   },
 
   async setFavorite(recipeId: string, isFavorite: boolean) {
@@ -387,5 +368,122 @@ async function listViaDrizzle(args: {
       .limit(args.limit ?? 60);
 
     return rows as unknown as RecipeListItem[];
+  });
+}
+
+// ── recipeService.getById: two implementations behind the stable signature ───
+
+async function getByIdViaSupabase(recipeId: string): Promise<RecipeDetail> {
+  const supabase = await createSupabaseServerClient();
+  const { data: recipe, error } = await supabase
+    .from("recipes")
+    .select("*")
+    .eq("id", recipeId)
+    .single();
+  if (error) throw error;
+
+  const [{ data: ingredients }, { data: instructions }] = await Promise.all([
+    supabase.from("recipe_ingredients").select("*").eq("recipe_id", recipeId).order("position"),
+    supabase.from("recipe_instructions").select("*").eq("recipe_id", recipeId).order("position"),
+  ]);
+
+  return { recipe, ingredients: ingredients ?? [], instructions: instructions ?? [] };
+}
+
+async function getByIdViaDrizzle(recipeId: string): Promise<RecipeDetail> {
+  const { withUserContext } = await import("@/lib/db");
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  return withUserContext(user.id, async (tx) => {
+    // Columns aliased back to snake_case to preserve the exact Tables<> shape.
+    const [recipe] = await tx
+      .select({
+        id: recipes.id,
+        household_id: recipes.householdId,
+        created_by: recipes.createdBy,
+        title: recipes.title,
+        description: recipes.description,
+        servings: recipes.servings,
+        prep_time_min: recipes.prepTimeMin,
+        cook_time_min: recipes.cookTimeMin,
+        total_time_min: recipes.totalTimeMin,
+        notes: recipes.notes,
+        source_kind: recipes.sourceKind,
+        source_url: recipes.sourceUrl,
+        source_metadata: recipes.sourceMetadata,
+        cover_image_path: recipes.coverImagePath,
+        image_paths: recipes.imagePaths,
+        nutrition: recipes.nutrition,
+        ai_metadata: recipes.aiMetadata,
+        ai_confidence: recipes.aiConfidence,
+        ai_model: recipes.aiModel,
+        cuisines: recipes.cuisines,
+        meal_types: recipes.mealTypes,
+        diet_types: recipes.dietTypes,
+        cooking_methods: recipes.cookingMethods,
+        difficulty: recipes.difficulty,
+        occasions: recipes.occasions,
+        tags: recipes.tags,
+        rating: recipes.rating,
+        is_favorite: recipes.isFavorite,
+        status: recipes.status,
+        archived_at: recipes.archivedAt,
+        embedding: recipes.embedding,
+        search_tsv: recipes.searchTsv,
+        created_at: recipes.createdAt,
+        updated_at: recipes.updatedAt,
+        ingestion_job_id: recipes.ingestionJobId,
+        external_source_id: recipes.externalSourceId,
+        cover_focal_x: recipes.coverFocalX,
+        cover_focal_y: recipes.coverFocalY,
+        source_name: recipes.sourceName,
+      })
+      .from(recipes)
+      .where(eq(recipes.id, recipeId))
+      .limit(1);
+    if (!recipe) throw new Error("Recipe not found"); // mirrors PostgREST .single()
+
+    const [ingredients, instructions] = await Promise.all([
+      tx
+        .select({
+          id: recipeIngredients.id,
+          recipe_id: recipeIngredients.recipeId,
+          position: recipeIngredients.position,
+          section: recipeIngredients.section,
+          raw_text: recipeIngredients.rawText,
+          quantity: recipeIngredients.quantity,
+          unit: recipeIngredients.unit,
+          ingredient: recipeIngredients.ingredient,
+          notes: recipeIngredients.notes,
+          optional: recipeIngredients.optional,
+          created_at: recipeIngredients.createdAt,
+        })
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, recipeId))
+        .orderBy(asc(recipeIngredients.position)),
+      tx
+        .select({
+          id: recipeInstructions.id,
+          recipe_id: recipeInstructions.recipeId,
+          position: recipeInstructions.position,
+          section: recipeInstructions.section,
+          text: recipeInstructions.text,
+          duration_min: recipeInstructions.durationMin,
+          created_at: recipeInstructions.createdAt,
+        })
+        .from(recipeInstructions)
+        .where(eq(recipeInstructions.recipeId, recipeId))
+        .orderBy(asc(recipeInstructions.position)),
+    ]);
+
+    return {
+      recipe: recipe as unknown as Tables<"recipes">,
+      ingredients: ingredients as unknown as Tables<"recipe_ingredients">[],
+      instructions: instructions as unknown as Tables<"recipe_instructions">[],
+    };
   });
 }

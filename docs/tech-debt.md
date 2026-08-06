@@ -18,3 +18,4 @@ destroys that signal.
 | # | Location | Bucket | Issue | Found during | Status |
 |---|---|---|---|---|---|
 | 1 | `lib/services/permissions.ts:24-42` | 2 (quality) | The `if (!isCreator) … else …` runs the **identical** `household_members` role query in *both* branches (only the comment differs). The "saves a round-trip" comment is misleading — the round-trip happens either way. Collapses to a single unconditional query. | Module 3 data-layer mapping | Open — fix in post-M3 cleanup |
+| 2 | `lib/db/schema.ts` + ported read methods | 2 (quality) | The Drizzle schema uses camelCase property names, so every ported read method that returns full rows aliases each column back to snake_case (`getById` aliases ~57). A **snake_case-keyed schema** (props = DB column names) would make ports near one-liners and remove typo risk. Deferred: revisit if aliasing fatigue grows as more methods are ported. | Module 3 getById port | Open — candidate simplification |
