@@ -1,5 +1,8 @@
 import "server-only";
+import { and, desc, eq, gte, inArray, isNull, sql as dsql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { recipes } from "@/lib/db/schema";
+import { env } from "@/lib/env";
 import type { Tables, UpdateTables } from "@/types/database.types";
 
 export type RecipeListItem = Pick<
@@ -41,34 +44,14 @@ export type RecipeFilters = {
 };
 
 export const recipeService = {
+  /**
+   * List recipes for a household. Behind a stable signature this dispatches to
+   * Drizzle when DATABASE_URL is configured (local/test — ADR-002) or the
+   * Supabase client otherwise (prod, until Module 9). Both satisfy the same
+   * characterization tests.
+   */
   async list(args: { householdId: string; filters?: RecipeFilters; limit?: number }): Promise<RecipeListItem[]> {
-    const supabase = await createSupabaseServerClient();
-    let query = supabase
-      .from("recipes")
-      .select(
-        "id, title, description, cover_image_path, image_paths, created_by, prep_time_min, cook_time_min, servings, rating, is_favorite, tags, meal_types, diet_types, cuisines, source_url, status, created_at, household_id, nutrition, cover_focal_x, cover_focal_y, source_name, source_metadata",
-      )
-      .eq("household_id", args.householdId)
-      .is("archived_at", null)
-      .order("created_at", { ascending: false })
-      .limit(args.limit ?? 60);
-
-    const f = args.filters ?? {};
-    if (f.status) query = query.eq("status", f.status);
-    else query = query.in("status", ["published", "needs_review"]);
-    if (f.favoriteOnly) query = query.eq("is_favorite", true);
-    if (f.minRating) query = query.gte("rating", f.minRating);
-    if (f.mealTypes?.length) query = query.contains("meal_types", f.mealTypes);
-    if (f.dietTypes?.length) query = query.contains("diet_types", f.dietTypes);
-    if (f.cuisines?.length) query = query.contains("cuisines", f.cuisines);
-    if (f.query) {
-      // Basic FTS — websearch-style query is more forgiving than plainto_tsquery
-      query = query.textSearch("search_tsv", f.query, { type: "websearch", config: "english" });
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return data ?? [];
+    return env.DATABASE_URL ? listViaDrizzle(args) : listViaSupabase(args);
   },
 
   async getById(recipeId: string) {
@@ -307,3 +290,102 @@ export const recipeService = {
     if (error) throw error;
   },
 };
+
+// ── recipeService.list: two implementations behind the stable signature ──────
+
+async function listViaSupabase(args: {
+  householdId: string;
+  filters?: RecipeFilters;
+  limit?: number;
+}): Promise<RecipeListItem[]> {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase
+    .from("recipes")
+    .select(
+      "id, title, description, cover_image_path, image_paths, created_by, prep_time_min, cook_time_min, servings, rating, is_favorite, tags, meal_types, diet_types, cuisines, source_url, status, created_at, household_id, nutrition, cover_focal_x, cover_focal_y, source_name, source_metadata",
+    )
+    .eq("household_id", args.householdId)
+    .is("archived_at", null)
+    .order("created_at", { ascending: false })
+    .limit(args.limit ?? 60);
+
+  const f = args.filters ?? {};
+  if (f.status) query = query.eq("status", f.status);
+  else query = query.in("status", ["published", "needs_review"]);
+  if (f.favoriteOnly) query = query.eq("is_favorite", true);
+  if (f.minRating) query = query.gte("rating", f.minRating);
+  if (f.mealTypes?.length) query = query.contains("meal_types", f.mealTypes);
+  if (f.dietTypes?.length) query = query.contains("diet_types", f.dietTypes);
+  if (f.cuisines?.length) query = query.contains("cuisines", f.cuisines);
+  if (f.query) {
+    // Basic FTS — websearch-style query is more forgiving than plainto_tsquery
+    query = query.textSearch("search_tsv", f.query, { type: "websearch", config: "english" });
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function listViaDrizzle(args: {
+  householdId: string;
+  filters?: RecipeFilters;
+  limit?: number;
+}): Promise<RecipeListItem[]> {
+  const { withUserContext } = await import("@/lib/db");
+  // Auth is still Supabase in Module 3 — get the user id, then run under RLS.
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const f = args.filters ?? {};
+  return withUserContext(user.id, async (tx) => {
+    const conds = [eq(recipes.householdId, args.householdId), isNull(recipes.archivedAt)];
+    if (f.status) conds.push(eq(recipes.status, f.status));
+    else conds.push(inArray(recipes.status, ["published", "needs_review"]));
+    if (f.favoriteOnly) conds.push(eq(recipes.isFavorite, true));
+    if (f.minRating) conds.push(gte(recipes.rating, f.minRating));
+    if (f.mealTypes?.length) conds.push(dsql`${recipes.mealTypes} @> ${f.mealTypes}::text[]`);
+    if (f.dietTypes?.length) conds.push(dsql`${recipes.dietTypes} @> ${f.dietTypes}::text[]`);
+    if (f.cuisines?.length) conds.push(dsql`${recipes.cuisines} @> ${f.cuisines}::text[]`);
+    if (f.query) {
+      conds.push(dsql`${recipes.searchTsv} @@ websearch_to_tsquery('english', ${f.query})`);
+    }
+
+    const rows = await tx
+      .select({
+        id: recipes.id,
+        title: recipes.title,
+        description: recipes.description,
+        cover_image_path: recipes.coverImagePath,
+        image_paths: recipes.imagePaths,
+        created_by: recipes.createdBy,
+        prep_time_min: recipes.prepTimeMin,
+        cook_time_min: recipes.cookTimeMin,
+        servings: recipes.servings,
+        rating: recipes.rating,
+        is_favorite: recipes.isFavorite,
+        tags: recipes.tags,
+        meal_types: recipes.mealTypes,
+        diet_types: recipes.dietTypes,
+        cuisines: recipes.cuisines,
+        source_url: recipes.sourceUrl,
+        status: recipes.status,
+        created_at: recipes.createdAt,
+        household_id: recipes.householdId,
+        nutrition: recipes.nutrition,
+        cover_focal_x: recipes.coverFocalX,
+        cover_focal_y: recipes.coverFocalY,
+        source_name: recipes.sourceName,
+        source_metadata: recipes.sourceMetadata,
+      })
+      .from(recipes)
+      .where(and(...conds))
+      .orderBy(desc(recipes.createdAt))
+      .limit(args.limit ?? 60);
+
+    return rows as unknown as RecipeListItem[];
+  });
+}

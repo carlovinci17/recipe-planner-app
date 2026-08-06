@@ -23,6 +23,10 @@ const serverSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: emptyToUndefined.pipe(z.string().url()),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: emptyToUndefined.pipe(z.string().min(20)),
   SUPABASE_SERVICE_ROLE_KEY: optional(20),
+  // Drizzle direct Postgres connection. Optional for now: when unset, services
+  // keep using the Supabase client (prod). When set (local/test, later Neon),
+  // the ported methods query Postgres directly. See ADR-002 / Module 3.
+  DATABASE_URL: optionalUrl,
   // Anthropic — active provider
   ANTHROPIC_API_KEY: optional(10),
   ANTHROPIC_MODEL_VISION: z.string().default("claude-opus-4-7"),
