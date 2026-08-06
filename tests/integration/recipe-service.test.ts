@@ -83,3 +83,53 @@ describe("recipeService.list — current behaviour", () => {
     );
   });
 });
+
+/**
+ * CHARACTERIZATION test — the security guarantee. RLS scopes every read to the
+ * caller's households; a member of one household must never see another's data.
+ * The Drizzle + `current_setting` RLS rewrite (ADR-002) must reproduce this exactly.
+ */
+describe("recipeService.list — cross-household isolation (RLS)", () => {
+  let userA: SeededUser, userB: SeededUser;
+  let householdA: string, householdB: string;
+
+  beforeAll(async () => {
+    // User A + their household + a recipe.
+    userA = await createTestUser();
+    const authedA = await authedClientFor(userA);
+    householdA = await seedHousehold(authedA, "Household A");
+    await seedRecipe(authedA, {
+      householdId: householdA,
+      createdBy: userA.id,
+      title: "A's Secret Recipe",
+    });
+
+    // User B + their own (empty) household.
+    userB = await createTestUser();
+    const authedB = await authedClientFor(userB);
+    householdB = await seedHousehold(authedB, "Household B");
+
+    // Run the service AS user B.
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      authedB as unknown as Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    );
+  }, 30_000);
+
+  afterAll(async () => {
+    const admin = adminClient();
+    if (householdA) await admin.from("households").delete().eq("id", householdA);
+    if (householdB) await admin.from("households").delete().eq("id", householdB);
+    if (userA) await deleteTestUser(userA.id);
+    if (userB) await deleteTestUser(userB.id);
+  });
+
+  it("does not surface another household's recipes in B's own list", async () => {
+    const titles = (await recipeService.list({ householdId: householdB })).map((r) => r.title);
+    expect(titles).not.toContain("A's Secret Recipe");
+  });
+
+  it("returns nothing when B queries A's household id directly (RLS blocks it)", async () => {
+    const rows = await recipeService.list({ householdId: householdA });
+    expect(rows).toEqual([]);
+  });
+});
