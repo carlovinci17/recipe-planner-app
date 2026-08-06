@@ -31,9 +31,13 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [2.3](02-3-managed-identity-key-vault.md) | Managed Identity + Key Vault | 2 | Security | ✅ Done | `3b0a7058-fd84-81ac-9929-c43b07759815` |
 | [2.4](02-4-container-apps.md) | Container Apps + Dockerfile (app live on Azure) | 2 | Ops · Security · Cost | ✅ Done | `3b1a7058-fd84-817f-bf27-ffa23784082e` |
 | [2.5](02-5-cicd-autodeploy.md) | CI/CD: auto-deploy GitHub → Azure (OIDC) | 2 | Ops · Security | ✅ Done (deploy); gates TODO | `3b1a7058-fd84-814d-b257-d65ba7ea8265` |
-| [2.6](02-6-observability.md) | Observability (Application Insights) | 2 | Operational Excellence | ⚠️ Partial (resource+logs; tracing revisit) | `3b1a7058-fd84-8116-acda-c297ce39a206` |
+| [2.6](02-6-observability.md) | Observability (Application Insights) | 2 | Operational Excellence | ✅ Done | `3b1a7058-fd84-8116-acda-c297ce39a206` |
 | [2.7](02-7-azure-mcp.md) | Install the Azure MCP (+ VS Code ext) | 2 | Operational Excellence | ✅ Done | `3b1a7058-fd84-8134-bd39-deaea60673f4` |
-| [2.8](02-8-bicep-iac.md) | Infrastructure as Bicep (reverse-engineer + greenfield rebuild) | 2 | Operational Excellence | ✅ Done | _pending_ |
+| [2.8](02-8-bicep-iac.md) | Infrastructure as Bicep (reverse-engineer + greenfield rebuild) | 2 | Operational Excellence | ✅ Done | `3b2a7058-fd84-811a-b0aa-eaefc81e426d` |
+| [3.0](03-0-data-layer-map.md) | Data-layer map (recon before the swap) | 3 | Reliability · Security | ✅ Done | `3b4a7058-fd84-813d-8546-f6ff65ad4dd0` |
+| [3.2](03-2-drizzle-schema.md) | Port the schema (Drizzle via introspection) | 3 | Reliability | ✅ Done | `3b4a7058-fd84-81a2-b96b-f44d03537a83` |
+| [3.3](03-3-rls-withusercontext.md) | RLS on a direct connection + first swap (ADR-002) | 3 | Security · Reliability | 🟡 In progress | `3b4a7058-fd84-8135-a85b-d257ce0d6467` |
+| [3.5](03-5-characterization-tests.md) | Characterization tests (test-first migration) | 3 | Reliability · Security | 🟡 In progress | `3b4a7058-fd84-810a-acd2-d776ffa5d6bf` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
