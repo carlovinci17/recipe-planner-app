@@ -1,4 +1,16 @@
+import { createRequire } from "node:module";
 import { config as dotenv } from "dotenv";
+
+// React's `cache()` only exists under the `react-server` export condition (RSC).
+// In the Node test env, `react` resolves to the client build where it's undefined,
+// so services that memoize with it (household-service, active-household,
+// permissions) throw "cache is not a function" at import. React is externalized
+// in tests, so patching the shared module.exports shims it for those imports.
+// Identity is correct here — per-request memoization is a no-op in a test.
+{
+  const react = createRequire(import.meta.url)("react") as { cache?: <T>(fn: T) => T };
+  if (typeof react.cache !== "function") react.cache = (fn) => fn;
+}
 
 // Belt-and-suspenders: also load env inside the worker (config already loaded it
 // in the main process, but this keeps the safety check self-contained).

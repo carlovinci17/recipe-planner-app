@@ -1,6 +1,9 @@
 import "server-only";
 import { cache } from "react";
+import { sql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { env } from "@/lib/env";
+import { runInUserTx } from "./user-tx";
 import type { Tables } from "@/types/database.types";
 
 export type HouseholdMembership = {
@@ -40,6 +43,16 @@ export const householdService = {
   },
 
   async create(name: string): Promise<string> {
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx) => {
+        const rows = (await tx.execute(
+          sql`select public.create_household_with_owner(${name}) as id`,
+        )) as unknown as Array<{ id: string }>;
+        const id = rows[0]?.id;
+        if (!id) throw new Error("Failed to create household");
+        return id;
+      });
+    }
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.rpc("create_household_with_owner", { _name: name });
     if (error || !data) throw error ?? new Error("Failed to create household");
@@ -89,6 +102,16 @@ export const householdService = {
   },
 
   async acceptInvite(token: string): Promise<string> {
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx) => {
+        const rows = (await tx.execute(
+          sql`select public.accept_household_invite(${token}) as id`,
+        )) as unknown as Array<{ id: string }>;
+        const id = rows[0]?.id;
+        if (!id) throw new Error("Invite acceptance failed");
+        return id;
+      });
+    }
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.rpc("accept_household_invite", { _token: token });
     if (error || !data) throw error ?? new Error("Invite acceptance failed");
