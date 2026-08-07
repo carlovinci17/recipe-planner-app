@@ -2,7 +2,7 @@
 
 **Skills in play:** `codebase-design`.
 
-**Date:** 2026-08-06   **Module:** 3   **WAF pillar(s):** Reliability, Security   **Token cost:** low   **Status:** 🟡 In progress — shopping-list RPC ported & proven; household RPCs (`create`, `acceptInvite`) to follow.
+**Date:** 2026-08-06   **Module:** 3   **WAF pillar(s):** Reliability, Security   **Token cost:** low   **Status:** ✅ Done — all three RPCs (`generate_shopping_list_from_planner`, `create_household_with_owner`, `accept_household_invite`) ported & proven.
 
 ## The RPCs
 Three plpgsql functions do multi-step writes atomically: `create_household_with_owner`,
