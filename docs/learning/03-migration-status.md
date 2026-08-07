@@ -4,7 +4,7 @@
 (compacted or brand-new) resumes from *this file + the code*, not chat history. Update it as methods
 are ported.
 
-_Last updated: 2026-08-08 · 27 integration tests green._
+_Last updated: 2026-08-08 · 30 integration tests green._
 
 ## The porting recipe (repeat per method)
 1. **Bridge RLS to `app_uid()`** in a new migration (`supabase/migrations/`, timestamp later than the
@@ -49,6 +49,7 @@ Then: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test`. Apply a new migrati
 | `20260806200000_rls_shopping_reads` | shopping_lists SELECT + shopping_list_items (all) |
 | `20260806210000_rls_planner_insert` | planner_entries INSERT |
 | `20260806220000_rls_invite_write` | household_invites INSERT + SELECT |
+| `20260806230000_rls_recipe_ratings` | recipe_ratings SELECT/INSERT/UPDATE/DELETE |
 
 ## Method-by-method status
 ### recipeService — ✅ data layer complete
@@ -65,8 +66,12 @@ Then: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test`. Apply a new migrati
 `moveEntry` ✅ · `removeEntry` ✅ · `generateShoppingList` ✅ (RPC) ·
 `generateShoppingListRange` ✅ (RPC + count).
 
+### rating-service — ✅ data layer complete
+`listForRecipe` ✅ (read; profiles join) · `setMyRating` ✅ (upsert / onConflictDoUpdate) ·
+`getAggregatesForRecipes` ✅ (read) · `clearMyRating` ✅ (delete).
+
 ### Not yet started (to inspect + port)
-`shopping-service` · `rating-service` · `ingestion-service` · `permissions` (`getRecipePermissions`) ·
+`shopping-service` · `ingestion-service` · `permissions` (`getRecipePermissions`) ·
 `active-household` (`getActiveHousehold`, reads via householdService).
 
 ## Then (later modules)

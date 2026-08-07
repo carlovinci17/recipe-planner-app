@@ -1,5 +1,9 @@
 import "server-only";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { profiles, recipeRatings } from "@/lib/db/schema";
+import { env } from "@/lib/env";
+import { runInUserTx } from "./user-tx";
 
 export type RecipeRating = {
   rating: number;
@@ -23,6 +27,35 @@ export const ratingService = {
    * recipe pages don't crash.
    */
   async listForRecipe(recipeId: string): Promise<RecipeRating[]> {
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx) => {
+        const rows = await tx
+          .select({
+            rating: recipeRatings.rating,
+            user_id: recipeRatings.userId,
+            updated_at: recipeRatings.updatedAt,
+            u_id: profiles.id,
+            u_display_name: profiles.displayName,
+            u_avatar_url: profiles.avatarUrl,
+            u_email: profiles.email,
+          })
+          .from(recipeRatings)
+          .innerJoin(profiles, eq(profiles.id, recipeRatings.userId))
+          .where(eq(recipeRatings.recipeId, recipeId))
+          .orderBy(desc(recipeRatings.updatedAt));
+        return rows.map((r) => ({
+          rating: r.rating,
+          user_id: r.user_id,
+          updated_at: r.updated_at,
+          user: {
+            id: r.u_id,
+            display_name: r.u_display_name,
+            avatar_url: r.u_avatar_url,
+            email: r.u_email,
+          },
+        }));
+      });
+    }
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase
       .from("recipe_ratings")
@@ -47,6 +80,18 @@ export const ratingService = {
   async setMyRating(args: { recipeId: string; rating: number }) {
     if (args.rating < 1 || args.rating > 5) {
       throw new Error("Rating must be between 1 and 5");
+    }
+    if (env.DATABASE_URL) {
+      await runInUserTx((tx, userId) =>
+        tx
+          .insert(recipeRatings)
+          .values({ recipeId: args.recipeId, userId, rating: args.rating })
+          .onConflictDoUpdate({
+            target: [recipeRatings.recipeId, recipeRatings.userId],
+            set: { rating: args.rating },
+          }),
+      );
+      return;
     }
     const supabase = await createSupabaseServerClient();
     const {
@@ -80,19 +125,32 @@ export const ratingService = {
     recipeIds: string[],
   ): Promise<Map<string, { avg: number; count: number }>> {
     if (recipeIds.length === 0) return new Map();
-    const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase
-      .from("recipe_ratings")
-      .select("recipe_id, rating")
-      .in("recipe_id", recipeIds);
-    if (error) {
-      if (error.code === "42P01" || error.code === "PGRST205") {
-        return new Map();
+
+    let rows: Array<{ recipe_id: string; rating: number }>;
+    if (env.DATABASE_URL) {
+      rows = await runInUserTx((tx) =>
+        tx
+          .select({ recipe_id: recipeRatings.recipeId, rating: recipeRatings.rating })
+          .from(recipeRatings)
+          .where(inArray(recipeRatings.recipeId, recipeIds)),
+      );
+    } else {
+      const supabase = await createSupabaseServerClient();
+      const { data, error } = await supabase
+        .from("recipe_ratings")
+        .select("recipe_id, rating")
+        .in("recipe_id", recipeIds);
+      if (error) {
+        if (error.code === "42P01" || error.code === "PGRST205") {
+          return new Map();
+        }
+        throw error;
       }
-      throw error;
+      rows = data ?? [];
     }
+
     const out = new Map<string, { sum: number; count: number }>();
-    for (const row of data ?? []) {
+    for (const row of rows) {
       const cur = out.get(row.recipe_id) ?? { sum: 0, count: 0 };
       cur.sum += row.rating;
       cur.count += 1;
@@ -106,6 +164,14 @@ export const ratingService = {
   },
 
   async clearMyRating(recipeId: string) {
+    if (env.DATABASE_URL) {
+      await runInUserTx((tx, userId) =>
+        tx
+          .delete(recipeRatings)
+          .where(and(eq(recipeRatings.recipeId, recipeId), eq(recipeRatings.userId, userId))),
+      );
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const {
       data: { user },
