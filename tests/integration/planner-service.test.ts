@@ -88,3 +88,64 @@ describe("plannerService.generateShoppingList — current behaviour (RPC)", () =
     expect(names).toContain("sugar");
   });
 });
+
+/**
+ * CHARACTERIZATION — planner writes: moveEntry (update date/slot/position),
+ * removeEntry (delete).
+ */
+describe("plannerService moveEntry / removeEntry — current behaviour", () => {
+  let user: SeededUser;
+  let householdId: string;
+  let authed: Awaited<ReturnType<typeof authedClientFor>>;
+  let recipeId: string;
+
+  beforeAll(async () => {
+    user = await createTestUser();
+    authed = await authedClientFor(user);
+    householdId = await seedHousehold(authed);
+    recipeId = await seedRecipe(authed, { householdId, createdBy: user.id });
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      authed as unknown as Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    );
+  }, 30_000);
+
+  afterAll(async () => {
+    if (householdId) await adminClient().from("households").delete().eq("id", householdId);
+    if (user) await deleteTestUser(user.id);
+  });
+
+  it("moveEntry updates date/slot/position", async () => {
+    const entryId = await seedPlannerEntry(authed, {
+      householdId,
+      createdBy: user.id,
+      recipeId,
+      date: "2026-06-15",
+      slot: "lunch",
+    });
+    await plannerService.moveEntry({ entryId, date: "2026-06-20", slot: "dinner", position: 3 });
+    const { data } = await adminClient()
+      .from("planner_entries")
+      .select("date, slot, position")
+      .eq("id", entryId)
+      .single();
+    expect(data?.date).toBe("2026-06-20");
+    expect(data?.slot).toBe("dinner");
+    expect(data?.position).toBe(3);
+  });
+
+  it("removeEntry deletes the entry", async () => {
+    const entryId = await seedPlannerEntry(authed, {
+      householdId,
+      createdBy: user.id,
+      recipeId,
+      date: "2026-06-21",
+    });
+    await plannerService.removeEntry(entryId);
+    const { data } = await adminClient()
+      .from("planner_entries")
+      .select("id")
+      .eq("id", entryId)
+      .maybeSingle();
+    expect(data).toBeNull();
+  });
+});

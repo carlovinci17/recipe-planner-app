@@ -1,7 +1,8 @@
 import "server-only";
 import { addDays, format, startOfWeek } from "date-fns";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { plannerEntries } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { runInUserTx } from "./user-tx";
 import type { MealSlot } from "@/types/database.types";
@@ -86,6 +87,15 @@ export const plannerService = {
   },
 
   async moveEntry(args: { entryId: string; date: string; slot: MealSlot; position: number }) {
+    if (env.DATABASE_URL) {
+      await runInUserTx((tx) =>
+        tx
+          .update(plannerEntries)
+          .set({ date: args.date, slot: args.slot, position: args.position })
+          .where(eq(plannerEntries.id, args.entryId)),
+      );
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase
       .from("planner_entries")
@@ -95,6 +105,10 @@ export const plannerService = {
   },
 
   async removeEntry(entryId: string) {
+    if (env.DATABASE_URL) {
+      await runInUserTx((tx) => tx.delete(plannerEntries).where(eq(plannerEntries.id, entryId)));
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.from("planner_entries").delete().eq("id", entryId);
     if (error) throw error;

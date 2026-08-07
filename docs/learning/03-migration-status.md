@@ -4,7 +4,7 @@
 (compacted or brand-new) resumes from *this file + the code*, not chat history. Update it as methods
 are ported.
 
-_Last updated: 2026-08-06 · 17 integration tests green._
+_Last updated: 2026-08-06 · 19 integration tests green._
 
 ## The porting recipe (repeat per method)
 1. **Bridge RLS to `app_uid()`** in a new migration (`supabase/migrations/`, timestamp later than the
@@ -57,8 +57,8 @@ Then: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test`. Apply a new migrati
 
 ### planner-service
 - `generateShoppingList` ✅ (RPC)
-- `getWeek` ⬜ (read; embedded `recipes` join) · `addEntry` ⬜ (insert) · `moveEntry` ⬜ (update) ·
-  `removeEntry` ⬜ (delete) · `generateShoppingListRange` ⬜ (RPC + count)
+- `getWeek` ⬜ (read; embedded `recipes` join) · `addEntry` ⬜ (insert; embedded return) ·
+  `moveEntry` ✅ · `removeEntry` ✅ · `generateShoppingListRange` ⬜ (RPC + count)
 
 ### Not yet started (to inspect + port)
 `shopping-service` · `rating-service` · `ingestion-service` · `permissions` (`getRecipePermissions`) ·
