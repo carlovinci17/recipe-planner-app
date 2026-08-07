@@ -4,7 +4,7 @@
 (compacted or brand-new) resumes from *this file + the code*, not chat history. Update it as methods
 are ported.
 
-_Last updated: 2026-08-08 · 34 integration tests green._
+_Last updated: 2026-08-08 · 36 integration tests green._
 
 ## The porting recipe (repeat per method)
 1. **Bridge RLS to `app_uid()`** in a new migration (`supabase/migrations/`, timestamp later than the
@@ -77,9 +77,18 @@ Then: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test`. Apply a new migrati
 `removeItem` — all ✅. (numeric `quantity` written via `String(n)`; whole-row reads cast
 `as unknown as Tables<>` like recipe-service.)
 
+### permissions — ✅ done
+`getRecipePermissions` ✅ (household_members role read; duplicate if/else branch
+collapsed — resolves tech-debt #1).
+
+### active-household — ✅ no port needed
+`getActiveHousehold` reads only via `householdService.listForCurrentUser()` (already
+ported); the rest is `auth.getUser()` + cookies/redirect (auth stays Supabase in Module 3).
+
 ### Not yet started (to inspect + port)
-`ingestion-service` · `permissions` (`getRecipePermissions`) ·
-`active-household` (`getActiveHousehold`, reads via householdService).
+`ingestion-service` — used by the **Inngest pipeline via the service-role admin client**
+(bypasses RLS), so it's Module 6 (Durable Functions) territory, not the RLS-bridged
+request-path data layer. Inspect before deciding whether any request-path method needs porting.
 
 ## Then (later modules)
 Flip `DATABASE_URL` on in dev to run the app on Drizzle locally; **Module 9** migrates the host to Neon;

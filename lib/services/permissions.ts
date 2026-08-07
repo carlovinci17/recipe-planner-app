@@ -1,6 +1,10 @@
 import "server-only";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { cache } from "react";
+import { and, eq } from "drizzle-orm";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { householdMembers } from "@/lib/db/schema";
+import { env } from "@/lib/env";
+import { runInUserTx } from "./user-tx";
 
 /**
  * Resolve the current user's permissions on a recipe. Mirrors the RLS policy
@@ -20,18 +24,24 @@ export const getRecipePermissions = cache(async function getRecipePermissions(ar
 
   const isCreator = user.id === args.recipeCreatedBy;
 
+  // Look up the caller's household role (owner ⇒ can edit any recipe). This was
+  // previously two identical if/else branches (tech-debt #1) — collapsed here.
   let isOwner = false;
-  if (!isCreator) {
-    // Only check ownership if not creator — saves a round-trip.
-    const { data } = await supabase
-      .from("household_members")
-      .select("role")
-      .eq("household_id", args.recipeHouseholdId)
-      .eq("user_id", user.id)
-      .maybeSingle();
-    isOwner = data?.role === "owner";
+  if (env.DATABASE_URL) {
+    const rows = await runInUserTx((tx) =>
+      tx
+        .select({ role: householdMembers.role })
+        .from(householdMembers)
+        .where(
+          and(
+            eq(householdMembers.householdId, args.recipeHouseholdId),
+            eq(householdMembers.userId, user.id),
+          ),
+        )
+        .limit(1),
+    );
+    isOwner = rows[0]?.role === "owner";
   } else {
-    // Creator may or may not be owner — only matters for surfacing role labels.
     const { data } = await supabase
       .from("household_members")
       .select("role")
