@@ -85,10 +85,30 @@ collapsed — resolves tech-debt #1).
 `getActiveHousehold` reads only via `householdService.listForCurrentUser()` (already
 ported); the rest is `auth.getUser()` + cookies/redirect (auth stays Supabase in Module 3).
 
-### Not yet started (to inspect + port)
-`ingestion-service` — used by the **Inngest pipeline via the service-role admin client**
-(bypasses RLS), so it's Module 6 (Durable Functions) territory, not the RLS-bridged
-request-path data layer. Inspect before deciding whether any request-path method needs porting.
+### ingestion-service — ⏸️ deferred to Modules 5 + 6 (decision)
+Uses the RLS server client, so it *is* request-path — but every `create*/complete*` method
+interleaves an `ingestion_jobs` write with **Storage signing** (`createSignedUploadUrl` →
+**Module 5** Azure Blob/SAS) and **`inngest.send`** (→ **Module 6** Durable Functions) in one
+function. Porting only the DB half leaves a method that still needs the Supabase client for
+storage + events, so there's no clean isolation win now. `getJob` (embedded `ingestion_events`
+join) and `cancelJob` (guarded update) are pure-DB and *could* be ported standalone, but we keep
+the whole service together and port it when its Storage/Inngest seams move (M5/M6). No
+`ingestion_jobs` / `ingestion_events` RLS bridges added yet — they land with that port.
+
+---
+
+## ✅ Module 3 request-path data layer: COMPLETE
+Every request-path service now runs on Drizzle behind `env.DATABASE_URL` (prod has none → stays on
+Supabase): **recipe · planner · household · rating · shopping · permissions · active-household**.
+**36 integration tests green**, typecheck clean. Only `ingestion-service` remains, deliberately
+deferred to M5/M6 (above). recipeService storage methods (`createImageUploadUrl`, `attachImage`,
+`setCoverImage`, `removeImage`) also wait for **Module 5** (Blob).
+
+### Suggested next steps
+1. Flip `DATABASE_URL` on in **dev** and smoke-test the running app on Drizzle (reads/writes/planner).
+2. Post-M3 cleanup pass on tech-debt #2 (snake_case schema) and #3 (getUser hot-path).
+3. Module 9 migrates the host to Neon; Modules 5/6 bring Storage + Durable Functions (and
+   ingestion-service with them).
 
 ## Then (later modules)
 Flip `DATABASE_URL` on in dev to run the app on Drizzle locally; **Module 9** migrates the host to Neon;
