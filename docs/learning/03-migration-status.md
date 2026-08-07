@@ -4,7 +4,7 @@
 (compacted or brand-new) resumes from *this file + the code*, not chat history. Update it as methods
 are ported.
 
-_Last updated: 2026-08-06 · 19 integration tests green._
+_Last updated: 2026-08-08 · 23 integration tests green._
 
 ## The porting recipe (repeat per method)
 1. **Bridge RLS to `app_uid()`** in a new migration (`supabase/migrations/`, timestamp later than the
@@ -43,6 +43,8 @@ Then: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test`. Apply a new migrati
 | `20260806150000_rpc_shopping_list_app_uid` | shopping-list RPC (range) |
 | `20260806160000_rpc_household_app_uid` | create + accept RPCs |
 | `20260806170000_rls_recipe_service_remainder` | planner_entries SELECT + recipe children INSERT/DELETE |
+| `20260806180000_rls_planner_write` | planner_entries UPDATE/DELETE |
+| `20260806190000_rls_household_reads` | households + household_members + profiles SELECT |
 
 ## Method-by-method status
 ### recipeService — ✅ data layer complete
@@ -52,8 +54,8 @@ Then: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test`. Apply a new migrati
 
 ### household-service
 - `create` ✅ (RPC) · `acceptInvite` ✅ (RPC)
-- `listForCurrentUser` ⬜ (read; embedded `households` join) · `getActive` ⬜ (read) ·
-  `members` ⬜ (read; embedded `profiles` join) · `invite` ⬜ (insert + `getUser`)
+- `listForCurrentUser` ✅ (read; households join) · `getActive` ✅ (read) ·
+  `members` ✅ (read; profiles join) · `invite` ⬜ (insert + `getUser`)
 
 ### planner-service
 - `generateShoppingList` ✅ (RPC)

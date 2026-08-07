@@ -2,7 +2,7 @@
 
 **Skills in play:** `codebase-design` · `/security-review` mindset (RLS is the security boundary).
 
-**Date:** 2026-08-06   **Module:** 3   **WAF pillar(s):** Security, Reliability   **Token cost:** low   **Status:** 🟡 In progress — `recipeService` reads (`list`, `getById`) **and writes** (`setFavorite`, `setRating`, `publish`, `archive`, `delete`, `bulkDelete`) ported & proven; RPCs + other services to follow.
+**Date:** 2026-08-06   **Module:** 3   **WAF pillar(s):** Security, Reliability   **Token cost:** low   **Status:** ✅ Done — the ADR-002 technique (`withUserContext` + `app_uid()` + the gated dispatch) is built and proven across reads, writes, and RPCs. Remaining per-method porting applies this same pattern (tracked by Module 3's overall progress / exit criteria, not this lesson).
 
 ## Reads vs writes
 Reads alias columns back to snake_case (to preserve `Tables<>` shapes). Writes are simpler — they

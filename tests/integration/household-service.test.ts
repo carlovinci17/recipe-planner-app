@@ -114,3 +114,55 @@ describe("householdService.acceptInvite — current behaviour (RPC)", () => {
     expect(member?.role).toBe("member");
   });
 });
+
+/**
+ * CHARACTERIZATION — the household reads: getActive (single-table), listForCurrentUser
+ * (household_members ⋈ households, ordered by joined_at), members (household_members ⋈ profiles).
+ * RLS must scope each to the caller's households.
+ */
+describe("householdService reads — current behaviour", () => {
+  let user: SeededUser;
+  let householdId: string;
+
+  beforeAll(async () => {
+    user = await createTestUser();
+    const authed = await authedClientFor(user);
+    householdId = await seedHousehold(authed, "Reads Home");
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      authed as unknown as Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    );
+  }, 30_000);
+
+  afterAll(async () => {
+    if (householdId) await adminClient().from("households").delete().eq("id", householdId);
+    if (user) await deleteTestUser(user.id);
+  });
+
+  it("getActive returns the household by id", async () => {
+    const hh = await householdService.getActive(householdId);
+    expect(hh?.id).toBe(householdId);
+    expect(hh?.name).toBe("Reads Home");
+    expect(hh?.created_by).toBe(user.id);
+  });
+
+  it("getActive returns null for a household the caller can't see (RLS)", async () => {
+    const hh = await householdService.getActive("00000000-0000-0000-0000-000000000000");
+    expect(hh).toBeNull();
+  });
+
+  it("listForCurrentUser returns the caller's household with their role", async () => {
+    const memberships = await householdService.listForCurrentUser();
+    const mine = memberships.find((m) => m.household.id === householdId);
+    expect(mine).toBeDefined();
+    expect(mine?.household.name).toBe("Reads Home");
+    expect(mine?.role).toBe("owner");
+  });
+
+  it("members returns each member with their profile", async () => {
+    const members = await householdService.members(householdId);
+    const me = members.find((m) => m.profile.id === user.id);
+    expect(me).toBeDefined();
+    expect(me?.role).toBe("owner");
+    expect(me?.profile.email).toBe(user.email);
+  });
+});
