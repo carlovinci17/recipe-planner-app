@@ -67,7 +67,7 @@ export const recipeService = {
 
   async setFavorite(recipeId: string, isFavorite: boolean) {
     if (env.DATABASE_URL) {
-      await runWrite((tx) => tx.update(recipes).set({ isFavorite }).where(eq(recipes.id, recipeId)));
+      await runInUserTx((tx) => tx.update(recipes).set({ isFavorite }).where(eq(recipes.id, recipeId)));
       return;
     }
     const supabase = await createSupabaseServerClient();
@@ -80,7 +80,7 @@ export const recipeService = {
 
   async setRating(recipeId: string, rating: number | null) {
     if (env.DATABASE_URL) {
-      await runWrite((tx) => tx.update(recipes).set({ rating }).where(eq(recipes.id, recipeId)));
+      await runInUserTx((tx) => tx.update(recipes).set({ rating }).where(eq(recipes.id, recipeId)));
       return;
     }
     const supabase = await createSupabaseServerClient();
@@ -90,7 +90,7 @@ export const recipeService = {
 
   async publish(recipeId: string) {
     if (env.DATABASE_URL) {
-      await runWrite((tx) =>
+      await runInUserTx((tx) =>
         tx.update(recipes).set({ status: "published" }).where(eq(recipes.id, recipeId)),
       );
       return;
@@ -105,7 +105,7 @@ export const recipeService = {
 
   async archive(recipeId: string) {
     if (env.DATABASE_URL) {
-      await runWrite((tx) =>
+      await runInUserTx((tx) =>
         tx.update(recipes).set({ archivedAt: new Date().toISOString() }).where(eq(recipes.id, recipeId)),
       );
       return;
@@ -126,7 +126,7 @@ export const recipeService = {
    */
   async delete(recipeId: string) {
     if (env.DATABASE_URL) {
-      await runWrite((tx) => tx.delete(recipes).where(eq(recipes.id, recipeId)));
+      await runInUserTx((tx) => tx.delete(recipes).where(eq(recipes.id, recipeId)));
       return;
     }
     const supabase = await createSupabaseServerClient();
@@ -144,7 +144,7 @@ export const recipeService = {
   async bulkDelete(args: { householdId: string; recipeIds: string[] }): Promise<number> {
     if (args.recipeIds.length === 0) return 0;
     if (env.DATABASE_URL) {
-      return runWrite(async (tx) => {
+      return runInUserTx(async (tx) => {
         const deleted = await tx
           .delete(recipes)
           .where(and(eq(recipes.householdId, args.householdId), inArray(recipes.id, args.recipeIds)))
@@ -347,16 +347,8 @@ async function listViaDrizzle(args: {
   filters?: RecipeFilters;
   limit?: number;
 }): Promise<RecipeListItem[]> {
-  const { withUserContext } = await import("@/lib/db");
-  // Auth is still Supabase in Module 3 — get the user id, then run under RLS.
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
   const f = args.filters ?? {};
-  return withUserContext(user.id, async (tx) => {
+  return runInUserTx(async (tx) => {
     const conds = [eq(recipes.householdId, args.householdId), isNull(recipes.archivedAt)];
     if (f.status) conds.push(eq(recipes.status, f.status));
     else conds.push(inArray(recipes.status, ["published", "needs_review"]));
@@ -425,14 +417,7 @@ async function getByIdViaSupabase(recipeId: string): Promise<RecipeDetail> {
 }
 
 async function getByIdViaDrizzle(recipeId: string): Promise<RecipeDetail> {
-  const { withUserContext } = await import("@/lib/db");
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  return withUserContext(user.id, async (tx) => {
+  return runInUserTx(async (tx) => {
     // Columns aliased back to snake_case to preserve the exact Tables<> shape.
     const [recipe] = await tx
       .select({
@@ -522,10 +507,10 @@ async function getByIdViaDrizzle(recipeId: string): Promise<RecipeDetail> {
   });
 }
 
-// Shared wrapper for Drizzle write methods: resolve the user (auth still
-// Supabase in Module 3), then run the mutation under withUserContext so the
-// UPDATE/DELETE RLS policies apply.
-async function runWrite<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+// Shared wrapper for every Drizzle read/write method: resolve the current user
+// (auth is still Supabase in Module 3), then run fn under withUserContext so RLS
+// applies. Centralizing here keeps the user-resolution strategy in one place.
+async function runInUserTx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
   const { withUserContext } = await import("@/lib/db");
   const supabase = await createSupabaseServerClient();
   const {

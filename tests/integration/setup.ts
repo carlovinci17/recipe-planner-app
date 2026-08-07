@@ -16,3 +16,13 @@ if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/.test(url)) {
       "Point .env.test at your local Supabase (http://127.0.0.1:54321) before running integration tests.",
   );
 }
+
+// Drizzle write/delete tests flow through DATABASE_URL — guard it too, or a
+// hosted DB there would be mutated even while the REST URL looks local.
+const dbUrl = process.env.DATABASE_URL ?? "";
+if (dbUrl && !/@(127\.0\.0\.1|localhost)[:/]/.test(dbUrl)) {
+  throw new Error(
+    `[integration setup] Refusing to run: DATABASE_URL is not local ("${dbUrl}"). ` +
+      "Point it at your local Postgres (postgresql://…@127.0.0.1:54322/postgres).",
+  );
+}
