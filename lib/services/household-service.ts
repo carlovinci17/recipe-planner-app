@@ -12,6 +12,17 @@ export type HouseholdMembership = {
   role: "owner" | "member";
 };
 
+export type HouseholdMemberRow = {
+  role: "owner" | "member";
+  joined_at: string;
+  profile: {
+    id: string;
+    email: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  };
+};
+
 const listForCurrentUser = cache(async function listForCurrentUser(): Promise<HouseholdMembership[]> {
   if (env.DATABASE_URL) {
     return runInUserTx(async (tx) => {
@@ -102,7 +113,7 @@ export const householdService = {
     return data;
   },
 
-  async members(householdId: string) {
+  async members(householdId: string): Promise<HouseholdMemberRow[]> {
     if (env.DATABASE_URL) {
       return runInUserTx(async (tx) => {
         const rows = await tx
@@ -135,7 +146,9 @@ export const householdService = {
       .select("role, joined_at, profile:profiles(id, email, display_name, avatar_url)")
       .eq("household_id", householdId);
     if (error) throw error;
-    return data ?? [];
+    // Embedded profiles(...) isn't statically typed (no declared FK Relationships
+    // in the hand-authored Database type); runtime shape matches HouseholdMemberRow.
+    return (data ?? []) as unknown as HouseholdMemberRow[];
   },
 
   async invite(args: {

@@ -4,7 +4,7 @@
 (compacted or brand-new) resumes from *this file + the code*, not chat history. Update it as methods
 are ported.
 
-_Last updated: 2026-08-08 · 23 integration tests green._
+_Last updated: 2026-08-08 · 26 integration tests green._
 
 ## The porting recipe (repeat per method)
 1. **Bridge RLS to `app_uid()`** in a new migration (`supabase/migrations/`, timestamp later than the
@@ -15,7 +15,8 @@ _Last updated: 2026-08-08 · 23 integration tests green._
    - Writes → `runInUserTx((tx) => tx.update/insert/delete(…))`
    - RPCs → `runInUserTx((tx) => tx.execute(sql`select public.fn(${a}) as id`))`
    - `runInUserTx` (in `lib/services/user-tx.ts`) resolves the user (Supabase `getUser()`), then wraps
-     the txn in `withUserContext` (`SET LOCAL ROLE authenticated` + `app.user_id`).
+     the txn in `withUserContext` (`SET LOCAL ROLE authenticated` + `app.user_id`). `fn` also receives
+     the resolved `userId` as a 2nd arg for inserts that stamp `created_by`/`invited_by`.
 3. **Characterization test first** (`tests/integration/`): seed via an authed client, `vi.mock`
    `createSupabaseServerClient` → that client, assert. Reads that return full rows must **alias columns
    back to snake_case** to preserve `Tables<>` shapes (tech-debt #2).
@@ -45,6 +46,8 @@ Then: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test`. Apply a new migrati
 | `20260806170000_rls_recipe_service_remainder` | planner_entries SELECT + recipe children INSERT/DELETE |
 | `20260806180000_rls_planner_write` | planner_entries UPDATE/DELETE |
 | `20260806190000_rls_household_reads` | households + household_members + profiles SELECT |
+| `20260806200000_rls_shopping_reads` | shopping_lists SELECT + shopping_list_items (all) |
+| `20260806210000_rls_planner_insert` | planner_entries INSERT |
 
 ## Method-by-method status
 ### recipeService — ✅ data layer complete
@@ -57,10 +60,10 @@ Then: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test`. Apply a new migrati
 - `listForCurrentUser` ✅ (read; households join) · `getActive` ✅ (read) ·
   `members` ✅ (read; profiles join) · `invite` ⬜ (insert + `getUser`)
 
-### planner-service
-- `generateShoppingList` ✅ (RPC)
-- `getWeek` ⬜ (read; embedded `recipes` join) · `addEntry` ⬜ (insert; embedded return) ·
-  `moveEntry` ✅ · `removeEntry` ✅ · `generateShoppingListRange` ⬜ (RPC + count)
+### planner-service — ✅ data layer complete
+`getWeek` ✅ (read; recipes LEFT join) · `addEntry` ✅ (insert; embedded return) ·
+`moveEntry` ✅ · `removeEntry` ✅ · `generateShoppingList` ✅ (RPC) ·
+`generateShoppingListRange` ✅ (RPC + count).
 
 ### Not yet started (to inspect + port)
 `shopping-service` · `rating-service` · `ingestion-service` · `permissions` (`getRecipePermissions`) ·

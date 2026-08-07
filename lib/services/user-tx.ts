@@ -8,14 +8,16 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * withUserContext so RLS applies. `lib/db` is imported dynamically so callers on
  * the Supabase path (no DATABASE_URL) never load the Drizzle client.
  *
- * Shared by every service that ports a method to Drizzle.
+ * Shared by every service that ports a method to Drizzle. `fn` also receives the
+ * resolved `userId` for writes that stamp `created_by` / `invited_by` (existing
+ * `(tx) => …` callers simply ignore the second arg).
  */
-export async function runInUserTx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+export async function runInUserTx<T>(fn: (tx: Tx, userId: string) => Promise<T>): Promise<T> {
   const { withUserContext } = await import("@/lib/db");
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
-  return withUserContext(user.id, fn);
+  return withUserContext(user.id, (tx) => fn(tx, user.id));
 }

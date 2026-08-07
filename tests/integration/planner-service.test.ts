@@ -149,3 +149,136 @@ describe("plannerService moveEntry / removeEntry — current behaviour", () => {
     expect(data).toBeNull();
   });
 });
+
+/**
+ * CHARACTERIZATION — the planner reads/insert: getWeek (planner_entries ⟕ recipes,
+ * ordered date/slot/position) and addEntry (max-position + insert, embedded return).
+ */
+describe("plannerService getWeek / addEntry — current behaviour", () => {
+  let user: SeededUser;
+  let householdId: string;
+  let authed: Awaited<ReturnType<typeof authedClientFor>>;
+  let recipeId: string;
+
+  // Monday of the week we plan into.
+  const weekStart = new Date("2026-07-06T12:00:00Z");
+  const monday = format(startOfWeek(weekStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
+
+  beforeAll(async () => {
+    user = await createTestUser();
+    authed = await authedClientFor(user);
+    householdId = await seedHousehold(authed);
+    recipeId = await seedRecipe(authed, { householdId, createdBy: user.id, title: "Roast" });
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      authed as unknown as Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    );
+  }, 30_000);
+
+  afterAll(async () => {
+    if (householdId) await adminClient().from("households").delete().eq("id", householdId);
+    if (user) await deleteTestUser(user.id);
+  });
+
+  it("getWeek returns entries with the embedded recipe (and null for custom entries)", async () => {
+    await seedPlannerEntry(authed, {
+      householdId,
+      createdBy: user.id,
+      recipeId,
+      date: monday,
+      slot: "dinner",
+    });
+    await seedPlannerEntry(authed, {
+      householdId,
+      createdBy: user.id,
+      customTitle: "Leftovers",
+      date: monday,
+      slot: "lunch",
+    });
+
+    const { dates, entries } = await plannerService.getWeek({ householdId, weekStart });
+    expect(dates).toContain(monday);
+
+    const withRecipe = entries.find((e) => e.recipe_id === recipeId);
+    expect(withRecipe?.recipe?.title).toBe("Roast");
+
+    const custom = entries.find((e) => e.custom_title === "Leftovers");
+    expect(custom?.recipe).toBeNull();
+  });
+
+  it("addEntry inserts at the next position and returns the embedded shape", async () => {
+    const first = await plannerService.addEntry({
+      householdId,
+      date: "2026-07-08",
+      slot: "breakfast",
+      recipeId,
+    });
+    expect(first.position).toBe(0);
+    expect(first.recipe?.title).toBe("Roast");
+
+    const second = await plannerService.addEntry({
+      householdId,
+      date: "2026-07-08",
+      slot: "breakfast",
+      customTitle: "Toast",
+    });
+    expect(second.position).toBe(1);
+    expect(second.recipe).toBeNull();
+
+    const { data } = await adminClient()
+      .from("planner_entries")
+      .select("id")
+      .eq("id", first.id)
+      .single();
+    expect(data?.id).toBe(first.id);
+  });
+});
+
+/**
+ * CHARACTERIZATION — generateShoppingListRange: the range RPC + item count.
+ */
+describe("plannerService.generateShoppingListRange — current behaviour", () => {
+  let user: SeededUser;
+  let householdId: string;
+  let authed: Awaited<ReturnType<typeof authedClientFor>>;
+
+  const startDate = new Date("2026-08-03T12:00:00Z");
+
+  beforeAll(async () => {
+    user = await createTestUser();
+    authed = await authedClientFor(user);
+    householdId = await seedHousehold(authed);
+    const recipeId = await seedRecipe(authed, { householdId, createdBy: user.id, title: "Stew" });
+    await seedIngredient(authed, { recipeId, position: 0, ingredient: "carrot", unit: "g", quantity: 100 });
+    await seedPlannerEntry(authed, {
+      householdId,
+      createdBy: user.id,
+      recipeId,
+      date: format(startDate, "yyyy-MM-dd"),
+      slot: "dinner",
+    });
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      authed as unknown as Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    );
+  }, 30_000);
+
+  afterAll(async () => {
+    if (householdId) await adminClient().from("households").delete().eq("id", householdId);
+    if (user) await deleteTestUser(user.id);
+  });
+
+  it("creates a list and returns the aggregated item count", async () => {
+    const { listId, itemCount } = await plannerService.generateShoppingListRange({
+      householdId,
+      startDate,
+      numDays: 7,
+    });
+    expect(listId).toEqual(expect.any(String));
+    expect(itemCount).toBeGreaterThan(0);
+
+    const { data: items } = await adminClient()
+      .from("shopping_list_items")
+      .select("ingredient")
+      .eq("list_id", listId);
+    expect((items ?? []).map((i) => i.ingredient)).toContain("carrot");
+  });
+});

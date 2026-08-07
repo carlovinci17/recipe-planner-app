@@ -123,7 +123,8 @@ export async function seedPlannerEntry(
   args: {
     householdId: string;
     createdBy: string;
-    recipeId: string;
+    recipeId?: string;
+    customTitle?: string;
     date: string;
     slot?: Tables<"planner_entries">["slot"];
     servings?: number;
@@ -134,7 +135,8 @@ export async function seedPlannerEntry(
     .insert({
       household_id: args.householdId,
       created_by: args.createdBy,
-      recipe_id: args.recipeId,
+      recipe_id: args.recipeId ?? null,
+      custom_title: args.customTitle ?? null,
       date: args.date,
       slot: args.slot ?? "dinner",
       servings: args.servings ?? null,
