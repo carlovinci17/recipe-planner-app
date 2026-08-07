@@ -187,3 +187,52 @@ describe("recipeService.getById — current behaviour", () => {
     ).rejects.toBeDefined();
   });
 });
+
+/**
+ * CHARACTERIZATION test — the write path. These mutate recipes, so they exercise
+ * the UPDATE/DELETE RLS policies (creator-or-owner). The Drizzle port must
+ * reproduce the same effects under withUserContext.
+ */
+describe("recipeService writes — current behaviour", () => {
+  let user: SeededUser;
+  let householdId: string;
+  let authed: Awaited<ReturnType<typeof authedClientFor>>;
+
+  const readRecipe = async (id: string) =>
+    (await adminClient().from("recipes").select("*").eq("id", id).maybeSingle()).data;
+
+  beforeAll(async () => {
+    user = await createTestUser();
+    authed = await authedClientFor(user);
+    householdId = await seedHousehold(authed);
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      authed as unknown as Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    );
+  }, 30_000);
+
+  afterAll(async () => {
+    if (householdId) await adminClient().from("households").delete().eq("id", householdId);
+    if (user) await deleteTestUser(user.id);
+  });
+
+  it("setFavorite flips is_favorite", async () => {
+    const id = await seedRecipe(authed, { householdId, createdBy: user.id });
+    await recipeService.setFavorite(id, true);
+    expect((await readRecipe(id))?.is_favorite).toBe(true);
+    await recipeService.setFavorite(id, false);
+    expect((await readRecipe(id))?.is_favorite).toBe(false);
+  });
+
+  it("archive sets archived_at", async () => {
+    const id = await seedRecipe(authed, { householdId, createdBy: user.id });
+    expect((await readRecipe(id))?.archived_at).toBeNull();
+    await recipeService.archive(id);
+    expect((await readRecipe(id))?.archived_at).not.toBeNull();
+  });
+
+  it("delete removes the recipe", async () => {
+    const id = await seedRecipe(authed, { householdId, createdBy: user.id });
+    await recipeService.delete(id);
+    expect(await readRecipe(id)).toBeNull();
+  });
+});

@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, desc, eq, gte, inArray, isNull, sql as dsql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { recipeIngredients, recipeInstructions, recipes } from "@/lib/db/schema";
+import type { Tx } from "@/lib/db";
 import { env } from "@/lib/env";
 import type { Tables, UpdateTables } from "@/types/database.types";
 
@@ -65,6 +66,10 @@ export const recipeService = {
   },
 
   async setFavorite(recipeId: string, isFavorite: boolean) {
+    if (env.DATABASE_URL) {
+      await runWrite((tx) => tx.update(recipes).set({ isFavorite }).where(eq(recipes.id, recipeId)));
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase
       .from("recipes")
@@ -74,12 +79,22 @@ export const recipeService = {
   },
 
   async setRating(recipeId: string, rating: number | null) {
+    if (env.DATABASE_URL) {
+      await runWrite((tx) => tx.update(recipes).set({ rating }).where(eq(recipes.id, recipeId)));
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.from("recipes").update({ rating }).eq("id", recipeId);
     if (error) throw error;
   },
 
   async publish(recipeId: string) {
+    if (env.DATABASE_URL) {
+      await runWrite((tx) =>
+        tx.update(recipes).set({ status: "published" }).where(eq(recipes.id, recipeId)),
+      );
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase
       .from("recipes")
@@ -89,6 +104,12 @@ export const recipeService = {
   },
 
   async archive(recipeId: string) {
+    if (env.DATABASE_URL) {
+      await runWrite((tx) =>
+        tx.update(recipes).set({ archivedAt: new Date().toISOString() }).where(eq(recipes.id, recipeId)),
+      );
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase
       .from("recipes")
@@ -104,6 +125,10 @@ export const recipeService = {
    * user to confirm this before calling — see `countPlannerEntries`.
    */
   async delete(recipeId: string) {
+    if (env.DATABASE_URL) {
+      await runWrite((tx) => tx.delete(recipes).where(eq(recipes.id, recipeId)));
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.from("recipes").delete().eq("id", recipeId);
     if (error) throw error;
@@ -118,6 +143,15 @@ export const recipeService = {
    */
   async bulkDelete(args: { householdId: string; recipeIds: string[] }): Promise<number> {
     if (args.recipeIds.length === 0) return 0;
+    if (env.DATABASE_URL) {
+      return runWrite(async (tx) => {
+        const deleted = await tx
+          .delete(recipes)
+          .where(and(eq(recipes.householdId, args.householdId), inArray(recipes.id, args.recipeIds)))
+          .returning({ id: recipes.id });
+        return deleted.length;
+      });
+    }
     const supabase = await createSupabaseServerClient();
     const { error, count } = await supabase
       .from("recipes")
@@ -486,4 +520,17 @@ async function getByIdViaDrizzle(recipeId: string): Promise<RecipeDetail> {
       instructions: instructions as unknown as Tables<"recipe_instructions">[],
     };
   });
+}
+
+// Shared wrapper for Drizzle write methods: resolve the user (auth still
+// Supabase in Module 3), then run the mutation under withUserContext so the
+// UPDATE/DELETE RLS policies apply.
+async function runWrite<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  const { withUserContext } = await import("@/lib/db");
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+  return withUserContext(user.id, fn);
 }
