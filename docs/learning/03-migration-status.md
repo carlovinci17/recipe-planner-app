@@ -4,7 +4,7 @@
 (compacted or brand-new) resumes from *this file + the code*, not chat history. Update it as methods
 are ported.
 
-_Last updated: 2026-08-08 · 26 integration tests green._
+_Last updated: 2026-08-08 · 27 integration tests green._
 
 ## The porting recipe (repeat per method)
 1. **Bridge RLS to `app_uid()`** in a new migration (`supabase/migrations/`, timestamp later than the
@@ -48,6 +48,7 @@ Then: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test`. Apply a new migrati
 | `20260806190000_rls_household_reads` | households + household_members + profiles SELECT |
 | `20260806200000_rls_shopping_reads` | shopping_lists SELECT + shopping_list_items (all) |
 | `20260806210000_rls_planner_insert` | planner_entries INSERT |
+| `20260806220000_rls_invite_write` | household_invites INSERT + SELECT |
 
 ## Method-by-method status
 ### recipeService — ✅ data layer complete
@@ -55,10 +56,9 @@ Then: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test`. Apply a new migrati
 `update` · `replaceIngredients` · `replaceInstructions` · `countPlannerEntries` — all ✅.
 `createImageUploadUrl` · `attachImage` · `setCoverImage` · `removeImage` — ⬜ **storage → Module 5**.
 
-### household-service
-- `create` ✅ (RPC) · `acceptInvite` ✅ (RPC)
-- `listForCurrentUser` ✅ (read; households join) · `getActive` ✅ (read) ·
-  `members` ✅ (read; profiles join) · `invite` ⬜ (insert + `getUser`)
+### household-service — ✅ data layer complete
+`create` ✅ (RPC) · `acceptInvite` ✅ (RPC) · `listForCurrentUser` ✅ (read; households join) ·
+`getActive` ✅ (read) · `members` ✅ (read; profiles join) · `invite` ✅ (insert + returning).
 
 ### planner-service — ✅ data layer complete
 `getWeek` ✅ (read; recipes LEFT join) · `addEntry` ✅ (insert; embedded return) ·

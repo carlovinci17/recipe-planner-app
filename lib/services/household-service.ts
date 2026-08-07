@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { asc, eq, sql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { households, householdMembers, profiles } from "@/lib/db/schema";
+import { households, householdInvites, householdMembers, profiles } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { runInUserTx } from "./user-tx";
 import type { Tables } from "@/types/database.types";
@@ -156,6 +156,32 @@ export const householdService = {
     email: string;
     role?: "owner" | "member";
   }): Promise<Tables<"household_invites">> {
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx, userId) => {
+        const rows = await tx
+          .insert(householdInvites)
+          .values({
+            householdId: args.householdId,
+            email: args.email.toLowerCase(),
+            role: args.role ?? "member",
+            invitedBy: userId,
+          })
+          .returning({
+            id: householdInvites.id,
+            household_id: householdInvites.householdId,
+            email: householdInvites.email,
+            role: householdInvites.role,
+            token: householdInvites.token,
+            invited_by: householdInvites.invitedBy,
+            expires_at: householdInvites.expiresAt,
+            accepted_at: householdInvites.acceptedAt,
+            created_at: householdInvites.createdAt,
+          });
+        const row = rows[0];
+        if (!row) throw new Error("Invite failed");
+        return row;
+      });
+    }
     const supabase = await createSupabaseServerClient();
     const { error: profErr } = await supabase
       .from("profiles")

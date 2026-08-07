@@ -165,4 +165,24 @@ describe("householdService reads — current behaviour", () => {
     expect(me?.role).toBe("owner");
     expect(me?.profile.email).toBe(user.email);
   });
+
+  it("invite creates a household_invite stamped with the caller as inviter", async () => {
+    const invite = await householdService.invite({
+      householdId,
+      email: "Guest@Example.test",
+      role: "member",
+    });
+    expect(invite.household_id).toBe(householdId);
+    expect(invite.email).toBe("guest@example.test"); // lowercased
+    expect(invite.role).toBe("member");
+    expect(invite.invited_by).toBe(user.id);
+    expect(invite.token).toEqual(expect.any(String)); // DB-generated default
+
+    const { data } = await adminClient()
+      .from("household_invites")
+      .select("id")
+      .eq("id", invite.id)
+      .single();
+    expect(data?.id).toBe(invite.id);
+  });
 });
