@@ -1,6 +1,9 @@
 import "server-only";
 import { addDays, format, startOfWeek } from "date-fns";
+import { sql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { env } from "@/lib/env";
+import { runInUserTx } from "./user-tx";
 import type { MealSlot } from "@/types/database.types";
 
 export const MEAL_SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner", "snack"];
@@ -98,10 +101,21 @@ export const plannerService = {
   },
 
   async generateShoppingList(args: { householdId: string; weekStart: Date }): Promise<string> {
+    const weekStart = isoDate(startOfWeek(args.weekStart, { weekStartsOn: 1 }));
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx) => {
+        const rows = (await tx.execute(
+          sql`select public.generate_shopping_list_from_planner(${args.householdId}, ${weekStart}) as id`,
+        )) as unknown as Array<{ id: string }>;
+        const id = rows[0]?.id;
+        if (!id) throw new Error("Generation failed");
+        return id;
+      });
+    }
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.rpc("generate_shopping_list_from_planner", {
       _household_id: args.householdId,
-      _week_start: isoDate(startOfWeek(args.weekStart, { weekStartsOn: 1 })),
+      _week_start: weekStart,
     });
     if (error || !data) throw error ?? new Error("Generation failed");
     return data;

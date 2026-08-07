@@ -2,8 +2,8 @@ import "server-only";
 import { and, asc, desc, eq, gte, inArray, isNull, sql as dsql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { recipeIngredients, recipeInstructions, recipes } from "@/lib/db/schema";
-import type { Tx } from "@/lib/db";
 import { env } from "@/lib/env";
+import { runInUserTx } from "./user-tx";
 import type { Tables, UpdateTables } from "@/types/database.types";
 
 export type RecipeListItem = Pick<
@@ -505,17 +505,4 @@ async function getByIdViaDrizzle(recipeId: string): Promise<RecipeDetail> {
       instructions: instructions as unknown as Tables<"recipe_instructions">[],
     };
   });
-}
-
-// Shared wrapper for every Drizzle read/write method: resolve the current user
-// (auth is still Supabase in Module 3), then run fn under withUserContext so RLS
-// applies. Centralizing here keeps the user-resolution strategy in one place.
-async function runInUserTx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
-  const { withUserContext } = await import("@/lib/db");
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-  return withUserContext(user.id, fn);
 }
