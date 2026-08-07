@@ -2,7 +2,13 @@
 
 **Skills in play:** `codebase-design` · `/security-review` mindset (RLS is the security boundary).
 
-**Date:** 2026-08-06   **Module:** 3   **WAF pillar(s):** Security, Reliability   **Token cost:** low   **Status:** 🟡 In progress — `recipeService.list` **and** `getById` ported & proven; writes/RPCs to follow the same pattern.
+**Date:** 2026-08-06   **Module:** 3   **WAF pillar(s):** Security, Reliability   **Token cost:** low   **Status:** 🟡 In progress — `recipeService` reads (`list`, `getById`) **and writes** (`setFavorite`, `setRating`, `publish`, `archive`, `delete`, `bulkDelete`) ported & proven; RPCs + other services to follow.
+
+## Reads vs writes
+Reads alias columns back to snake_case (to preserve `Tables<>` shapes). Writes are simpler — they
+return `void`/counts, so a shared `runWrite()` helper wraps the mutation in `withUserContext` and
+that's it. Each ported method bridges its RLS policy (`recipes` SELECT, then UPDATE/DELETE) to
+`app_uid()` in a migration first.
 
 ## The problem
 PostgREST scopes every query by the JWT via `auth.uid()`. Drizzle connects **directly** to Postgres —
