@@ -164,6 +164,14 @@ export const recipeService = {
 
   /** How many planner entries reference this recipe? Used to gate the delete UI. */
   async countPlannerEntries(recipeId: string): Promise<number> {
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx) => {
+        const rows = (await tx.execute(
+          dsql`select count(*)::int as n from public.planner_entries where recipe_id = ${recipeId}`,
+        )) as unknown as Array<{ n: number }>;
+        return rows[0]?.n ?? 0;
+      });
+    }
     const supabase = await createSupabaseServerClient();
     const { count, error } = await supabase
       .from("planner_entries")
@@ -174,6 +182,15 @@ export const recipeService = {
   },
 
   async update(recipeId: string, patch: UpdateTables<"recipes">) {
+    if (env.DATABASE_URL) {
+      // patch keys are snake_case (DB columns); Drizzle `set` wants the schema's
+      // camelCase props. Map keys, then cast (postgres coerces number↔numeric).
+      const set = Object.fromEntries(
+        Object.entries(patch).map(([k, v]) => [k.replace(/_([a-z])/g, (_m, c) => c.toUpperCase()), v]),
+      ) as Partial<typeof recipes.$inferInsert>;
+      await runInUserTx((tx) => tx.update(recipes).set(set).where(eq(recipes.id, recipeId)));
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.from("recipes").update(patch).eq("id", recipeId);
     if (error) throw error;
@@ -262,6 +279,26 @@ export const recipeService = {
   },
 
   async replaceIngredients(recipeId: string, ingredients: Array<Partial<Tables<"recipe_ingredients">> & { raw_text: string }>) {
+    if (env.DATABASE_URL) {
+      await runInUserTx(async (tx) => {
+        await tx.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, recipeId));
+        if (ingredients.length === 0) return;
+        await tx.insert(recipeIngredients).values(
+          ingredients.map((ing, idx) => ({
+            recipeId,
+            position: idx,
+            section: ing.section ?? null,
+            rawText: ing.raw_text,
+            quantity: ing.quantity ?? null,
+            unit: ing.unit ?? null,
+            ingredient: ing.ingredient ?? null,
+            notes: ing.notes ?? null,
+            optional: ing.optional ?? false,
+          })) as (typeof recipeIngredients.$inferInsert)[],
+        );
+      });
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { error: delErr } = await supabase
       .from("recipe_ingredients")
@@ -286,6 +323,22 @@ export const recipeService = {
   },
 
   async replaceInstructions(recipeId: string, instructions: Array<Partial<Tables<"recipe_instructions">> & { text: string }>) {
+    if (env.DATABASE_URL) {
+      await runInUserTx(async (tx) => {
+        await tx.delete(recipeInstructions).where(eq(recipeInstructions.recipeId, recipeId));
+        if (instructions.length === 0) return;
+        await tx.insert(recipeInstructions).values(
+          instructions.map((step, idx) => ({
+            recipeId,
+            position: idx,
+            section: step.section ?? null,
+            text: step.text,
+            durationMin: step.duration_min ?? null,
+          })) as (typeof recipeInstructions.$inferInsert)[],
+        );
+      });
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { error: delErr } = await supabase
       .from("recipe_instructions")

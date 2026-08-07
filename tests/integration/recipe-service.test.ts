@@ -7,6 +7,7 @@ import {
   seedHousehold,
   seedIngredient,
   seedInstruction,
+  seedPlannerEntry,
   seedRecipe,
   type SeededUser,
 } from "./helpers";
@@ -234,5 +235,63 @@ describe("recipeService writes — current behaviour", () => {
     const id = await seedRecipe(authed, { householdId, createdBy: user.id });
     await recipeService.delete(id);
     expect(await readRecipe(id)).toBeNull();
+  });
+});
+
+/**
+ * CHARACTERIZATION — the recipe-edit methods: update (dynamic patch),
+ * replaceIngredients (delete + insert child rows), countPlannerEntries (count).
+ */
+describe("recipeService edit methods — current behaviour", () => {
+  let user: SeededUser;
+  let householdId: string;
+  let authed: Awaited<ReturnType<typeof authedClientFor>>;
+
+  const readRecipe = async (id: string) =>
+    (await adminClient().from("recipes").select("*").eq("id", id).maybeSingle()).data;
+
+  beforeAll(async () => {
+    user = await createTestUser();
+    authed = await authedClientFor(user);
+    householdId = await seedHousehold(authed);
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      authed as unknown as Awaited<ReturnType<typeof createSupabaseServerClient>>,
+    );
+  }, 30_000);
+
+  afterAll(async () => {
+    if (householdId) await adminClient().from("households").delete().eq("id", householdId);
+    if (user) await deleteTestUser(user.id);
+  });
+
+  it("update patches recipe columns", async () => {
+    const id = await seedRecipe(authed, { householdId, createdBy: user.id });
+    await recipeService.update(id, { description: "Updated desc", servings: 6 });
+    const r = await readRecipe(id);
+    expect(r?.description).toBe("Updated desc");
+    expect(r?.servings).toBe(6);
+  });
+
+  it("replaceIngredients swaps the ingredient set (ordered)", async () => {
+    const id = await seedRecipe(authed, { householdId, createdBy: user.id });
+    await seedIngredient(authed, { recipeId: id, position: 0, ingredient: "old" });
+    await recipeService.replaceIngredients(id, [
+      { raw_text: "200g flour", ingredient: "flour", unit: "g", quantity: 200 },
+      { raw_text: "2 eggs", ingredient: "eggs" },
+    ]);
+    const { data } = await adminClient()
+      .from("recipe_ingredients")
+      .select("position, ingredient")
+      .eq("recipe_id", id)
+      .order("position");
+    expect((data ?? []).map((i) => i.ingredient)).toEqual(["flour", "eggs"]);
+  });
+
+  it("countPlannerEntries counts entries referencing the recipe", async () => {
+    const id = await seedRecipe(authed, { householdId, createdBy: user.id });
+    expect(await recipeService.countPlannerEntries(id)).toBe(0);
+    await seedPlannerEntry(authed, { householdId, createdBy: user.id, recipeId: id, date: "2026-06-15" });
+    await seedPlannerEntry(authed, { householdId, createdBy: user.id, recipeId: id, date: "2026-06-16" });
+    expect(await recipeService.countPlannerEntries(id)).toBe(2);
   });
 });
