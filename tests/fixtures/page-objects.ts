@@ -28,7 +28,9 @@ export class OnboardingPage {
     await expect(this.page).toHaveURL(/\/onboarding/);
     await this.page.getByLabel(/household name/i).fill(name);
     await this.page.getByRole("button", { name: /create household/i }).click();
-    await expect(this.page).toHaveURL(/\/dashboard/);
+    // Onboarding lands on /recipes (the old /dashboard route was renamed in
+    // 4407447, 2026-05-30); this fixture was missed in that rename.
+    await expect(this.page).toHaveURL(/\/recipes/);
   }
 }
 
