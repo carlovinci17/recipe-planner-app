@@ -305,7 +305,7 @@ export const shoppingService = {
         await tx.insert(shoppingListItems).values({
           listId: args.listId,
           ingredient: args.ingredient,
-          quantity: args.quantity != null ? String(args.quantity) : null,
+          quantity: args.quantity ?? null,
           unit: args.unit ?? null,
           category: args.category ?? null,
           custom: true,
@@ -404,9 +404,7 @@ export const shoppingService = {
           .update(shoppingListItems)
           .set({
             ...(patch.ingredient !== undefined ? { ingredient: patch.ingredient } : {}),
-            ...(patch.quantity !== undefined
-              ? { quantity: patch.quantity != null ? String(patch.quantity) : null }
-              : {}),
+            ...(patch.quantity !== undefined ? { quantity: patch.quantity ?? null } : {}),
             ...(patch.unit !== undefined ? { unit: patch.unit } : {}),
             ...(patch.category !== undefined ? { category: patch.category } : {}),
           })

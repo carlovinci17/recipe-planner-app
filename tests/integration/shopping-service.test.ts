@@ -68,7 +68,10 @@ describe("shoppingService — current behaviour", () => {
     const eggsNow = afterUpdate!.items.find((i) => i.id === eggs.id);
     expect(eggsNow?.is_checked).toBe(true);
     expect(eggsNow?.category).toBe("dairy");
-    expect(Number(eggsNow?.quantity)).toBe(6);
+    // numeric must come back as a JS number, not a string, on BOTH paths
+    // (postgres.js returns numeric as string unless mode:"number" — code-review).
+    expect(eggsNow?.quantity).toBe(6);
+    expect(typeof eggsNow?.quantity).toBe("number");
 
     const checkedCount = await shoppingService.setAllChecked(listId, true);
     expect(checkedCount).toBe(2);

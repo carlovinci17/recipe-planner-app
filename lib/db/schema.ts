@@ -88,7 +88,9 @@ export const recipeIngredients = pgTable("recipe_ingredients", {
 	position: integer().notNull(),
 	section: text(),
 	rawText: text("raw_text").notNull(),
-	quantity: numeric(),
+	// mode:"number" so reads return a JS number (matches the PostgREST path);
+	// postgres.js otherwise returns `numeric` as a string. See tech-debt / code-review.
+	quantity: numeric({ mode: "number" }),
 	unit: text(),
 	ingredient: text(),
 	notes: text(),
@@ -215,7 +217,7 @@ export const shoppingListItems = pgTable("shopping_list_items", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	listId: uuid("list_id").notNull(),
 	ingredient: text().notNull(),
-	quantity: numeric(),
+	quantity: numeric({ mode: "number" }),
 	unit: text(),
 	category: text(),
 	sourceRecipeIds: uuid("source_recipe_ids").array().default(sql`'{}'`).notNull(),
@@ -369,7 +371,7 @@ export const recipes = pgTable("recipes", {
 	imagePaths: text("image_paths").array().default(sql`'{}'`).notNull(),
 	nutrition: jsonb().default({}).notNull(),
 	aiMetadata: jsonb("ai_metadata").default({}).notNull(),
-	aiConfidence: numeric("ai_confidence", { precision: 4, scale:  3 }),
+	aiConfidence: numeric("ai_confidence", { precision: 4, scale:  3, mode: "number" }),
 	aiModel: text("ai_model"),
 	cuisines: text().array().default(sql`'{}'`).notNull(),
 	mealTypes: text("meal_types").array().default(sql`'{}'`).notNull(),

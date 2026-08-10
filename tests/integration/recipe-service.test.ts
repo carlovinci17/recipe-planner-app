@@ -178,6 +178,9 @@ describe("recipeService.getById — current behaviour", () => {
     expect(recipe.id).toBe(recipeId);
     expect(ingredients.map((i) => i.position)).toEqual([0, 1]);
     expect(ingredients[0]?.ingredient).toBe("flour");
+    // numeric quantity must be a JS number on both paths (not a postgres.js string).
+    expect(ingredients[0]?.quantity).toBe(200);
+    expect(typeof ingredients[0]?.quantity).toBe("number");
     expect(instructions.map((s) => s.position)).toEqual([0, 1]);
     expect(instructions[0]?.text).toBe("Mix");
   });
