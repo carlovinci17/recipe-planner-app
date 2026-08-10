@@ -58,8 +58,20 @@ Every ported method needed its RLS policy (or RPC body) to read `public.app_uid(
 ## Exit criteria
 - ✅ `npm run typecheck` clean.
 - ✅ `npm test` — 36/36 green, exercising the Drizzle path.
-- ⏳ Playwright `02/03/05` against the Drizzle path — a hands-on run once `DATABASE_URL` is flipped
-  on in dev (needs Docker + local Supabase + `.env.test`). Tracked as the Module 3 exit check.
+- ✅ Playwright `02/03/05` against the Drizzle path — **8/8 green on a production build with 4
+  parallel workers** (`DATABASE_URL` set → app runs on Drizzle). Recipe CRUD, planner add/remove,
+  shopping-list build (7-day + custom range + checkbox toggle), and cross-household RBAC.
+
+### What the e2e run flushed out (all pre-existing, none from the port)
+The characterization suite proved the *data layer*; the e2e proved the *whole request path* and
+surfaced four latent bugs the unit tests couldn't see — a good argument for keeping both tiers:
+1. **`publicUrl` stripped the port off local redirects** (`localhost:3000` → `:80`), so any
+   middleware auth redirect died with `ERR_CONNECTION_REFUSED`. Fixed to only rewrite the origin
+   behind the proxy. (Was also a `/code-review` finding.)
+2. **Form fields had no accessible labels** (`<Label>` with no `htmlFor`) — real a11y defect.
+3. **Manual-recipe ingredients never reached shopping lists** (RPC ignored `raw_text`-only rows) —
+   fixed with `coalesce(ingredient, raw_text)`.
+4. Two stale `/dashboard` references (onboarding fixture + middleware) from the May route rename.
 
 ## Evidence / links
 - Repo: `tests/integration/{helpers,setup,*.test}.ts`, `vitest.config.mts`.
