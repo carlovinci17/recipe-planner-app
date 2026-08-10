@@ -32,3 +32,9 @@ supabase/.temp/
 
 # Generated ARM template (build artefact from Bicep)
 infra/main.json
+
+# Playwright artefacts — screenshots, videos, traces and the run report are
+# per-run outputs, not source. Regenerated on every `test:e2e`.
+/test-results/
+/playwright-report/
+/playwright/.cache/
