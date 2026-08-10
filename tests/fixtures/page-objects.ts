@@ -18,6 +18,11 @@ export class LoginPage {
     await this.page.getByLabel("Email").fill(email);
     await this.page.getByLabel("Password").fill(password);
     await this.page.getByRole("button", { name: /^log in$/i }).click();
+    // Sign-in is client-side (supabase.auth.signInWithPassword) followed by a
+    // router.push away from /login. Wait for that redirect so the session cookie
+    // is set before the caller navigates on — otherwise the next request races
+    // the cookie, the middleware sees no user, and bounces it to /login.
+    await expect(this.page).not.toHaveURL(/\/login(\?|$)/);
   }
 }
 

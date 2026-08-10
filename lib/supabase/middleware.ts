@@ -63,7 +63,7 @@ export async function updateSession(request: NextRequest) {
 
   if (user && (pathname === "/login" || pathname === "/signup")) {
     const url = publicUrl(request);
-    url.pathname = "/dashboard";
+    url.pathname = "/recipes";
     return NextResponse.redirect(url);
   }
 
