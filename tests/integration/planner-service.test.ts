@@ -248,7 +248,11 @@ describe("plannerService.generateShoppingListRange — current behaviour", () =>
     authed = await authedClientFor(user);
     householdId = await seedHousehold(authed);
     const recipeId = await seedRecipe(authed, { householdId, createdBy: user.id, title: "Stew" });
+    // Parsed ingredient (AI-style) …
     await seedIngredient(authed, { recipeId, position: 0, ingredient: "carrot", unit: "g", quantity: 100 });
+    // … and a raw_text-only ingredient (manual entry: parsed `ingredient` is null).
+    // Both must aggregate via coalesce(ingredient, raw_text) — migration 20260806250000.
+    await seedIngredient(authed, { recipeId, position: 1, rawText: "onion" });
     await seedPlannerEntry(authed, {
       householdId,
       createdBy: user.id,
@@ -279,6 +283,8 @@ describe("plannerService.generateShoppingListRange — current behaviour", () =>
       .from("shopping_list_items")
       .select("ingredient")
       .eq("list_id", listId);
-    expect((items ?? []).map((i) => i.ingredient)).toContain("carrot");
+    const names = (items ?? []).map((i) => i.ingredient);
+    expect(names).toContain("carrot"); // parsed ingredient
+    expect(names).toContain("onion"); // raw_text fallback
   });
 });
