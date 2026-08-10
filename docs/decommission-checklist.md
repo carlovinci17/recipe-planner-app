@@ -28,7 +28,14 @@ when its service is replaced:
 - [ ] `google-client-id`, `google-client-secret` — likely **retained**, but re-homed under Entra External ID federation (Module 4) — verify before removing (Google sign-in is kept).
 
 ## App code
+- [ ] **Auth: remove the email-linking migration shim** (ADR-0005 Decision 6). Once both existing
+  users have signed in via Entra and their `profiles.entra_oid` is set, delete the "unknown `oid` +
+  matching email → link existing profile" branch from the Auth.js provisioning callback. Keep the
+  "unknown `oid` → create new profile" branch (invited members). Closes an email-collision takeover
+  vector. (Do at Module 9/11, after cutover is confirmed.)
 - [ ] `lib/supabase/` (client / server / admin) — replaced by the Drizzle + Azure data layer (Module 3).
+- [ ] Supabase Auth: `@supabase/ssr` session in `lib/supabase/{server,middleware}.ts`, `app/auth/callback/`,
+  and the custom `login`/`signup` forms → Auth.js + Entra External ID (Module 4).
 - [ ] `lib/inngest/` — replaced by Azure Durable Functions (Module 6).
 - [ ] Supabase Storage calls (`lib/ingestion/storage.ts`, `components/recipes/use-signed-image.ts`) → Azure Blob + SAS (Module 5).
 - [ ] Realtime `.channel()` subscriptions → Azure Web PubSub (Module 8).
