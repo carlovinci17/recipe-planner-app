@@ -2,7 +2,7 @@
 
 **Skills in play:** `tdd` · the repo's first unit/integration test layer (Vitest).
 
-**Date:** 2026-08-06   **Module:** 3   **WAF pillar(s):** Reliability, Security   **Token cost:** low   **Status:** 🟡 In progress — harness + core methods covered; more added as each method is ported.
+**Date:** 2026-08-06 → 2026-08-08   **Module:** 3   **WAF pillar(s):** Reliability, Security   **Token cost:** low   **Status:** ✅ Complete — 36 tests, whole request-path data layer characterized and ported.
 
 ## The idea
 Before swapping the query engine (Supabase → Drizzle) we **pin the current behaviour** in tests.
@@ -21,24 +21,48 @@ RLS is the security property we must preserve, so mocks are disqualified.
 - **Seed** via an *authed* client — `createTestUser` → `authedClientFor` → `seedHousehold`/`seedRecipe`
   (real rows under real RLS).
 - **Mock** `createSupabaseServerClient` → that authed client, so the service runs as the seeded user.
-- **Safety guard** (`setup.ts`): refuses to run unless `NEXT_PUBLIC_SUPABASE_URL` is localhost — the
-  tests *seed and delete*, so a wrong `.env.test` must fail loud, never touch production.
+- **Safety guard** (`setup.ts`): refuses to run unless `NEXT_PUBLIC_SUPABASE_URL` **and** `DATABASE_URL`
+  are localhost — the tests *seed and delete*, so a wrong `.env.test` must fail loud, never touch production.
 - **`server-only` stub** + `@` alias in `vitest.config.mts` so server modules import cleanly in Node.
+- Because `.env.test` sets `DATABASE_URL`, the suite exercises the **Drizzle** branch of every gated
+  method — the tests prove the *new* path, not the old one.
 
-## Coverage so far (9 tests)
-| Suite | Pins |
-|---|---|
-| `recipeService.list` | default status/archived filter · **cross-household RLS isolation** |
-| `recipeService.getById` | multi-table shape · `position` ordering · `.single()` throws on missing |
-| `plannerService.generateShoppingList` | RPC list creation · ingredient aggregation |
+## Coverage (36 tests, all 6 request-path services)
+| Suite | Tests | Pins |
+|---|---|---|
+| `recipe-service` | 13 | list status/archived filter · **cross-household RLS isolation** · getById shape + `position` order · writes (favorite/archive/delete) · update/replaceIngredients/countPlannerEntries · **numeric quantity is a number** |
+| `household-service` | 7 | create/acceptInvite RPCs · getActive · listForCurrentUser · members · invite |
+| `planner-service` | 7 | generateShoppingList RPC · moveEntry/removeEntry · getWeek (embedded recipe) · addEntry · generateShoppingListRange |
+| `shopping-service` | 4 | list/getActive · item writes · **numeric quantity is a number** |
+| `rating-service` | 3 | upsert own rating · household aggregate · RLS |
+| `permissions` | 2 | getRecipePermissions creator-or-owner |
 
-## The payoff (it earned its keep immediately)
-The shopping-list RPC test **failed first** — it expected `"Week of …"` but got `"Shopping Jun 15-Jun 21"`.
-Cause: `generate_shopping_list_from_planner` is **redefined** in a later migration
-(`20260509000200`). The test pinned the *live* behaviour and caught that we'd read the stale version —
-exactly the silent surprise a blind port would have shipped.
+## The payoff (it earned its keep twice)
+1. **Stale-migration catch.** The shopping-list RPC test **failed first** — it expected `"Week of …"`
+   but got `"Shopping Jun 15-Jun 21"`. Cause: `generate_shopping_list_from_planner` is **redefined**
+   in a later migration (`20260509000200`). The test pinned the *live* behaviour and caught that we'd
+   read the stale version — exactly the silent surprise a blind port would have shipped.
+2. **Numeric-type divergence.** `/code-review` flagged that `postgres.js` returns `numeric` columns as
+   **strings** while PostgREST returned **numbers** — so shopping-list totals would string-concatenate
+   (`"0"+"2"+"3" = "023"`) and the review-form's `z.number()` save would reject. Fixed with
+   `mode:"number"` on the three numeric columns; the tests now assert `typeof === "number"` so the two
+   paths can't silently diverge again. A characterization test that only checked `Number(x) === 6`
+   would have *hidden* this — the lesson: assert the type, not just the coerced value.
+
+## ADR-002 bridges this required (13 migrations)
+Every ported method needed its RLS policy (or RPC body) to read `public.app_uid()` instead of
+`auth.uid()`, so the Drizzle connection — which has no PostgREST session — is scoped identically.
+`app_uid()` coalesces to `auth.uid()`, so the Supabase path is untouched. Files:
+`supabase/migrations/20260806120000` … `20260806240000`.
+
+## Exit criteria
+- ✅ `npm run typecheck` clean.
+- ✅ `npm test` — 36/36 green, exercising the Drizzle path.
+- ⏳ Playwright `02/03/05` against the Drizzle path — a hands-on run once `DATABASE_URL` is flipped
+  on in dev (needs Docker + local Supabase + `.env.test`). Tracked as the Module 3 exit check.
 
 ## Evidence / links
-- Repo: `tests/integration/{helpers,setup,recipe-service.test,planner-service.test}.ts`,
-  `vitest.config.mts`.
-- Run: `npm test` (needs local Supabase + Docker up; `.env.test` → localhost).
+- Repo: `tests/integration/{helpers,setup,*.test}.ts`, `vitest.config.mts`.
+- Run: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test` (needs local Supabase + Docker up;
+  `.env.test` → localhost).
+- Status snapshot: `docs/learning/03-migration-status.md`.

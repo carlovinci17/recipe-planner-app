@@ -74,8 +74,9 @@ Then: `source ~/.nvm/nvm.sh && nvm use 24.15.0 && npm test`. Apply a new migrati
 ### shopping-service — ✅ data layer complete
 `listLists` · `getActive` (+ source-title map) · `createList` · `setActive` · `renameList` ·
 `deleteList` · `addItem` · `toggleChecked` · `setAllChecked` · `clearList` · `updateItem` ·
-`removeItem` — all ✅. (numeric `quantity` written via `String(n)`; whole-row reads cast
-`as unknown as Tables<>` like recipe-service.)
+`removeItem` — all ✅. (numeric columns use schema `mode:"number"` so reads return JS
+numbers matching PostgREST — code-review fix; whole-row reads cast `as unknown as Tables<>`
+like recipe-service.)
 
 ### permissions — ✅ done
 `getRecipePermissions` ✅ (household_members role read; duplicate if/else branch
