@@ -497,6 +497,7 @@ export function ShoppingList({
                 return (
                   <div
                     key={item.id}
+                    data-testid="shopping-item"
                     className={`flex items-start gap-3 rounded-md px-2 py-2 transition-colors ${
                       item.is_checked ? "opacity-50" : "hover:bg-accent/40"
                     }`}

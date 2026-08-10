@@ -103,12 +103,11 @@ test.describe("Planner + shopping list", () => {
     await planner.openShoppingDialog();
     await planner.confirmBuildList();
 
-    // Find the row and click its checkbox
-    const row = page.getByText(/test-ingredient-A/i).first();
-    await expect(row).toBeVisible();
-    await row.locator("..").locator("..").locator('button[role="checkbox"]').click();
-
-    // Row should show as checked (line-through styling)
-    await expect(row).toHaveClass(/line-through/);
+    // Find the item row, click its checkbox, and assert the ingredient label
+    // (the element that actually carries the line-through) shows as checked.
+    const itemRow = page.getByTestId("shopping-item").filter({ hasText: "test-ingredient-A" });
+    await expect(itemRow).toBeVisible();
+    await itemRow.getByRole("checkbox").click();
+    await expect(itemRow.getByText("test-ingredient-A", { exact: true })).toHaveClass(/line-through/);
   });
 });
