@@ -29,14 +29,12 @@ test.describe("Planner + shopping list", () => {
     const planner = new PlannerPage(page);
     await planner.go();
     await planner.addEntryToFirstCell("Planner Pasta");
-    await expect(page.getByText("Planner Pasta")).toBeVisible();
+    await expect(planner.entry("Planner Pasta")).toBeVisible();
 
-    // Remove (hover the entry, click trash)
-    await page
-      .locator('button[aria-label="Remove"], button:has(svg.lucide-trash-2)')
-      .first()
-      .click({ force: true });
-    await expect(page.getByText("Planner Pasta")).toBeHidden();
+    // Remove (the trash button is opacity-0 until hover, so force the click).
+    // Scope to the visible desktop grid — the mobile grid's copy is display:none.
+    await planner.removeFirstEntry();
+    await expect(planner.entry("Planner Pasta")).toBeHidden();
   });
 
   test("builds a shopping list from a 7-day range", async ({ page }) => {

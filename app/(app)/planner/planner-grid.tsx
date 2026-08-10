@@ -445,7 +445,7 @@ export function PlannerGrid({
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         {/* Mobile: days as rows, slots as columns */}
-        <div className="md:hidden">
+        <div className="md:hidden" data-testid="planner-grid-mobile">
           {/* Slot column headers */}
           <div className="mb-1 grid grid-cols-[3rem_repeat(4,1fr)] gap-1">
             <div />
@@ -513,7 +513,7 @@ export function PlannerGrid({
         </div>
 
         {/* Desktop: horizontal grid */}
-        <div className="hidden overflow-x-auto md:block">
+        <div className="hidden overflow-x-auto md:block" data-testid="planner-grid-desktop">
           <div className="grid min-w-[640px] grid-cols-[72px_repeat(7,1fr)] gap-1.5">
             <div />
             {dates.map((d) => (

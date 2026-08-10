@@ -18,11 +18,13 @@ export function TagEditor({
   onChange,
   placeholder = "Add a tag",
   maxTags = 30,
+  id,
 }: {
   value: string[];
   onChange: (next: string[]) => void;
   placeholder?: string;
   maxTags?: number;
+  id?: string;
 }) {
   const [draft, setDraft] = useState("");
 
@@ -77,6 +79,7 @@ export function TagEditor({
         ) : null}
       </div>
       <Input
+        id={id}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={handleKey}

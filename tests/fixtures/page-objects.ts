@@ -97,6 +97,24 @@ export class PlannerPage {
     await expect(this.page.getByRole("heading", { name: /weekly planner/i })).toBeVisible();
   }
 
+  /**
+   * A planned entry by title, scoped to the visible desktop grid. The planner
+   * renders two grids (mobile + desktop) that coexist in the DOM and are toggled
+   * by CSS, so an unscoped getByText matches both and trips Playwright strict mode.
+   */
+  entry(title: string) {
+    return this.page.getByTestId("planner-grid-desktop").getByText(title);
+  }
+
+  /** Remove the first planned entry in the visible desktop grid. */
+  async removeFirstEntry() {
+    await this.page
+      .getByTestId("planner-grid-desktop")
+      .getByRole("button", { name: "Remove" })
+      .first()
+      .click({ force: true });
+  }
+
   async addEntryToFirstCell(recipeTitle: string) {
     // First "Add" button under the planner grid (top-left cell)
     const addButtons = this.page.getByRole("button", { name: /^add$/i });

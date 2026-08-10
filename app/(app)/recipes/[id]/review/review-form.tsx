@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useId,
+  useMemo,
+  useState,
+  useTransition,
+  type ReactElement,
+} from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
@@ -591,10 +599,18 @@ export function ReviewForm({
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  // Associate the label with its control so the field has an accessible name
+  // (screen readers announce it; clicking the label focuses the input; and
+  // getByLabel() in tests resolves it). We generate one id and inject it into
+  // the single child control rather than duplicating htmlFor/id at every call site.
+  const id = useId();
+  const control = isValidElement(children)
+    ? cloneElement(children as ReactElement<{ id?: string }>, { id })
+    : children;
   return (
     <div className="space-y-1.5">
-      <Label>{label}</Label>
-      {children}
+      <Label htmlFor={id}>{label}</Label>
+      {control}
     </div>
   );
 }
