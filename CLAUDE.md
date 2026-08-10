@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Communication style (how to explain things to Carlo)
+
+Carlo is learning this stack, so how things are explained matters as much as what is done.
+
+- **Always write the full name of an abbreviation the first time it appears in a message**, with the
+  short form in parentheses after it — for example: Row-Level Security (RLS), Foreign Key (FK),
+  Architecture Decision Record (ADR), Identity Provider (IdP), Monthly Active Users (MAU). Use the
+  short form only after it has been spelled out.
+- **Explain like the reader is five years old**: short sentences, plain everyday words, and a simple
+  real-world comparison (an analogy) *before* the technical detail. Define any jargon the moment it
+  is used. Favour clarity over sounding clever.
+
 ## Commands
 
 This repo uses **npm** (`package-lock.json`), not pnpm — the README's `pnpm` examples are stale.
