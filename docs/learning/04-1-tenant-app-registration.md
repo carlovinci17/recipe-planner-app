@@ -1,6 +1,6 @@
 # Lesson 4.1 — External ID tenant + app registration
 
-**Date:** 2026-08-11   **Module:** 4 (Authentication)   **WAF pillar(s):** Security, Cost Optimization   **Status:** 🟡 In progress (tenant + app reg done; user flow + Auth.js next)
+**Date:** 2026-08-11   **Module:** 4 (Authentication)   **WAF pillar(s):** Security, Cost Optimization   **Status:** ✅ Done — sign-in working end-to-end + security-reviewed (Lesson 4.5). Google = Lesson 4.2.
 **Decided in:** [ADR-0005](../adr/0005-authentication.md).
 
 ## What we did
