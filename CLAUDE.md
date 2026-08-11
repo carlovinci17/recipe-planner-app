@@ -28,7 +28,7 @@ npm run format         # prettier --write .
 npm run db:reset       # Reset local Supabase DB, replay migrations + seed
 npm run db:push        # Push migrations to the linked hosted project
 npm run db:diff        # Generate a migration from schema drift
-npm run db:types       # Regenerate types/database.types.ts (commit the result)
+npm run db:types       # ⚠️ CLOBBERS types/database.types.ts — see Database note below
 
 npm run inngest:dev    # Local Inngest dev server (UI at :8288)
 npm run test:e2e       # Playwright, headless
@@ -138,8 +138,11 @@ Zod schemas live in `lib/ai/schemas.ts`, versioned prompts in `lib/ai/prompts.ts
 ### Database
 
 Migrations in `supabase/migrations/`, timestamp-prefixed, forward-only — add a new file, don't
-edit an applied one. After any schema change run `npm run db:types` and commit
-`types/database.types.ts`.
+edit an applied one. **After a schema change, hand-edit `types/database.types.ts`** to match —
+that file is *hand-authored* (custom exports: `MealSlot`, `RecipeSourceKind`, `UpdateTables`, …).
+**Do NOT run `npm run db:types`** — `supabase gen types` overwrites the whole file and deletes those
+custom helpers, breaking ~19 importers. (Tech-debt: move helpers to a separate file so the generator
+can own `database.types.ts` again — the real best practice; deferred to Module 9. See `docs/tech-debt.md`.)
 
 RLS is on every table, using the `is_household_member()` / `is_household_owner()` security-definer
 helpers (avoids policy recursion). Storage policies derive the household id from the object path
