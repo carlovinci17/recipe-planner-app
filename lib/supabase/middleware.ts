@@ -26,6 +26,30 @@ function isPublicPath(pathname: string) {
  * Mounted from middleware.ts at the project root.
  */
 export async function updateSession(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Auth.js / Entra path (Module 4). Gate on the session-cookie presence — an
+  // edge-safe check; the real validation is getCurrentUser() + RLS at the
+  // page/action level (defense in depth). Avoids running the full Auth.js
+  // config (and its Node-only provisioning) in the edge runtime.
+  if (env.AUTH_PROVIDER === "entra") {
+    const hasSession =
+      request.cookies.has("authjs.session-token") ||
+      request.cookies.has("__Secure-authjs.session-token");
+    if (!hasSession && !isPublicPath(pathname)) {
+      const url = publicUrl(request);
+      url.pathname = "/login";
+      url.searchParams.set("next", pathname);
+      return NextResponse.redirect(url);
+    }
+    if (hasSession && (pathname === "/login" || pathname === "/signup")) {
+      const url = publicUrl(request);
+      url.pathname = "/recipes";
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient<Database>(
@@ -52,8 +76,6 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const { pathname } = request.nextUrl;
 
   if (!user && !isPublicPath(pathname)) {
     const url = publicUrl(request);
