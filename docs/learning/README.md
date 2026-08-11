@@ -39,8 +39,8 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [3.3](03-3-rls-withusercontext.md) | RLS on a direct connection + first swap (ADR-002) | 3 | Security · Reliability | ✅ Done | `3b4a7058-fd84-8135-a85b-d257ce0d6467` |
 | [3.4](03-4-port-rpcs.md) | Port the plpgsql RPCs (via Drizzle) | 3 | Reliability · Security | ✅ Done | `3b5a7058-fd84-8106-bd08-cdb31c3fd48c` |
 | [3.5](03-5-characterization-tests.md) | Characterization tests (test-first migration) | 3 | Reliability · Security | ✅ Done | `3b4a7058-fd84-810a-acd2-d776ffa5d6bf` |
-| [4.0](04-0-module-4-plan.md) | Module 4 mini-plan + auth ADRs (grilled) | 4 | Security | ✅ Done | — |
-| [4.1](04-1-tenant-app-registration.md) | External ID tenant + app registration | 4 | Security · Cost | 🟡 In progress | — |
+| [4.0](04-0-module-4-plan.md) | Module 4 mini-plan + auth ADRs (grilled) | 4 | Security | ✅ Done | `3b9a7058-fd84-8161-9698-ceb33f016a5f` |
+| [4.1](04-1-tenant-app-registration.md) | External ID tenant + Auth.js sign-in (working) | 4 | Security · Cost | 🟡 In progress | `3b9a7058-fd84-8198-80f5-c5afebe5430f` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
