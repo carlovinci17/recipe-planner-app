@@ -141,8 +141,9 @@ Migrations in `supabase/migrations/`, timestamp-prefixed, forward-only — add a
 edit an applied one. **After a schema change, hand-edit `types/database.types.ts`** to match —
 that file is *hand-authored* (custom exports: `MealSlot`, `RecipeSourceKind`, `UpdateTables`, …).
 **Do NOT run `npm run db:types`** — `supabase gen types` overwrites the whole file and deletes those
-custom helpers, breaking ~19 importers. (Tech-debt: move helpers to a separate file so the generator
-can own `database.types.ts` again — the real best practice; deferred to Module 9. See `docs/tech-debt.md`.)
+custom helpers, breaking ~19 importers. This is **transitional**: once Supabase is removed (Module 9),
+`db:types` is retired and types derive from the Drizzle schema (`lib/db/schema.ts`) as the single
+source of truth, so `database.types.ts` gets replaced entirely. Until then, hand-edit. See `docs/tech-debt.md`.
 
 RLS is on every table, using the `is_household_member()` / `is_household_owner()` security-definer
 helpers (avoids policy recursion). Storage policies derive the household id from the object path
