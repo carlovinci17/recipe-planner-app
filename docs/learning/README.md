@@ -42,6 +42,8 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [4.0](04-0-module-4-plan.md) | Module 4 mini-plan + auth ADRs (grilled) | 4 | Security | ✅ Done | `3b9a7058-fd84-8161-9698-ceb33f016a5f` |
 | [4.1](04-1-tenant-app-registration.md) | External ID tenant + Auth.js sign-in (working) | 4 | Security · Cost | ✅ Done | `3b9a7058-fd84-8198-80f5-c5afebe5430f` |
 | [4.2](04-2-google-federation.md) | Add Google sign-in (federation) | 4 | Security | 📋 In progress | `3b9a7058-fd84-817a-a795-e90eb1052f78` |
+| [4.3](04-3-middleware-seam-swap.md) | Middleware + the identity-seam swap | 4 | Security | ✅ Done | `3b9a7058-fd84-8195-b3f1-e64505e868e0` |
+| [4.4](04-4-mobile-hedge.md) | Mobile hedge (decided: no API) | 4 | Cost · Performance | ✅ Done | `3b9a7058-fd84-815a-91b4-cb5b6dea42ee` |
 | [4.5](04-5-security-review.md) | Security review (authentication) | 4 | Security | 🟡 Reviewed | `3b9a7058-fd84-81d5-a244-fa088017123a` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
