@@ -13,6 +13,12 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const useEntra = env.AUTH_PROVIDER === "entra";
+  // Only ever redirect to a same-site path — reject absolute/protocol-relative
+  // URLs so ?next= can't be used as an open redirect (Auth.js also validates).
+  const nextPath =
+    params.next && params.next.startsWith("/") && !params.next.startsWith("//")
+      ? params.next
+      : "/recipes";
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm space-y-6">
@@ -29,7 +35,7 @@ export default async function LoginPage({
           <form
             action={async () => {
               "use server";
-              await signIn("microsoft-entra-id", { redirectTo: params.next ?? "/recipes" });
+              await signIn("microsoft-entra-id", { redirectTo: nextPath });
             }}
           >
             <Button type="submit" size="lg" className="w-full">

@@ -41,6 +41,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [3.5](03-5-characterization-tests.md) | Characterization tests (test-first migration) | 3 | Reliability · Security | ✅ Done | `3b4a7058-fd84-810a-acd2-d776ffa5d6bf` |
 | [4.0](04-0-module-4-plan.md) | Module 4 mini-plan + auth ADRs (grilled) | 4 | Security | ✅ Done | `3b9a7058-fd84-8161-9698-ceb33f016a5f` |
 | [4.1](04-1-tenant-app-registration.md) | External ID tenant + Auth.js sign-in (working) | 4 | Security · Cost | 🟡 In progress | `3b9a7058-fd84-8198-80f5-c5afebe5430f` |
+| [4.5](04-5-security-review.md) | Security review (authentication) | 4 | Security | 🟡 Reviewed | — |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
