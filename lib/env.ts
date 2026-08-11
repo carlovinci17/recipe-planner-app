@@ -27,6 +27,12 @@ const serverSchema = z.object({
   // keep using the Supabase client (prod). When set (local/test, later Neon),
   // the ported methods query Postgres directly. See ADR-002 / Module 3.
   DATABASE_URL: optionalUrl,
+  // Auth.js (NextAuth v5) + Microsoft Entra External ID (Module 4 / ADR-0005).
+  // Optional so the app still boots on the Supabase-auth path until cutover.
+  AUTH_SECRET: optional(1),
+  AUTH_MICROSOFT_ENTRA_ID_ID: optional(1),
+  AUTH_MICROSOFT_ENTRA_ID_SECRET: optional(1),
+  AUTH_MICROSOFT_ENTRA_ID_ISSUER: optionalUrl,
   // Anthropic — active provider
   ANTHROPIC_API_KEY: optional(10),
   ANTHROPIC_MODEL_VISION: z.string().default("claude-opus-4-7"),

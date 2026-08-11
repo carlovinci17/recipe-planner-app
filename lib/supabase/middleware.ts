@@ -13,6 +13,7 @@ const PUBLIC_PATHS = [
   "/invites",
   "/api/inngest",
   "/api/webhooks",
+  "/api/auth", // Auth.js (NextAuth v5) endpoints — Module 4
 ];
 
 function isPublicPath(pathname: string) {
