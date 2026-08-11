@@ -19,8 +19,10 @@ export const recipeStatus = pgEnum("recipe_status", ['draft', 'processing', 'nee
 
 
 export const profiles = pgTable("profiles", {
-	id: uuid().primaryKey().notNull(),
+	id: uuid().defaultRandom().primaryKey().notNull(),
 	email: citext("email").notNull(),
+	// ADR-0005: link to the Microsoft Entra External ID object id (oid claim).
+	entraOid: text("entra_oid").unique(),
 	displayName: text("display_name"),
 	avatarUrl: text("avatar_url"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),

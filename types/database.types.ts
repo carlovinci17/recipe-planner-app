@@ -51,6 +51,7 @@ export type Database = {
         Row: {
           id: UUID;
           email: string;
+          entra_oid: string | null;
           display_name: string | null;
           avatar_url: string | null;
           created_at: Timestamp;
@@ -59,6 +60,7 @@ export type Database = {
         Insert: {
           id: UUID;
           email: string;
+          entra_oid?: string | null;
           display_name?: string | null;
           avatar_url?: string | null;
           created_at?: Timestamp;
@@ -67,6 +69,7 @@ export type Database = {
         Update: {
           id?: UUID;
           email?: string;
+          entra_oid?: string | null;
           display_name?: string | null;
           avatar_url?: string | null;
           created_at?: Timestamp;

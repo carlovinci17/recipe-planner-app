@@ -27,12 +27,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   session: { strategy: "jwt" },
   callbacks: {
-    // Carry the Entra object id (`oid`) + basic claims onto the session so we can
-    // eyeball a successful sign-in. The oid → profiles.id resolution lands next.
+    // On sign-in, resolve the Entra user to a profiles.id (create/link — ADR-0005
+    // Decisions 3 & 6) and stash it on the token. The dynamic import keeps the DB
+    // out of the edge runtime; the `profile` branch only runs on initial sign-in.
     async jwt({ token, profile }) {
       if (profile) {
         const oid = (profile as { oid?: string }).oid;
-        if (oid) token.oid = oid;
+        if (oid) {
+          const { provisionProfile } = await import("@/lib/auth/provision");
+          token.profileId = await provisionProfile({
+            oid,
+            email: (profile.email as string | undefined) ?? "",
+            name: (profile.name as string | undefined) ?? null,
+            picture: (profile.picture as string | undefined) ?? null,
+          });
+          token.oid = oid;
+        }
         if (profile.email) token.email = profile.email;
         if (profile.name) token.name = profile.name;
       }
@@ -40,7 +50,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as { oid?: string }).oid = token.oid as string | undefined;
+        session.user.id = (token.profileId as string | undefined) ?? "";
+        session.user.oid = token.oid as string | undefined;
       }
       return session;
     },
