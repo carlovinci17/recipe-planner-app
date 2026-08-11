@@ -29,6 +29,12 @@ const serverSchema = z.object({
   DATABASE_URL: optionalUrl,
   // Auth.js (NextAuth v5) + Microsoft Entra External ID (Module 4 / ADR-0005).
   // Optional so the app still boots on the Supabase-auth path until cutover.
+  // AUTH_PROVIDER selects the active auth stack: "entra" (dev/cutover) reads the
+  // Auth.js session; unset/"supabase" (prod + tests) keeps the old path.
+  AUTH_PROVIDER: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.enum(["supabase", "entra"]).optional(),
+  ),
   AUTH_SECRET: optional(1),
   AUTH_MICROSOFT_ENTRA_ID_ID: optional(1),
   AUTH_MICROSOFT_ENTRA_ID_SECRET: optional(1),
