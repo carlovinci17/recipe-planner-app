@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { householdService } from "./household-service";
 
 const COOKIE = "active_household";
@@ -15,10 +15,7 @@ const COOKIE = "active_household";
  * (layout + child page) share a single DB round-trip.
  */
 export const getActiveHousehold = cache(async function getActiveHousehold(): Promise<{ id: string; name: string; role: "owner" | "member" }> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const cookieStore = await cookies();

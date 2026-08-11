@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { google } from "googleapis";
 import { driveClient } from "@/lib/integrations/google-drive";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -32,12 +33,12 @@ export async function GET(request: NextRequest) {
     const oauth2 = google.oauth2({ version: "v2", auth: oauth });
     const profile = await oauth2.userinfo.get();
 
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
     if (!user) return NextResponse.redirect(new URL("/login", url));
 
+    // NOTE: Drive integration writes still use the Supabase client (Supabase-path
+    // feature). Migrating integration_accounts to Drizzle is Module 5/6 work.
+    const supabase = await createSupabaseServerClient();
     const { error } = await supabase.from("integration_accounts").upsert(
       {
         household_id: householdId,

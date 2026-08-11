@@ -1,21 +1,16 @@
 import { redirect } from "next/navigation";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { getMyProfile } from "@/lib/services/profile-service";
 import { householdService } from "@/lib/services/household-service";
 import { getActiveHousehold } from "@/lib/services/active-household";
 import { AppShell } from "@/components/shell/app-shell";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   // Run in parallel: getActiveHousehold (handles onboarding redirect) + profile fetch
-  const [active, { data: profile }] = await Promise.all([
-    getActiveHousehold(),
-    supabase.from("profiles").select("display_name, email, avatar_url").eq("id", user.id).single(),
-  ]);
+  const [active, profile] = await Promise.all([getActiveHousehold(), getMyProfile()]);
 
   // listForCurrentUser is cached by React.cache() — no extra DB round-trip
   const memberships = await householdService.listForCurrentUser();
@@ -23,8 +18,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <AppShell
       user={{
-        email: user.email ?? "",
-        displayName: profile?.display_name ?? user.email ?? "",
+        email: profile?.email ?? user.email ?? "",
+        displayName: profile?.display_name ?? user.name ?? user.email ?? "",
         avatarUrl: profile?.avatar_url ?? null,
       }}
       activeHousehold={active}

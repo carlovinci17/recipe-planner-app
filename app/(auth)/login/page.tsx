@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { LoginForm } from "./login-form";
+import { env } from "@/lib/env";
+import { signIn } from "@/auth";
+import { Button } from "@/components/ui/button";
 
 export const metadata = { title: "Log in" };
 
@@ -9,6 +12,7 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string; error?: string }>;
 }) {
   const params = await searchParams;
+  const useEntra = env.AUTH_PROVIDER === "entra";
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm space-y-6">
@@ -18,13 +22,31 @@ export default async function LoginPage({
           </Link>
           <p className="mt-2 text-sm text-muted-foreground">Log in to your household.</p>
         </div>
-        <LoginForm next={params.next} />
-        <p className="text-center text-sm text-muted-foreground">
-          New here?{" "}
-          <Link href="/signup" className="font-medium text-foreground hover:underline">
-            Create an account
-          </Link>
-        </p>
+
+        {useEntra ? (
+          // Auth.js + Microsoft Entra External ID: sign-in happens on the
+          // Microsoft-hosted page (Google + email/password live there).
+          <form
+            action={async () => {
+              "use server";
+              await signIn("microsoft-entra-id", { redirectTo: params.next ?? "/recipes" });
+            }}
+          >
+            <Button type="submit" size="lg" className="w-full">
+              Sign in with Microsoft
+            </Button>
+          </form>
+        ) : (
+          <>
+            <LoginForm next={params.next} />
+            <p className="text-center text-sm text-muted-foreground">
+              New here?{" "}
+              <Link href="/signup" className="font-medium text-foreground hover:underline">
+                Create an account
+              </Link>
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

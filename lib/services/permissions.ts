@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { and, eq } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { householdMembers } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { runInUserTx } from "./user-tx";
@@ -16,10 +17,7 @@ export const getRecipePermissions = cache(async function getRecipePermissions(ar
   recipeCreatedBy: string;
   recipeHouseholdId: string;
 }): Promise<{ canEdit: boolean; canDelete: boolean; isCreator: boolean; isOwner: boolean }> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   if (!user) return { canEdit: false, canDelete: false, isCreator: false, isOwner: false };
 
   const isCreator = user.id === args.recipeCreatedBy;
@@ -42,6 +40,7 @@ export const getRecipePermissions = cache(async function getRecipePermissions(ar
     );
     isOwner = rows[0]?.role === "owner";
   } else {
+    const supabase = await createSupabaseServerClient();
     const { data } = await supabase
       .from("household_members")
       .select("role")

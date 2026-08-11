@@ -7,7 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { recipeService } from "@/lib/services/recipe-service";
 import { ratingService } from "@/lib/services/rating-service";
 import { getRecipePermissions } from "@/lib/services/permissions";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { formatMinutes } from "@/lib/utils";
 import { FavoriteButton } from "./favorite-button";
 import { RecipeGallery } from "@/components/recipes/recipe-gallery";
@@ -40,13 +40,7 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
       recipeHouseholdId: recipe.household_id,
     }),
     ratingService.listForRecipe(recipe.id),
-    (async () => {
-      const supabase = await createSupabaseServerClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      return user;
-    })(),
+    getCurrentUser(),
   ]);
   const plannerEntryCount = perms.canDelete
     ? await recipeService.countPlannerEntries(recipe.id)

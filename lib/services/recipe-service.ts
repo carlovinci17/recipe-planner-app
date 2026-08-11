@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { recipeIngredients, recipeInstructions, recipes } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { runInUserTx } from "./user-tx";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import type { Tables, UpdateTables } from "@/types/database.types";
 
 export type RecipeListItem = Pick<
@@ -51,6 +52,46 @@ export type RecipeDetail = {
 };
 
 export const recipeService = {
+  /**
+   * Create an empty draft recipe (the manual "New recipe" flow) and return its id.
+   * Inserts `status='needs_review'` so it lands in the review editor.
+   */
+  async createDraft(args: { householdId: string }): Promise<string> {
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx, userId) => {
+        const inserted = await tx
+          .insert(recipes)
+          .values({
+            householdId: args.householdId,
+            createdBy: userId,
+            title: "Untitled recipe",
+            sourceKind: "manual",
+            status: "needs_review",
+          })
+          .returning({ id: recipes.id });
+        const id = inserted[0]?.id;
+        if (!id) throw new Error("Failed to create recipe");
+        return id;
+      });
+    }
+    const supabase = await createSupabaseServerClient();
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Not authenticated");
+    const { data, error } = await supabase
+      .from("recipes")
+      .insert({
+        household_id: args.householdId,
+        created_by: user.id,
+        title: "Untitled recipe",
+        source_kind: "manual",
+        status: "needs_review",
+      })
+      .select("id")
+      .single();
+    if (error || !data) throw error ?? new Error("Failed to create recipe");
+    return data.id;
+  },
+
   /**
    * List recipes for a household. Behind a stable signature this dispatches to
    * Drizzle when DATABASE_URL is configured (local/test — ADR-002) or the

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { getMyProfile } from "@/lib/services/profile-service";
 import { AccountForm } from "./account-form";
 import { BackLink } from "@/components/ui/back-link";
 import { ThemeSwitcher } from "@/components/shell/theme-switcher";
@@ -8,16 +9,9 @@ import { ThemeSwitcher } from "@/components/shell/theme-switcher";
 export const metadata = { title: "Account" };
 
 export default async function AccountSettingsPage() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name, email, avatar_url")
-    .eq("id", user.id)
-    .single();
+  const profile = await getMyProfile();
 
   return (
     <div className="container max-w-xl space-y-6 py-6">

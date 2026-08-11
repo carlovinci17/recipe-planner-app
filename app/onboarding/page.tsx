@@ -1,15 +1,12 @@
 import { redirect } from "next/navigation";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import { householdService } from "@/lib/services/household-service";
 import { OnboardingForm } from "./onboarding-form";
 
 export const metadata = { title: "Welcome" };
 
 export default async function OnboardingPage() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const memberships = await householdService.listForCurrentUser();
