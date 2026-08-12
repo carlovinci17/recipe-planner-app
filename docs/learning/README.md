@@ -49,7 +49,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [5.1](05-1-blob-account.md) | Blob account + private containers (keyless) | 5 | Security · Cost | ✅ Done | `3baa7058-fd84-8150-b82a-e3f74d3e8ce5` |
 | [5.2](05-2-blob-seam.md) | The Blob seam (`lib/storage/blob.ts`) | 5 | Security | ✅ Done | `3baa7058-fd84-81e0-8da5-d0dd9a205810` |
 | [5.3](05-3-image-route.md) | Read path: authorized image route + client rewire | 5 | Security · Performance | ✅ Done | `3baa7058-fd84-81c4-8eab-d584fe5d4c4a` |
-| 5.4 | Write path: server-proxied uploads + vision-feed | 5 | Security · Cost | ⬜ | — |
+| [5.4](05-4-write-path.md) | Write path: server-proxied uploads + base64 vision-feed | 5 | Security · Cost | ✅ Done | `3baa7058-fd84-8103-83af-f8180a7759f7` |
 | 5.5 | Security review (storage) | 5 | Security | ⬜ | — |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
