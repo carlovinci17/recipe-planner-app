@@ -248,15 +248,20 @@ export const recipeService = {
     fileName: string;
     contentType: string;
   }) {
-    const supabase = await createSupabaseServerClient();
     const safeName = args.fileName.replace(/[^a-zA-Z0-9.-]/g, "_");
     const ts = Date.now();
     const path = `${args.householdId}/${args.recipeId}/cover-${ts}-${safeName}`;
+    // Azure is keyless — no browser signature. The browser POSTs the file to
+    // /api/storage/upload instead; we only need to hand back the target path.
+    if (env.STORAGE_PROVIDER === "azure") {
+      return { uploadUrl: "", token: "", path, bucket: "recipe-images" as const };
+    }
+    const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.storage
       .from("recipe-images")
       .createSignedUploadUrl(path);
     if (error || !data) throw error ?? new Error("Failed to sign upload");
-    return { uploadUrl: data.signedUrl, token: data.token, path, bucket: "recipe-images" };
+    return { uploadUrl: data.signedUrl, token: data.token, path, bucket: "recipe-images" as const };
   },
 
   /**

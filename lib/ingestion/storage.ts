@@ -47,7 +47,34 @@ export const ingestionStorage = {
     return path;
   },
 
+  /** Generic server-side upload of raw bytes. Gated: Azure Blob or Supabase. */
+  async uploadTo(args: {
+    bucket: string;
+    path: string;
+    buffer: Buffer;
+    contentType: string;
+  }): Promise<string> {
+    if (env.STORAGE_PROVIDER === "azure") {
+      const { blobStorage } = await import("@/lib/storage/blob");
+      return blobStorage.upload({
+        container: args.bucket,
+        path: args.path,
+        buffer: args.buffer,
+        contentType: args.contentType,
+      });
+    }
+    const supabase = createSupabaseAdmin();
+    const { error } = await supabase.storage
+      .from(args.bucket)
+      .upload(args.path, args.buffer, { contentType: args.contentType, upsert: true });
+    if (error) throw new Error(`Upload failed: ${error.message}`);
+    return args.path;
+  },
+
   async signedUrl(args: { bucket: string; path: string; expiresIn?: number }): Promise<string> {
+    if (env.STORAGE_PROVIDER === "azure") {
+      return (await this.signedUrls({ bucket: args.bucket, paths: [args.path] }))[0]!;
+    }
     const supabase = createSupabaseAdmin();
     const { data, error } = await supabase.storage
       .from(args.bucket)
@@ -57,6 +84,18 @@ export const ingestionStorage = {
   },
 
   async signedUrls(args: { bucket: string; paths: string[]; expiresIn?: number }): Promise<string[]> {
+    // Keyless Azure has no public URL to hand a model. Instead return data: URLs
+    // (base64) — the Anthropic provider turns those into base64 image blocks. So
+    // the vision-feed works with zero AI-code changes.
+    if (env.STORAGE_PROVIDER === "azure") {
+      const { blobStorage } = await import("@/lib/storage/blob");
+      return Promise.all(
+        args.paths.map(async (p) => {
+          const buf = await blobStorage.download(args.bucket, p);
+          return `data:${mediaTypeFor(p)};base64,${buf.toString("base64")}`;
+        }),
+      );
+    }
     const supabase = createSupabaseAdmin();
     const { data, error } = await supabase.storage
       .from(args.bucket)
@@ -69,3 +108,10 @@ export const ingestionStorage = {
     return urls;
   },
 };
+
+function mediaTypeFor(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase();
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  return "image/jpeg";
+}

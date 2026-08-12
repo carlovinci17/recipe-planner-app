@@ -10,6 +10,7 @@ import {
   createMultiPhotoJobAction,
   completeMultiPhotoUploadAction,
 } from "./actions";
+import { STORAGE_IS_AZURE, uploadViaServer } from "@/components/recipes/upload-via-server";
 
 interface PhotoEntry {
   file: File;
@@ -67,17 +68,25 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
         });
         if (!job.ok) throw new Error(job.error);
 
-        // 2. Upload all photos in parallel directly to Storage
+        // 2. Upload all photos in parallel. Azure: proxy through the server
+        //    (keyless, raw — the pipeline rasterizes later). Supabase: signed PUT.
         await Promise.all(
-          job.uploadSlots.map(({ uploadUrl, index }) =>
-            fetch(uploadUrl, {
+          job.uploadSlots.map(({ uploadUrl, path, index }) => {
+            if (STORAGE_IS_AZURE) {
+              return uploadViaServer({
+                container: "recipe-uploads",
+                path,
+                file: photos[index]!.file,
+              });
+            }
+            return fetch(uploadUrl, {
               method: "PUT",
               headers: { "Content-Type": photos[index]!.file.type || "image/jpeg" },
               body: photos[index]!.file,
             }).then((res) => {
               if (!res.ok) throw new Error(`Upload failed for photo ${index + 1} (${res.status})`);
-            }),
-          ),
+            });
+          }),
         );
 
         // 3. Notify server: populate page_image_paths and start Inngest pipeline

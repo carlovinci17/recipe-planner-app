@@ -7,6 +7,7 @@ import { Loader2, Star, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
+import { STORAGE_IS_AZURE, uploadViaServer } from "@/components/recipes/upload-via-server";
 import {
   attachRecipeImageAction,
   removeRecipeImageAction,
@@ -45,20 +46,33 @@ export function RecipeImageUploader({ recipeId, householdId, initialPaths }: Pro
           });
           if (!sign.ok) throw new Error(sign.error);
 
-          const putRes = await fetch(sign.uploadUrl, {
-            method: "PUT",
-            headers: { "Content-Type": file.type || "image/png" },
-            body: file,
-          });
-          if (!putRes.ok) throw new Error(`Upload failed (${putRes.status})`);
+          // Azure: proxy through the server (keyless, sharp-caps to WebP → the
+          // stored path's extension changes, so use the returned path). Supabase:
+          // signed PUT straight to storage.
+          let storedPath = sign.path;
+          if (STORAGE_IS_AZURE) {
+            storedPath = await uploadViaServer({
+              container: "recipe-images",
+              path: sign.path,
+              file,
+              cap: "cover",
+            });
+          } else {
+            const putRes = await fetch(sign.uploadUrl, {
+              method: "PUT",
+              headers: { "Content-Type": file.type || "image/png" },
+              body: file,
+            });
+            if (!putRes.ok) throw new Error(`Upload failed (${putRes.status})`);
+          }
 
           const attach = await attachRecipeImageAction({
             recipeId,
-            path: sign.path,
+            path: storedPath,
           });
           if (!attach.ok) throw new Error(attach.error);
 
-          setPaths((prev) => [...prev, sign.path]);
+          setPaths((prev) => [...prev, storedPath]);
         }
         toast.success("Image added");
         router.refresh();

@@ -23,7 +23,14 @@ export type CurrentUser = {
 export async function getCurrentUser(): Promise<CurrentUser | null> {
   if (env.AUTH_PROVIDER === "entra") {
     const { auth } = await import("@/auth");
-    const session = await auth();
+    // A failed/absent session read means "not signed in" — fail closed (null),
+    // never surface a 500. Auth.js can throw on a tampered/stale session cookie.
+    let session;
+    try {
+      session = await auth();
+    } catch {
+      return null;
+    }
     const user = session?.user;
     if (!user?.id) return null;
     return { id: user.id, email: user.email ?? null, name: user.name ?? null, oid: user.oid ?? null };

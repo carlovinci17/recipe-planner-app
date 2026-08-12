@@ -1,6 +1,7 @@
 import "server-only";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { inngest } from "@/lib/inngest/client";
+import { env } from "@/lib/env";
 import type { RecipeSourceKind } from "@/types/database.types";
 
 const UPLOADS_BUCKET = "recipe-uploads";
@@ -110,6 +111,11 @@ export const ingestionService = {
       args.photos.map(async (photo, i) => {
         const ext = photo.contentType === "image/png" ? "png" : "jpg";
         const path = `${args.householdId}/${job.id}/page-${String(i).padStart(3, "0")}.${ext}`;
+        // Azure is keyless — the browser POSTs each photo to /api/storage/upload
+        // (no signature). Just hand back the target path.
+        if (env.STORAGE_PROVIDER === "azure") {
+          return { uploadUrl: "", path, index: i };
+        }
         const { data: signed, error: signErr } = await supabase.storage
           .from(UPLOADS_BUCKET)
           .createSignedUploadUrl(path);
