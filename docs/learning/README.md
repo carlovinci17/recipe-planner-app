@@ -47,6 +47,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [4.5](04-5-security-review.md) | Security review (authentication) | 4 | Security | 🟡 Reviewed | `3b9a7058-fd84-81d5-a244-fa088017123a` |
 | [5.0](05-0-module-5-plan.md) | Module 5 mini-plan + storage ADR (grilled) | 5 | Security · Cost · Perf | ✅ Done | `3baa7058-fd84-8188-8a08-c5707b679e04` |
 | [5.1](05-1-blob-account.md) | Blob account + private containers (keyless) | 5 | Security · Cost | ✅ Done | `3baa7058-fd84-8150-b82a-e3f74d3e8ce5` |
+| [5.2](05-2-blob-seam.md) | The Blob seam (`lib/storage/blob.ts`) | 5 | Security | ✅ Done | `3baa7058-fd84-81e0-8da5-d0dd9a205810` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
