@@ -5,6 +5,28 @@ import { createClient } from "@/lib/supabase/client";
 
 const cache = new Map<string, { url: string; expiresAt: number }>();
 
+// Which storage stack the browser is talking to. Mirrors the server's
+// STORAGE_PROVIDER (NEXT_PUBLIC_ so it's inlined for the client). When "azure",
+// images are served by the authorized /api/images route — a deterministic URL,
+// so there's no browser-side signing round-trip. Anything else keeps the
+// original Supabase client-signed path.
+const USE_AZURE = process.env.NEXT_PUBLIC_STORAGE_PROVIDER === "azure";
+
+/** Build the authorized image-route URL. Blob paths already start with the
+ * householdId, which the route re-checks against the caller's memberships. */
+function azureImageUrl(
+  bucket: string,
+  path: string,
+  o?: { width?: number; height?: number; quality?: number },
+): string {
+  const qs = new URLSearchParams();
+  if (o?.width) qs.set("w", String(o.width));
+  if (o?.height) qs.set("h", String(o.height));
+  if (o?.quality) qs.set("q", String(o.quality));
+  const query = qs.toString();
+  return `/api/images/${bucket}/${path}${query ? `?${query}` : ""}`;
+}
+
 /**
  * Optional Supabase Storage transform params. Asking for any of these
  * yields a server-side resized/recompressed image that's CDN-cached, so
@@ -40,6 +62,13 @@ export function useSignedImage(
   const r = options?.resize;
   const hasTransform = w !== undefined || h !== undefined || q !== undefined || r !== undefined;
 
+  // Azure: the route URL is deterministic, so resolve it synchronously and
+  // skip the signing effect entirely.
+  const azureUrl = useMemo(() => {
+    if (!USE_AZURE || !path) return null;
+    return azureImageUrl(bucket, path, { width: w, height: h, quality: q });
+  }, [path, bucket, w, h, q]);
+
   const cacheKey = useMemo(() => {
     if (!path) return null;
     return `${bucket}|${w ?? "_"}|${h ?? "_"}|${q ?? "_"}|${r ?? "_"}|${path}`;
@@ -52,6 +81,7 @@ export function useSignedImage(
   });
 
   useEffect(() => {
+    if (USE_AZURE) return; // Azure path resolves synchronously above.
     if (!cacheKey || !path) {
       setUrl(null);
       return;
@@ -90,5 +120,5 @@ export function useSignedImage(
     };
   }, [cacheKey, path, bucket, w, h, q, r, hasTransform]);
 
-  return url;
+  return USE_AZURE ? azureUrl : url;
 }
