@@ -35,8 +35,14 @@ export async function POST(req: NextRequest) {
   if (!CONTAINERS.has(container) || !path || !(file instanceof Blob)) {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
-  const householdId = path.split("/")[0];
-  if (!householdId) return Response.json({ error: "Bad path" }, { status: 400 });
+  const segments = path.split("/");
+  const householdId = segments[0];
+  // Reject empty / "." / ".." segments so a member can't craft a key that
+  // resolves outside their household prefix (defense in depth — Blob names are
+  // literal). A well-formed path is {householdId}/{recipeOrJobId}/{file}.
+  if (!householdId || segments.length < 3 || segments.some((s) => !s || s === "." || s === "..")) {
+    return Response.json({ error: "Bad path" }, { status: 400 });
+  }
   if (file.size > MAX_BYTES) return Response.json({ error: "File too large" }, { status: 413 });
 
   // Authorize: signed in AND a member of the household this path belongs to.

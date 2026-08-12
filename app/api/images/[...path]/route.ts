@@ -28,6 +28,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   if (!container || !CONTAINERS.has(container) || !householdId || path.length < 3) {
     return new Response("Bad request", { status: 400 });
   }
+  // Reject empty / "." / ".." segments. Azure blob names are literal (no path
+  // resolution), so this is defense in depth against a crafted key.
+  if (path.some((seg) => seg === "" || seg === "." || seg === "..")) {
+    return new Response("Bad path", { status: 400 });
+  }
 
   // Authorize: signed in AND a member of the household this blob belongs to.
   const user = await getCurrentUser();
@@ -62,6 +67,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   return new Response(new Uint8Array(body), {
     headers: {
       "Content-Type": contentType,
+      // Never let the browser MIME-sniff a stored blob into something executable.
+      "X-Content-Type-Options": "nosniff",
       // Per-user, per-size; the underlying blob at a path is immutable.
       "Cache-Control": "private, max-age=3600",
     },
