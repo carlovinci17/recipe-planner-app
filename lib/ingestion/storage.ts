@@ -1,5 +1,6 @@
 import "server-only";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { env } from "@/lib/env";
 
 const UPLOADS_BUCKET = "recipe-uploads";
 const IMAGES_BUCKET = "recipe-images";
@@ -9,6 +10,10 @@ export const ingestionStorage = {
   imagesBucket: IMAGES_BUCKET,
 
   async downloadFile(args: { bucket: string; path: string }): Promise<Buffer> {
+    if (env.STORAGE_PROVIDER === "azure") {
+      const { blobStorage } = await import("@/lib/storage/blob");
+      return blobStorage.download(args.bucket, args.path);
+    }
     const supabase = createSupabaseAdmin();
     const { data, error } = await supabase.storage.from(args.bucket).download(args.path);
     if (error || !data) throw new Error(`Storage download failed: ${error?.message ?? "no data"}`);
@@ -23,11 +28,15 @@ export const ingestionStorage = {
     /** Output format. Defaults to "jpeg" — smaller files with no OCR loss. */
     format?: "jpeg" | "png" | "webp";
   }): Promise<string> {
-    const supabase = createSupabaseAdmin();
     const fmt = args.format ?? "jpeg";
     const ext = fmt === "jpeg" ? "jpg" : fmt;
     const contentType = `image/${fmt === "jpeg" ? "jpeg" : fmt}`;
     const path = `${args.householdId}/${args.jobId}/page-${String(args.pageIndex).padStart(3, "0")}.${ext}`;
+    if (env.STORAGE_PROVIDER === "azure") {
+      const { blobStorage } = await import("@/lib/storage/blob");
+      return blobStorage.upload({ container: UPLOADS_BUCKET, path, buffer: args.buffer, contentType });
+    }
+    const supabase = createSupabaseAdmin();
     const { error } = await supabase.storage
       .from(UPLOADS_BUCKET)
       .upload(path, args.buffer, {

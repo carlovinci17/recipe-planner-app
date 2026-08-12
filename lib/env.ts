@@ -39,6 +39,14 @@ const serverSchema = z.object({
   AUTH_MICROSOFT_ENTRA_ID_ID: optional(1),
   AUTH_MICROSOFT_ENTRA_ID_SECRET: optional(1),
   AUTH_MICROSOFT_ENTRA_ID_ISSUER: optionalUrl,
+  // Azure Blob Storage (Module 5 / ADR-0006). STORAGE_PROVIDER selects the stack:
+  // "azure" (dev/cutover) uses keyless Blob; unset/"supabase" (prod + tests) keeps
+  // Supabase Storage. AZURE_STORAGE_ACCOUNT is the account name (keyless — no key).
+  STORAGE_PROVIDER: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.enum(["supabase", "azure"]).optional(),
+  ),
+  AZURE_STORAGE_ACCOUNT: optional(1),
   // Anthropic — active provider
   ANTHROPIC_API_KEY: optional(10),
   ANTHROPIC_MODEL_VISION: z.string().default("claude-opus-4-7"),
