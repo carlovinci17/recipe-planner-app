@@ -17,8 +17,15 @@ images served through a server route + `next/image`, capped at ~2560px. Touch `a
 |---|---|---|
 | **5.1** Blob account + containers | Bicep: a **dev** Storage account + two private containers; grant your `az login` identity **Storage Blob Data Contributor**; (prod account + Managed Identity role come with the Container App). *MS Learn: "create storage account Bicep", "assign Blob data roles".* | `az storage blob list` works keyless. |
 | **5.2** The seam (`lib/storage/blob.ts`) | Mirror `lib/ingestion/storage.ts` (download/upload/stream) on `@azure/storage-blob` + `DefaultAzureCredential`; keep the `{householdId}/…` paths; gate on `STORAGE_PROVIDER`. Server-side `sharp` cap on upload. | Typecheck; a unit test uploads+reads a blob against the dev account. |
-| **5.3** Route + client rewire | Add the authorized `/api/images/[...]` route (**household check** → stream blob); front recipe images with `next/image`; rewrite `use-signed-image` to point at the route; move `createImageUploadUrl` → server-proxied upload route. | Images render; upload works; a member of another household gets 403. |
-| **5.4** Security review | `/security-review` the route's **household-from-path** check (the replacement for the Supabase Storage policy) + upload validation. | Findings triaged. |
+| **5.3** Read path: image route + client rewire ✅ | Add the authorized `/api/images/[...]` route (**household check** → provider-gated fetch → optional `sharp` resize); rewrite `use-signed-image` to return that deterministic route URL under Azure (no browser signing). | Images render; build compiles; 36 tests green. |
+| **5.4** Write path: server-proxied uploads + vision-feed | Replace the 3 browser-direct signed-PUT flows (recipe photos, ingestion source, multi-photo) with a server-proxied upload route (`sharp` cap for photos); switch the ingestion vision-feed from signed URLs → base64 (keyless has no public URL). | A new upload lands in Blob; import extracts under Azure. |
+| **5.5** Security review | `/security-review` the route's **household-from-path** check (the replacement for the Supabase Storage policy) + upload validation. | Findings triaged. |
+
+> **Note (split at execution):** 5.3 as originally planned bundled route + upload. In practice the
+> **read path** (route + auth + resize + hook) is a complete, independently-verifiable slice, and the
+> **write path** (3 upload flows → server-proxied `sharp`, plus the vision model switching from
+> signed-URL to base64 image source) is a second slice of equal size, coupled to the ingestion
+> pipeline. Split so each lesson is coherent and each tick is honest. Old 5.4 (security) → 5.5.
 
 ## Exit criteria
 - With `STORAGE_PROVIDER=azure`: recipe images render (cards/detail/gallery), a new upload works, paths keep the `{householdId}/…` prefix.
