@@ -51,6 +51,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [5.3](05-3-image-route.md) | Read path: authorized image route + client rewire | 5 | Security · Performance | ✅ Done | `3baa7058-fd84-81c4-8eab-d584fe5d4c4a` |
 | [5.4](05-4-write-path.md) | Write path: server-proxied uploads + base64 vision-feed | 5 | Security · Cost | ✅ Done | `3baa7058-fd84-8103-83af-f8180a7759f7` |
 | [5.5](05-5-security-review.md) | Security review (storage) — closes Module 5 | 5 | Security | ✅ Done | `3baa7058-fd84-8160-b1b1-fb496e8e09aa` |
+| [6.0](06-0-module-6-plan.md) | Background jobs: design + mini-plan (ADR-0007) | 6 | Reliability · Cost | ✅ Done | `3bba7058-fd84-818c-ba19-fb39d9392446` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
