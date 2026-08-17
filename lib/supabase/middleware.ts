@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   "/api/inngest",
   "/api/webhooks",
   "/api/auth", // Auth.js (NextAuth v5) endpoints — Module 4
+  "/api/internal", // Module 6: Durable Functions ingestion endpoints — auth'd by shared secret, not a session
 ];
 
 function isPublicPath(pathname: string) {
