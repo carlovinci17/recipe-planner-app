@@ -40,3 +40,28 @@ export async function startFileIngestion(data: FileUploadedData): Promise<void> 
   }
   await inngest.send({ name: "ingestion/file.uploaded", data });
 }
+
+/**
+ * Raise an external event to a running Durable Functions orchestration (Module 6,
+ * 6.3). Used to resume a job parked on `waitForExternalEvent` — e.g. the skim
+ * selection. The orchestration's instanceId is the jobId (set at start).
+ */
+export async function raiseIngestionEvent(
+  instanceId: string,
+  eventName: string,
+  payload: unknown,
+): Promise<void> {
+  const base = env.FUNCTIONS_BASE_URL;
+  const secret = env.INGESTION_INTERNAL_SECRET;
+  if (!base || !secret) {
+    throw new Error("FUNCTIONS_BASE_URL and INGESTION_INTERNAL_SECRET are required for JOBS_PROVIDER=durable");
+  }
+  const res = await fetch(`${base}/api/ingestion/raise-event`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-internal-secret": secret },
+    body: JSON.stringify({ instanceId, eventName, payload }),
+  });
+  if (!res.ok) {
+    throw new Error(`Durable raiseEvent failed (${res.status}): ${await res.text()}`);
+  }
+}

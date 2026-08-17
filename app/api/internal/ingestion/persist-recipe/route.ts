@@ -33,6 +33,9 @@ export async function POST(req: NextRequest) {
   if (!recipe) return Response.json({ ok: false, error: `recipe index ${index} out of range` });
 
   const pageImagePaths = job.page_image_paths ?? [];
+  // Batch source override the user typed in the skim dialog wins over the job's URL.
+  const override = (job.skim_results as { source_override?: { name?: string | null; url?: string | null } } | null)
+    ?.source_override;
   try {
     const coverImagePath = (() => {
       const pi = recipe.source_page_index;
@@ -44,8 +47,8 @@ export async function POST(req: NextRequest) {
       householdId: job.household_id,
       createdBy: job.created_by,
       sourceKind: job.source_kind,
-      sourceUrl: job.source_url,
-      sourceName: null,
+      sourceUrl: override?.url ?? job.source_url,
+      sourceName: override?.name ?? null,
       coverImagePath,
       imagePaths: [],
       aiModel: job.ai_model ?? "",

@@ -36,6 +36,8 @@ df.app.activity("persistRecipe", { handler: (i: unknown) => callApp("persist-rec
 df.app.activity("finalizeJob", { handler: (i: unknown) => callApp("finalize-job", i) });
 df.app.activity("cleanup", { handler: (i: unknown) => callApp("cleanup", i) });
 df.app.activity("tagRecipe", { handler: (i: unknown) => callApp("tag-recipe", i) });
+df.app.activity("skim", { handler: (i: unknown) => callApp("skim", i) });
+df.app.activity("applySelection", { handler: (i: unknown) => callApp("apply-selection", i) });
 df.app.activity("markFailed", { handler: (i: unknown) => callApp("mark-failed", i) });
 
 // ── Orchestrator: the deterministic control flow of the ingestion pipeline. ──
@@ -53,10 +55,40 @@ const ingestionOrchestrator: OrchestrationHandler = function* (context: Orchestr
     return { jobId, recipesFound: 0 };
   }
 
-  // 6.2: extract all pages (skim selection is 6.3). Honour bulk start/max.
   const startOffset = Math.max(0, (input.startPage ?? 1) - 1);
   let pagesToExtract = startOffset > 0 ? pages.slice(startOffset) : pages;
   if (input.bulkMode && input.maxPages) pagesToExtract = pagesToExtract.slice(0, input.maxPages);
+
+  // 6.3: interactive skim — for multi-recipe docs (>= 3 pages, non-bulk), skim the
+  // titles, then PAUSE for the user to pick which to deep-extract. Durable Functions
+  // dehydrates the orchestration while it waits (up to 24h) — no compute, no tokens.
+  if (pages.length >= 3 && !input.bulkMode) {
+    yield context.df.callActivity("skim", { jobId, pages });
+    const deadline = new Date(context.df.currentUtcDateTime.getTime() + 24 * 60 * 60 * 1000);
+    const timeoutTask = context.df.createTimer(deadline);
+    const selectionTask = context.df.waitForExternalEvent("skimSelection");
+    const winner = yield context.df.Task.any([selectionTask, timeoutTask]);
+    if (winner === timeoutTask) {
+      yield context.df.callActivity("markFailed", {
+        jobId,
+        error: "Skim preview wasn't acted on within 24 hours.",
+        reason: "skim_timeout",
+      });
+      return { jobId, recipesFound: 0 };
+    }
+    timeoutTask.cancel(); // selection arrived — stop the 24h timer keeping the instance alive
+    const selection = selectionTask.result as {
+      selectedIndices: number[];
+      sourceName: string | null;
+      sourceUrl: string | null;
+    };
+    const applied = (yield context.df.callActivity("applySelection", { jobId, ...selection })) as {
+      cancelled: boolean;
+      pagesToExtract?: string[];
+    };
+    if (applied.cancelled) return { jobId, recipesFound: 0 };
+    pagesToExtract = applied.pagesToExtract ?? pagesToExtract;
+  }
 
   // 2. Vision extraction — one activity per chunk (per-chunk checkpointing).
   const chunks = chunkPages(pagesToExtract);
@@ -135,8 +167,30 @@ app.http("ingestionStart", {
     }
     const client = df.getClient(context);
     const body = (await req.json()) as StartInput;
-    const instanceId = await client.startNew("ingestionOrchestrator", { input: body });
+    // instanceId = jobId, so the app can raiseEvent (skim selection) by jobId.
+    const instanceId = await client.startNew("ingestionOrchestrator", { instanceId: body.jobId, input: body });
     context.log(`Started ingestion orchestration '${instanceId}' for job ${body.jobId}`);
     return client.createCheckStatusResponse(req, instanceId);
+  },
+});
+
+// ── Resume a parked orchestration (e.g. skim selection). The app POSTs here. ──
+app.http("ingestionRaiseEvent", {
+  route: "ingestion/raise-event",
+  methods: ["POST"],
+  authLevel: "anonymous",
+  extraInputs: [df.input.durableClient()],
+  handler: async (req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    if (req.headers.get("x-internal-secret") !== process.env.INGESTION_INTERNAL_SECRET) {
+      return { status: 403, jsonBody: { error: "Forbidden" } };
+    }
+    const { instanceId, eventName, payload } = (await req.json()) as {
+      instanceId: string;
+      eventName: string;
+      payload: unknown;
+    };
+    const client = df.getClient(context);
+    await client.raiseEvent(instanceId, eventName, payload);
+    return { status: 202, jsonBody: { ok: true } };
   },
 });

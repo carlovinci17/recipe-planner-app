@@ -5,6 +5,8 @@ import { ingestionService } from "@/lib/services/ingestion-service";
 import { householdService } from "@/lib/services/household-service";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { inngest } from "@/lib/inngest/client";
+import { env } from "@/lib/env";
+import { raiseIngestionEvent } from "@/lib/ingestion/start-job";
 import { driveClient } from "@/lib/integrations/google-drive";
 import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logger";
@@ -690,15 +692,24 @@ export async function commitSkimSelectionAction(input: z.infer<typeof CommitSkim
       return { ok: false as const, error: "Not a member of this household" };
     }
 
-    await inngest.send({
-      name: "ingestion/file.skim.committed",
-      data: {
-        jobId: parsed.data.jobId,
+    if (env.JOBS_PROVIDER === "durable") {
+      // Resume the orchestration parked on waitForExternalEvent (instanceId = jobId).
+      await raiseIngestionEvent(parsed.data.jobId, "skimSelection", {
         selectedIndices: parsed.data.selectedIndices,
         sourceName: parsed.data.sourceName ?? null,
         sourceUrl: parsed.data.sourceUrl ?? null,
-      },
-    });
+      });
+    } else {
+      await inngest.send({
+        name: "ingestion/file.skim.committed",
+        data: {
+          jobId: parsed.data.jobId,
+          selectedIndices: parsed.data.selectedIndices,
+          sourceName: parsed.data.sourceName ?? null,
+          sourceUrl: parsed.data.sourceUrl ?? null,
+        },
+      });
+    }
     revalidatePath("/recipes/import");
     return {
       ok: true as const,

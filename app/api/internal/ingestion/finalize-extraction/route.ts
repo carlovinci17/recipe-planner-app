@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { dedupeRecipes } from "@/lib/ingestion/pipeline-helpers";
+import { dedupeRecipes, normalizeTitle } from "@/lib/ingestion/pipeline-helpers";
 import { normalizeExtractedRecipe } from "@/lib/ingestion/normalize";
 import type { ExtractedRecipe } from "@/lib/ai/schemas";
 
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   const supabase = createSupabaseAdmin();
   const { data: job } = await supabase
     .from("ingestion_jobs")
-    .select("raw_extraction")
+    .select("raw_extraction, skim_results")
     .eq("id", jobId)
     .single();
   const rawRecipes = ((job?.raw_extraction as { recipes?: ExtractedRecipe[] } | null)?.recipes ??
@@ -35,7 +35,15 @@ export async function POST(req: NextRequest) {
 
   const deduped = dedupeRecipes(rawRecipes);
   const confidenceThreshold = bulkMode ? 0.1 : 0.3;
-  const kept = deduped.filter((r) => r.is_recipe && r.confidence >= confidenceThreshold);
+  let kept = deduped.filter((r) => r.is_recipe && r.confidence >= confidenceThreshold);
+
+  // If the user went through the skim picker, drop recipes whose titles they
+  // didn't select (the deep extract can surface neighbours from a buffered page range).
+  const selectedTitles = (job?.skim_results as { selected_titles?: string[] } | null)?.selected_titles;
+  if (selectedTitles && selectedTitles.length > 0) {
+    const wanted = new Set(selectedTitles.map(normalizeTitle));
+    kept = kept.filter((r) => wanted.has(normalizeTitle(r.title)));
+  }
 
   const usagePatch = {
     ai_model: usage?.model ?? null,
