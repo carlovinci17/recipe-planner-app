@@ -61,6 +61,14 @@ const serverSchema = z.object({
   OPENAI_MODEL_FAST: z.string().default("gpt-5.5-mini"),
   INNGEST_EVENT_KEY: optional(),
   INNGEST_SIGNING_KEY: optional(),
+  // Module 6: which background-jobs engine runs ingestion. Unset → inngest (prod today).
+  JOBS_PROVIDER: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["inngest", "durable"]).optional()),
+  // Shared secret the Durable Functions orchestrator sends to the app's internal
+  // ingestion endpoints (architecture B — thin orchestrator, work stays in the app).
+  INGESTION_INTERNAL_SECRET: optional(),
+  // Base URL the Durable Functions app calls back on (set in the Functions app, not here,
+  // but mirrored for the app→functions start call). Defaults to the deployed function app.
+  FUNCTIONS_BASE_URL: optionalUrl,
   GOOGLE_CLIENT_ID: optional(),
   GOOGLE_CLIENT_SECRET: optional(),
   GOOGLE_REDIRECT_URI: optionalUrl,
