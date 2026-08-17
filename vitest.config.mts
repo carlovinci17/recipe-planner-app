@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as dotenv } from "dotenv";
-import { defineConfig } from "vitest/config";
+import { defineConfig, configDefaults } from "vitest/config";
 
 // Mirror playwright.config's precedence: .env.test → .env.local → .env (test wins).
 // Loaded here (main process) so it's set before workers fork and before any
@@ -24,6 +24,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // The golden set (Lesson 7.3) is a token-spending provider comparison with its
+    // own config (vitest.golden.config.mts) — never part of the normal suite.
+    exclude: [...configDefaults.exclude, "tests/golden/**"],
     setupFiles: ["tests/integration/setup.ts"],
     // These are true integration tests sharing one local DB — run serially.
     fileParallelism: false,

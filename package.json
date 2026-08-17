@@ -16,6 +16,7 @@
     "inngest:dev": "inngest-cli@latest dev",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:golden": "RUN_GOLDEN=1 vitest run -c vitest.golden.config.mts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:install": "playwright install --with-deps chromium",

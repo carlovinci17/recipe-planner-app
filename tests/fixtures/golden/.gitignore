@@ -1,0 +1,5 @@
+# Golden-set inputs are real recipe scans — personal/copyrighted, never committed.
+# Keep only this ignore file and the README.
+*
+!.gitignore
+!README.md
