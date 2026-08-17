@@ -49,6 +49,13 @@ when its service is replaced:
 - [ ] **Supabase → Auth → URL Configuration:** remove the Azure Container Apps redirect URL `https://recipe-planner.delightfulrock-67fe0b09.australiaeast.azurecontainerapps.io/**` — added in Module 2 so the *current* Supabase-auth sign-in works on Azure; auth is replaced in Module 4.
   - **Watch-note (2026-08-03):** Supabase **Site URL** = `https://bitebuddy-ai.vercel.app/` (current Vercel prod). Consequences if things break: (a) email-auth links (confirmation / magic link / password reset) go to **Vercel, not Azure** — so email signup tested on Azure lands on Vercel; (b) if Google sign-in on Azure **bounces you to the Vercel app** instead of staying on Azure, the Azure **Redirect URL** allowlist entry isn't matching — re-check it. Google OAuth itself is unaffected by Site URL.
 
+## Background jobs (Durable Functions cutover — Module 6 → 11)
+- [ ] **Flip `JOBS_PROVIDER=durable`** in prod so uploads route to the Functions app (the file pipeline + skim wait + timers are ported & proven; Inngest is the default until then).
+- [ ] **Port the URL pipeline** (`lib/inngest/functions/process-url.ts` → Durable Functions) — a mechanical repeat of the 6.2 Architecture-B port; deferred so it moves with the cutover (URL imports stay on Inngest meanwhile).
+- [ ] **Swap the Drive poller** Inngest cron → a Durable Functions timer — a *flip* (one off, one on), not coexistence: polling isn't idempotent, so both running would double-import.
+- [ ] **Delete `app/api/webhooks/drive/`** (n8n Drive webhook) once the poller swap is live.
+- [ ] Set the Functions app's prod env: `APP_BASE_URL`, `INGESTION_INTERNAL_SECRET` (Key Vault); and the app's `FUNCTIONS_BASE_URL` → the deployed `func-recipe-jobs`.
+
 ## Repo / infra
 - [ ] `supabase/` directory (migrations, config, seed) — retire after schema port + data migration (Modules 3, 9).
 - [ ] Vercel config & `VERCEL_*` env references (e.g. `next.config.ts` uses `VERCEL_GIT_COMMIT_SHA`) → Azure build metadata.

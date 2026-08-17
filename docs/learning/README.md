@@ -55,6 +55,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [6.1](06-1-durable-functions-skeleton.md) | Durable Functions skeleton (local + cloud) | 6 | Reliability · Cost | ✅ Done | `3bfa7058-fd84-81d6-bf5d-fc555462033f` |
 | [6.2](06-2-port-pipeline.md) | Port the ingestion pipeline (thin-orchestrator, Arch B) | 6 | Reliability | ✅ Done | `3bfa7058-fd84-81cd-94be-e680699ba190` |
 | [6.3](06-3-human-in-the-loop.md) | Human-in-the-loop: the skim wait | 6 | Reliability | ✅ Done | `3bfa7058-fd84-8130-a3cb-d831c1ba3f2d` |
+| [6.4](06-4-timers-and-cutover.md) | Timer triggers (+ cutover deferrals) | 6 | Reliability | ✅ Done | `3bfa7058-fd84-81c9-b5a2-db05055dd4e7` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
