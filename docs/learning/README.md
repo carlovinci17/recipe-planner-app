@@ -53,6 +53,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [5.5](05-5-security-review.md) | Security review (storage) — closes Module 5 | 5 | Security | ✅ Done | `3baa7058-fd84-8160-b1b1-fb496e8e09aa` |
 | [6.0](06-0-module-6-plan.md) | Background jobs: design + mini-plan (ADR-0007) | 6 | Reliability · Cost | ✅ Done | `3bba7058-fd84-818c-ba19-fb39d9392446` |
 | [6.1](06-1-durable-functions-skeleton.md) | Durable Functions skeleton (local + cloud) | 6 | Reliability · Cost | ✅ Done | `3bfa7058-fd84-81d6-bf5d-fc555462033f` |
+| [6.2](06-2-port-pipeline.md) | Port the ingestion pipeline (thin-orchestrator, Arch B) | 6 | Reliability | ✅ Done | `3bfa7058-fd84-81cd-94be-e680699ba190` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
