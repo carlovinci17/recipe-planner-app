@@ -12,22 +12,108 @@ type StartInput = {
   startPage?: number;
 };
 
-// ── Activities: each is a thin call to an internal endpoint on the Next app. ──
-// (More land here in 6.2/6.3: skim, extractChunk, finalizeExtraction, persistRecipe,
-//  tagRecipe, cleanup, markFailed.)
-df.app.activity("prepare", { handler: (input: StartInput) => callApp("prepare", input) });
+// ── Chunking (pure, deterministic — safe in the orchestrator). Mirrors the
+//    app's lib/ingestion/pipeline-helpers.ts (duplicated: the thin Functions
+//    app can't import the Next app's @/lib). ──
+const VISION_CHUNK_PAGES = 5;
+const VISION_CHUNK_OVERLAP = 1;
+function chunkPages(pages: string[]): string[][] {
+  if (pages.length <= VISION_CHUNK_PAGES) return [pages];
+  const stride = VISION_CHUNK_PAGES - VISION_CHUNK_OVERLAP;
+  const chunks: string[][] = [];
+  for (let i = 0; i < pages.length; i += stride) {
+    chunks.push(pages.slice(i, Math.min(i + VISION_CHUNK_PAGES, pages.length)));
+    if (i + VISION_CHUNK_PAGES >= pages.length) break;
+  }
+  return chunks;
+}
 
-// ── Orchestrator (skeleton — the deterministic control flow of the pipeline). ──
+// ── Activities: each is a thin call to an internal endpoint on the Next app. ──
+df.app.activity("prepare", { handler: (i: StartInput) => callApp("prepare", i) });
+df.app.activity("extractChunk", { handler: (i: unknown) => callApp("extract-chunk", i) });
+df.app.activity("finalizeExtraction", { handler: (i: unknown) => callApp("finalize-extraction", i) });
+df.app.activity("persistRecipe", { handler: (i: unknown) => callApp("persist-recipe", i) });
+df.app.activity("finalizeJob", { handler: (i: unknown) => callApp("finalize-job", i) });
+df.app.activity("markFailed", { handler: (i: unknown) => callApp("mark-failed", i) });
+
+// ── Orchestrator: the deterministic control flow of the ingestion pipeline. ──
+// NOTE: 6.2 covers the linear extract→persist path. The interactive skim +
+// waitForExternalEvent (24h) and the tag fan-out / source cleanup land in 6.3.
 const ingestionOrchestrator: OrchestrationHandler = function* (context: OrchestrationContext) {
   const input = context.df.getInput() as StartInput;
+  const jobId = input.jobId;
 
-  // 1. Load + mark processing + rasterize the source into page images.
-  const prepared = yield context.df.callActivity("prepare", input);
+  // 1. Load + mark processing + rasterize.
+  const prepared = (yield context.df.callActivity("prepare", input)) as { pageImagePaths: string[] };
+  const pages = prepared.pageImagePaths ?? [];
+  if (pages.length === 0) {
+    yield context.df.callActivity("markFailed", { jobId, error: "No page images produced", reason: "no_pages" });
+    return { jobId, recipesFound: 0 };
+  }
 
-  // TODO 6.2/6.3: skim → waitForExternalEvent (24h) → extract chunks (loop) →
-  //   finalize extraction (dedupe/filter/normalize) → persist fan-out →
-  //   tag fan-out → cleanup.
-  return { jobId: input.jobId, prepared };
+  // 6.2: extract all pages (skim selection is 6.3). Honour bulk start/max.
+  const startOffset = Math.max(0, (input.startPage ?? 1) - 1);
+  let pagesToExtract = startOffset > 0 ? pages.slice(startOffset) : pages;
+  if (input.bulkMode && input.maxPages) pagesToExtract = pagesToExtract.slice(0, input.maxPages);
+
+  // 2. Vision extraction — one activity per chunk (per-chunk checkpointing).
+  const chunks = chunkPages(pagesToExtract);
+  const usage = { model: "", promptTokens: 0, completionTokens: 0, costCents: 0 };
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const r = (yield context.df.callActivity("extractChunk", {
+      jobId,
+      pages: chunks[ci],
+      chunkIndex: ci,
+      totalChunks: chunks.length,
+      bulkMode: input.bulkMode,
+      useOpus: input.useOpus,
+    })) as { usage: { model: string; promptTokens: number; completionTokens: number; costCents: number } };
+    usage.model = r.usage.model;
+    usage.promptTokens += r.usage.promptTokens;
+    usage.completionTokens += r.usage.completionTokens;
+    usage.costCents += r.usage.costCents;
+  }
+
+  // 3. Dedupe + filter + normalize (saved to the job).
+  const fin = (yield context.df.callActivity("finalizeExtraction", {
+    jobId,
+    bulkMode: input.bulkMode,
+    usage,
+  })) as { count: number; reason?: string };
+  if (fin.count === 0) {
+    return { jobId, recipesFound: 0, reason: fin.reason };
+  }
+
+  // 4. Persist each recipe — fan out, collect tagged results.
+  const persistTasks = [];
+  for (let i = 0; i < fin.count; i++) {
+    persistTasks.push(context.df.callActivity("persistRecipe", { jobId, index: i }));
+  }
+  const results = (yield context.df.Task.all(persistTasks)) as Array<
+    { ok: true; id: string; title: string } | { ok: false; error: string; title?: string }
+  >;
+  const persisted = results.filter((r): r is { ok: true; id: string; title: string } => r.ok).map((r) => r.id);
+  const failed = results.filter((r) => !r.ok);
+
+  if (persisted.length === 0) {
+    yield context.df.callActivity("markFailed", {
+      jobId,
+      error: `All ${failed.length} recipe insert(s) failed`,
+      reason: "all_persists_failed",
+    });
+    return { jobId, recipesFound: 0 };
+  }
+
+  // 5. Finalize the job (needs_review + primary recipe + partial summary).
+  yield context.df.callActivity("finalizeJob", {
+    jobId,
+    primaryRecipeId: persisted[0],
+    succeeded: persisted.length,
+    failed: failed.length,
+  });
+
+  // TODO 6.2-tail / 6.3: source-file cleanup + tag fan-out.
+  return { jobId, status: "needs_review", recipeIds: persisted };
 };
 df.app.orchestration("ingestionOrchestrator", ingestionOrchestrator);
 

@@ -10,68 +10,11 @@ import { persistDraftRecipe } from "@/lib/ingestion/persist-recipe";
 import type { ExtractedRecipe } from "@/lib/ai/schemas";
 import { logger } from "@/lib/logger";
 import { env } from "@/lib/env";
+import { chunkPages, normalizeTitle, dedupeRecipes } from "@/lib/ingestion/pipeline-helpers";
 import {
   extractJobIdFromFailureEvent,
   markIngestionJobFailed,
 } from "@/lib/inngest/helpers/mark-failed";
-
-/**
- * Vision-call sizing: a single Anthropic call with 14+ high-detail page
- * images + 12000 output tokens can run 30+ minutes and trips the stuck-job
- * sweep. Splitting into 5-page chunks (with 1-page overlap so cross-
- * boundary recipes survive) keeps each call bounded ~1–5 min, and the
- * heartbeat step between chunks refreshes ingestion_jobs.updated_at so
- * the sweep doesn't false-positive.
- */
-const VISION_CHUNK_PAGES = 5;
-const VISION_CHUNK_OVERLAP = 1;
-
-function chunkPages(pages: string[]): string[][] {
-  if (pages.length <= VISION_CHUNK_PAGES) return [pages];
-  const stride = VISION_CHUNK_PAGES - VISION_CHUNK_OVERLAP;
-  const chunks: string[][] = [];
-  for (let i = 0; i < pages.length; i += stride) {
-    chunks.push(pages.slice(i, Math.min(i + VISION_CHUNK_PAGES, pages.length)));
-    if (i + VISION_CHUNK_PAGES >= pages.length) break;
-  }
-  return chunks;
-}
-
-/**
- * Normalize a recipe title for dedupe (overlapping chunks can surface the
- * same recipe twice). Mirrors the filename normalizer used by Drive scan.
- */
-function normalizeTitle(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-/**
- * Dedupe across chunks. When the same recipe appears in adjacent chunks
- * (because of the page overlap), keep the more complete version —
- * measured by ingredient + instruction count.
- */
-function dedupeRecipes(recipes: ExtractedRecipe[]): ExtractedRecipe[] {
-  const byTitle = new Map<string, ExtractedRecipe>();
-  for (const r of recipes) {
-    const key = normalizeTitle(r.title);
-    if (!key) continue;
-    const existing = byTitle.get(key);
-    if (!existing) {
-      byTitle.set(key, r);
-      continue;
-    }
-    const existingScore = existing.ingredients.length + existing.instructions.length;
-    const candidateScore = r.ingredients.length + r.instructions.length;
-    if (candidateScore > existingScore) byTitle.set(key, r);
-  }
-  return Array.from(byTitle.values());
-}
 
 /**
  * Main ingestion pipeline for uploaded files (PDFs, images, screenshots).

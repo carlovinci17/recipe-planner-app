@@ -1,0 +1,80 @@
+import type { NextRequest } from "next/server";
+import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { dedupeRecipes } from "@/lib/ingestion/pipeline-helpers";
+import { normalizeExtractedRecipe } from "@/lib/ingestion/normalize";
+import type { ExtractedRecipe } from "@/lib/ai/schemas";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+/**
+ * Internal ingestion step (Module 6): after all chunks are extracted, dedupe
+ * across chunk overlaps, drop low-confidence / non-recipe results, normalize the
+ * survivors, and save them to the job as `normalized`. Returns just the count so
+ * the orchestrator can fan out `persistRecipe` calls by index.
+ */
+export async function POST(req: NextRequest) {
+  const deny = assertInternalSecret(req);
+  if (deny) return deny;
+
+  const { jobId, bulkMode, usage } = (await req.json()) as {
+    jobId: string;
+    bulkMode?: boolean;
+    usage?: { model: string; promptTokens: number; completionTokens: number; costCents: number };
+  };
+
+  const supabase = createSupabaseAdmin();
+  const { data: job } = await supabase
+    .from("ingestion_jobs")
+    .select("raw_extraction")
+    .eq("id", jobId)
+    .single();
+  const rawRecipes = ((job?.raw_extraction as { recipes?: ExtractedRecipe[] } | null)?.recipes ??
+    []) as ExtractedRecipe[];
+
+  const deduped = dedupeRecipes(rawRecipes);
+  const confidenceThreshold = bulkMode ? 0.1 : 0.3;
+  const kept = deduped.filter((r) => r.is_recipe && r.confidence >= confidenceThreshold);
+
+  const usagePatch = {
+    ai_model: usage?.model ?? null,
+    prompt_tokens: usage?.promptTokens ?? null,
+    completion_tokens: usage?.completionTokens ?? null,
+    cost_cents: usage?.costCents || null,
+  };
+
+  if (kept.length === 0) {
+    const reason = deduped.length === 0 ? "no_recipes" : "below_threshold";
+    // Bulk mode completes gracefully; interactive fails.
+    await supabase
+      .from("ingestion_jobs")
+      .update({
+        status: bulkMode ? "needs_review" : "failed",
+        error:
+          reason === "no_recipes"
+            ? "Source did not appear to contain any recipes"
+            : "Detected content didn't reach the confidence threshold",
+        raw_extraction: { recipes: deduped },
+        ...usagePatch,
+      })
+      .eq("id", jobId);
+    await supabase
+      .from("ingestion_events")
+      .insert({ job_id: jobId, kind: "failed", payload: { reason } });
+    return Response.json({ count: 0, reason });
+  }
+
+  const normalized = kept.map((r) => normalizeExtractedRecipe(r));
+  await supabase
+    .from("ingestion_jobs")
+    .update({ raw_extraction: { recipes: deduped }, normalized, ...usagePatch })
+    .eq("id", jobId);
+  await supabase.from("ingestion_events").insert({
+    job_id: jobId,
+    kind: "extraction_completed",
+    payload: { recipes_found: deduped.length, recipes_kept: kept.length },
+  });
+
+  return Response.json({ count: normalized.length });
+}
