@@ -54,6 +54,11 @@ const serverSchema = z.object({
   ANTHROPIC_MODEL_FAST: z.string().default("claude-haiku-4-5"),
   // Cheaper model used for bulk imports — skips Opus to reduce cost ~15×.
   ANTHROPIC_MODEL_BULK: z.string().default("claude-sonnet-4-6"),
+  // Module 7: AI provider (anthropic | foundry). Unset → anthropic (prod today).
+  AI_PROVIDER: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["anthropic", "foundry"]).optional()),
+  // Azure AI Foundry (keyless via DefaultAzureCredential). One cheap deployment for all tiers.
+  AZURE_FOUNDRY_ENDPOINT: optionalUrl,
+  AZURE_FOUNDRY_DEPLOYMENT: z.string().default("gpt-4o-mini"),
   // OpenAI — legacy, provider file kept on disk but not wired.
   OPENAI_API_KEY: optional(10),
   OPENAI_MODEL_VISION: z.string().default("gpt-5.5"),
