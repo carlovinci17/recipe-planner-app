@@ -71,6 +71,19 @@ export const ingestionStorage = {
     return args.path;
   },
 
+  /** Delete objects (best-effort cleanup of source files). Gated: Azure or Supabase. */
+  async remove(args: { bucket: string; paths: string[] }): Promise<void> {
+    if (args.paths.length === 0) return;
+    if (env.STORAGE_PROVIDER === "azure") {
+      const { blobStorage } = await import("@/lib/storage/blob");
+      await Promise.all(args.paths.map((p) => blobStorage.remove(args.bucket, p)));
+      return;
+    }
+    const supabase = createSupabaseAdmin();
+    const { error } = await supabase.storage.from(args.bucket).remove(args.paths);
+    if (error) throw new Error(`Remove failed: ${error.message}`);
+  },
+
   async signedUrl(args: { bucket: string; path: string; expiresIn?: number }): Promise<string> {
     if (env.STORAGE_PROVIDER === "azure") {
       return (await this.signedUrls({ bucket: args.bucket, paths: [args.path] }))[0]!;

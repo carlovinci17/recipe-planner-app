@@ -34,6 +34,8 @@ df.app.activity("extractChunk", { handler: (i: unknown) => callApp("extract-chun
 df.app.activity("finalizeExtraction", { handler: (i: unknown) => callApp("finalize-extraction", i) });
 df.app.activity("persistRecipe", { handler: (i: unknown) => callApp("persist-recipe", i) });
 df.app.activity("finalizeJob", { handler: (i: unknown) => callApp("finalize-job", i) });
+df.app.activity("cleanup", { handler: (i: unknown) => callApp("cleanup", i) });
+df.app.activity("tagRecipe", { handler: (i: unknown) => callApp("tag-recipe", i) });
 df.app.activity("markFailed", { handler: (i: unknown) => callApp("mark-failed", i) });
 
 // ── Orchestrator: the deterministic control flow of the ingestion pipeline. ──
@@ -112,7 +114,11 @@ const ingestionOrchestrator: OrchestrationHandler = function* (context: Orchestr
     failed: failed.length,
   });
 
-  // TODO 6.2-tail / 6.3: source-file cleanup + tag fan-out.
+  // 6. Clean up source files (best-effort), then fan out AI tagging per recipe.
+  yield context.df.callActivity("cleanup", { jobId });
+  const tagTasks = persisted.map((id) => context.df.callActivity("tagRecipe", { recipeId: id }));
+  yield context.df.Task.all(tagTasks);
+
   return { jobId, status: "needs_review", recipeIds: persisted };
 };
 df.app.orchestration("ingestionOrchestrator", ingestionOrchestrator);

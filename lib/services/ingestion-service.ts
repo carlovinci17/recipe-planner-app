@@ -1,6 +1,7 @@
 import "server-only";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { inngest } from "@/lib/inngest/client";
+import { startFileIngestion } from "@/lib/ingestion/start-job";
 import { env } from "@/lib/env";
 import type { RecipeSourceKind } from "@/types/database.types";
 
@@ -77,13 +78,10 @@ export const ingestionService = {
       payload: { storage_path: args.storagePath },
     });
 
-    await inngest.send({
-      name: "ingestion/file.uploaded",
-      data: {
-        jobId: args.jobId,
-        householdId: job.household_id,
-        sourceKind: job.source_kind,
-      },
+    await startFileIngestion({
+      jobId: args.jobId,
+      householdId: job.household_id,
+      sourceKind: job.source_kind,
     });
   },
 
@@ -148,9 +146,10 @@ export const ingestionService = {
       payload: { source: "multi_photo", photo_count: args.pageImagePaths.length },
     });
 
-    await inngest.send({
-      name: "ingestion/file.uploaded",
-      data: { jobId: args.jobId, householdId: args.householdId, sourceKind: "image" as const },
+    await startFileIngestion({
+      jobId: args.jobId,
+      householdId: args.householdId,
+      sourceKind: "image" as const,
     });
   },
 
