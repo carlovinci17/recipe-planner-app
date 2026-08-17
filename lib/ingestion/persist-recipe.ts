@@ -1,5 +1,6 @@
 import "server-only";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { normalizeList, normalizeSourceName } from "@/lib/recipes/normalize";
 import type { ExtractedRecipe } from "@/lib/ai/schemas";
 import type { RecipeSourceKind } from "@/types/database.types";
 
@@ -63,7 +64,7 @@ export async function persistDraftRecipe(args: {
       status: "needs_review",
       ingestion_job_id: args.ingestionJobId ?? null,
       external_source_id: args.externalSourceId ?? null,
-      source_name: args.sourceName ?? null,
+      source_name: normalizeSourceName(args.sourceName),
       // AI-detected framing. Default to 50/50 (center crop, matching legacy
       // behavior) when the model didn't report a focal point — e.g. pages
       // with no clear photo, or single-image / URL imports.
@@ -144,13 +145,15 @@ export async function applyRecipeTags(args: {
   const { error } = await supabase
     .from("recipes")
     .update({
-      cuisines: args.tags.cuisines,
+      // Normalize the free-form tag/cuisine output (lowercase, dedupe, drop
+      // time-only tags) so the recipe browser's filters stay clean.
+      cuisines: normalizeList(args.tags.cuisines),
       meal_types: args.tags.meal_types,
       diet_types: args.tags.diet_types,
       cooking_methods: args.tags.cooking_methods,
       occasions: args.tags.occasions,
       difficulty: args.tags.difficulty,
-      tags: args.tags.tags,
+      tags: normalizeList(args.tags.tags),
     })
     .eq("id", args.recipeId);
   if (error) throw new Error(`Tag update failed: ${error.message}`);

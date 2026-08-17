@@ -23,7 +23,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/integration/**/*.test.ts"],
+    include: ["tests/**/*.test.ts"],
     setupFiles: ["tests/integration/setup.ts"],
     // These are true integration tests sharing one local DB — run serially.
     fileParallelism: false,

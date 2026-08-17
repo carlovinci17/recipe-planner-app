@@ -42,8 +42,10 @@ const DIET_TYPES = [
   "nut-free",
 ];
 
+const TIME_OPTIONS = [10, 20, 30, 60] as const;
+
 type ChipRemoval = {
-  kind: "meal" | "diet" | "cuisine" | "tag" | "source" | "fav";
+  kind: "meal" | "diet" | "cuisine" | "source" | "fav";
   value?: string;
 };
 
@@ -53,14 +55,15 @@ type ChipRemoval = {
  * Layout:
  *   [search ............................................... ]
  *   ( All | Breakfast | Lunch | Dinner | Snack | Dessert )       ← segmented (single-select)
- *   [⭐ Favourites]  [Diet ▾]  [Cuisine ▾]  [Tags ▾]              ← popover pills (multi-select)
+ *   [⭐ Favourites]  [Diet ▾]  [Cuisine ▾]  [Source ▾]  [Time ⏱]   ← pills + cook-time
  *   ┊ active filter chips with × ┊                  [ Clear all ]
  *   [recipe grid]
  *
  * - Text search hits the server (Postgres FTS). Everything else is in-memory
  *   so the chips/popovers feel instant.
- * - Cuisine + Tag option lists are derived from the loaded recipe set, so any
- *   tag the user adds in the editor automatically appears as a filter.
+ * - Cuisine + Source option lists are derived from the loaded recipe set.
+ * - Tags are searchable via the search bar, so there's no separate tag filter.
+ *   Cooking time uses the structured prep+cook fields (not free-form tags).
  */
 export function RecipesBrowser({
   householdId,
@@ -99,7 +102,10 @@ export function RecipesBrowser({
   const [meal, setMeal] = useState<string | null>(() => sp("meal"));
   const [diets, setDiets] = useState<string[]>(() => sp("diets")?.split(",").filter(Boolean) ?? []);
   const [cuisines, setCuisines] = useState<string[]>(() => sp("cuisines")?.split(",").filter(Boolean) ?? []);
-  const [tags, setTags] = useState<string[]>(() => sp("tags")?.split(",").filter(Boolean) ?? []);
+  const [maxTime, setMaxTime] = useState<number | null>(() => {
+    const n = Number(sp("maxTime"));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  });
   const [sources, setSources] = useState<string[]>(() => sp("sources")?.split(",").filter(Boolean) ?? []);
   const [favOnly, setFavOnly] = useState(() => sp("fav") === "1");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -111,7 +117,7 @@ export function RecipesBrowser({
     meal?: string | null;
     diets?: string[];
     cuisines?: string[];
-    tags?: string[];
+    maxTime?: number | null;
     sources?: string[];
     fav?: boolean;
     review?: boolean;
@@ -123,7 +129,7 @@ export function RecipesBrowser({
     if ("meal" in patch) set("meal", patch.meal ?? null);
     if ("diets" in patch) set("diets", patch.diets?.join(",") || null);
     if ("cuisines" in patch) set("cuisines", patch.cuisines?.join(",") || null);
-    if ("tags" in patch) set("tags", patch.tags?.join(",") || null);
+    if ("maxTime" in patch) set("maxTime", patch.maxTime ? String(patch.maxTime) : null);
     if ("sources" in patch) set("sources", patch.sources?.join(",") || null);
     if ("fav" in patch) set("fav", patch.fav ? "1" : null);
     if ("review" in patch) set("review", patch.review ? "1" : null);
@@ -139,19 +145,16 @@ export function RecipesBrowser({
   // source_url → friendly name (e.g. "https://recipetineats.com/..." →
   // "RecipeTin Eats"). Recipes without a source_url are excluded from the
   // source list.
-  const { allCuisines, allTags, allSources } = useMemo(() => {
+  const { allCuisines, allSources } = useMemo(() => {
     const c = new Set<string>();
-    const t = new Set<string>();
     const s = new Set<string>();
     for (const r of recipes) {
       r.cuisines.forEach((x) => c.add(x));
-      r.tags.forEach((x) => t.add(x));
       const name = getRecipeSourceName(r);
       if (name) s.add(name);
     }
     return {
       allCuisines: Array.from(c).sort(),
-      allTags: Array.from(t).sort(),
       allSources: Array.from(s).sort(),
     };
   }, [recipes]);
@@ -179,14 +182,17 @@ export function RecipesBrowser({
       // it has any of the selected diets/cuisines/tags/sources.
       if (diets.length && !diets.some((d) => r.diet_types.includes(d))) return false;
       if (cuisines.length && !cuisines.some((c) => r.cuisines.includes(c))) return false;
-      if (tags.length && !tags.some((t) => r.tags.includes(t))) return false;
+      if (maxTime) {
+        const total = (r.prep_time_min ?? 0) + (r.cook_time_min ?? 0);
+        if (total === 0 || total > maxTime) return false; // 0 = no time data → excluded
+      }
       if (sources.length) {
         const recipeSource = getRecipeSourceName(r);
         if (!recipeSource || !sources.includes(recipeSource)) return false;
       }
       return true;
     });
-  }, [recipes, deferredQuery, reviewOnly, favOnly, meal, diets, cuisines, tags, sources]);
+  }, [recipes, deferredQuery, reviewOnly, favOnly, meal, diets, cuisines, maxTime, sources]);
 
   function commitTextSearch(value: string) {
     // Preserve all active filter params when updating the text query.
@@ -204,9 +210,6 @@ export function RecipesBrowser({
     } else if (c.kind === "cuisine" && c.value) {
       const next = cuisines.filter((x) => x !== c.value);
       setCuisines(next); syncUrl({ cuisines: next });
-    } else if (c.kind === "tag" && c.value) {
-      const next = tags.filter((x) => x !== c.value);
-      setTags(next); syncUrl({ tags: next });
     } else if (c.kind === "source" && c.value) {
       const next = sources.filter((x) => x !== c.value);
       setSources(next); syncUrl({ sources: next });
@@ -217,11 +220,11 @@ export function RecipesBrowser({
     setMeal(null);
     setDiets([]);
     setCuisines([]);
-    setTags([]);
+    setMaxTime(null);
     setSources([]);
     setFavOnly(false);
     setReviewOnly(false);
-    syncUrl({ meal: null, diets: [], cuisines: [], tags: [], sources: [], fav: false, review: false });
+    syncUrl({ meal: null, diets: [], cuisines: [], maxTime: null, sources: [], fav: false, review: false });
     setQuery("");
     commitTextSearch("");
   }
@@ -243,11 +246,11 @@ export function RecipesBrowser({
       label: c,
       remove: () => removeChip({ kind: "cuisine", value: c }),
     });
-  for (const t of tags)
+  if (maxTime)
     activeChips.push({
-      key: `tag-${t}`,
-      label: t,
-      remove: () => removeChip({ kind: "tag", value: t }),
+      key: `time-${maxTime}`,
+      label: `≤${maxTime} min`,
+      remove: () => { setMaxTime(null); syncUrl({ maxTime: null }); },
     });
   for (const s of sources)
     activeChips.push({
@@ -408,8 +411,10 @@ export function RecipesBrowser({
                 </Button>
                 <MultiSelectPopover label="Diet" options={DIET_TYPES} selected={diets} onChange={(v) => { setDiets(v); syncUrl({ diets: v }); }} searchPlaceholder="Search diets..." />
                 <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={(v) => { setCuisines(v); syncUrl({ cuisines: v }); }} emptyMessage={allCuisines.length === 0 ? "No cuisines yet." : "No matches."} searchPlaceholder="Search cuisines..." />
-                <MultiSelectPopover label="Tags" options={allTags} selected={tags} onChange={(v) => { setTags(v); syncUrl({ tags: v }); }} emptyMessage={allTags.length === 0 ? "No tags yet." : "No matches."} searchPlaceholder="Search tags..." />
                 <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={(v) => { setSources(v); syncUrl({ sources: v }); }} emptyMessage={allSources.length === 0 ? "No sources yet." : "No matches."} searchPlaceholder="Search sources..." />
+              </div>
+              <div className="mt-2">
+                <TimeFilter value={maxTime} onChange={(v) => { setMaxTime(v); syncUrl({ maxTime: v }); }} />
               </div>
             </div>
             {activeChips.length > 0 && (
@@ -459,8 +464,8 @@ export function RecipesBrowser({
           </Button>
           <MultiSelectPopover label="Diet" options={DIET_TYPES} selected={diets} onChange={(v) => { setDiets(v); syncUrl({ diets: v }); }} searchPlaceholder="Search diets..." />
           <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={(v) => { setCuisines(v); syncUrl({ cuisines: v }); }} emptyMessage={allCuisines.length === 0 ? "No cuisines yet — add tags via the recipe editor." : "No matches."} searchPlaceholder="Search cuisines..." />
-          <MultiSelectPopover label="Tags" options={allTags} selected={tags} onChange={(v) => { setTags(v); syncUrl({ tags: v }); }} emptyMessage={allTags.length === 0 ? "No tags yet — add tags via the recipe editor." : "No matches."} searchPlaceholder="Search tags..." />
           <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={(v) => { setSources(v); syncUrl({ sources: v }); }} emptyMessage={allSources.length === 0 ? "No sources yet — import a recipe from a URL to populate this." : "No matches."} searchPlaceholder="Search sources..." />
+          <TimeFilter value={maxTime} onChange={(v) => { setMaxTime(v); syncUrl({ maxTime: v }); }} />
         </div>
         {hasAny ? (
           <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
@@ -712,5 +717,33 @@ function SegmentButton({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Single-select cooking-time filter: Any / ≤10 / ≤20 / ≤30 / ≤60 min. Built on
+ * the recipe's structured prep+cook time (`total_time_min`), not free-form tags.
+ */
+function TimeFilter({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (next: number | null) => void;
+}) {
+  return (
+    <div className="-mx-1 overflow-x-auto px-1">
+      <div className="inline-flex items-center rounded-lg border bg-background p-1">
+        <span className="px-2 text-sm font-medium text-muted-foreground">Time</span>
+        <SegmentButton active={value === null} onClick={() => onChange(null)}>
+          Any
+        </SegmentButton>
+        {TIME_OPTIONS.map((m) => (
+          <SegmentButton key={m} active={value === m} onClick={() => onChange(m)}>
+            ≤{m}m
+          </SegmentButton>
+        ))}
+      </div>
+    </div>
   );
 }
