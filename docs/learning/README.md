@@ -67,7 +67,8 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [8.4](08-4-verify.md) | Verify realtime end-to-end (two browsers) | 8 | Reliability | ✅ Verified | _runbook_ |
 | [9.0](09-0-module-9-plan.md) | Module 9 mini-plan: Data migration + asset optimisation | 9 | Cost · Reliability · Security | 🟡 Plan | `3c0a7058-fd84-81fe-b2b0-e76634340a59` |
 | [9.1](09-1-db-export.md) | Migrate the DB to Neon (export → schema → load) | 9 | Reliability | ✅ Done | `3c0a7058-fd84-819c-956a-c1ea1da86a2f` |
-| [9.2](09-2-asset-optimise.md) | Asset optimisation (referenced-only, WebP) | 9 | Cost · Performance | 🟡 Dry-run validated | `3c0a7058-fd84-81b3-8573-ee70e70bc1b5` |
+| [9.2](09-2-asset-optimise.md) | Asset optimisation (referenced-only, WebP) | 9 | Cost · Performance | ✅ Done | `3c0a7058-fd84-81b3-8573-ee70e70bc1b5` |
+| [9.3](09-3-asset-upload.md) | Upload optimized covers to Azure Blob | 9 | Cost · Performance | ✅ Done | `3c0a7058-fd84-8109-af4c-eb0bf7c5b580` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
