@@ -30,6 +30,8 @@
     "@azure/identity": "^4.13.1",
     "@azure/monitor-opentelemetry": "^1.19.0",
     "@azure/storage-blob": "^12.33.0",
+    "@azure/web-pubsub": "^1.2.0",
+    "@azure/web-pubsub-client": "^1.1.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^3.9.0",

@@ -47,6 +47,16 @@ const serverSchema = z.object({
     z.enum(["supabase", "azure"]).optional(),
   ),
   AZURE_STORAGE_ACCOUNT: optional(1),
+  // Realtime (Module 8 / ADR-0009). REALTIME_PROVIDER selects the transport:
+  // "azure" (dev/cutover) uses Web PubSub; unset/"supabase" (prod + tests) keeps
+  // Supabase Realtime. Keyless — the negotiate server auths via Managed Identity.
+  // The client-side gate is NEXT_PUBLIC_REALTIME_PROVIDER (read directly from
+  // process.env in client code, mirroring NEXT_PUBLIC_STORAGE_PROVIDER).
+  REALTIME_PROVIDER: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.enum(["supabase", "azure"]).optional(),
+  ),
+  AZURE_WEBPUBSUB_ENDPOINT: optionalUrl,
   // Anthropic — active provider
   ANTHROPIC_API_KEY: optional(10),
   ANTHROPIC_MODEL_VISION: z.string().default("claude-opus-4-7"),
