@@ -14,6 +14,12 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       model *does* emit `usage_metadata` + `response_metadata.model_name`. Options: a manual usage bridge
       (custom callback → set Langfuse observation usage), OpenAI-SDK OTEL instrumentation, or the OpenAI v1
       endpoint via `ChatOpenAI`. Needed for ADR-0010's cost monitoring. Revisit in 12.3.
+- [ ] **Agent faces / avatars** (design) — every agent surface should have a distinct **face**, not just
+      an emoji chip. Covers the Kitchen Assistant coordinator + each specialist (Chef/finder, planner,
+      shopping, and later critic + nutrition) and the existing "AI Chef" (`ai-chef-dialog.tsx`). Show the
+      face of whichever agent handled the turn (the per-turn avatar from ADR-0008/0010 §"visible
+      delegation"). Decide the visual system (illustrated character set vs generated avatars) and render
+      it in the chat + the AI Chef dialog.
 - [ ] **Copy / move icons** (design fix) — the copy and move icons need fixing (wrong/unclear icons).
       Check the recipe/planner/shopping actions that use copy + move.
 - [ ] **Cover image: dark circle top-right** — a dark circle/blob appears in the top-right of recipe
