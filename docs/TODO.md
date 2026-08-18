@@ -8,6 +8,14 @@ and cutover teardown in [`decommission-checklist.md`](decommission-checklist.md)
 Add a line here whenever something small surfaces mid-task so it isn't forgotten.
 
 ## Open
+- [ ] **Kitchen Assistant: speech-to-text (voice input)** — let the user *talk* to the assistant instead
+      of typing. Add a mic button to the chat (`components/assistant/kitchen-assistant.tsx`) that
+      captures speech → text → drops it in the input / sends it. Two paths to weigh: the browser's
+      built-in **Web Speech API** (`SpeechRecognition`) — free, zero infra, but Chrome-only and
+      inconsistent on iOS Safari; or **Azure AI Speech** (speech-to-text) — keyless via Managed Identity,
+      consistent cross-browser + mobile, on-brand with the Azure stack, small cost. Recommend Web Speech
+      for a quick v1, Azure Speech if mobile/Safari matters. Pairs with the agent-faces work. (Nice
+      future symmetry: Azure Speech also does text-to-speech, so the assistant could *reply* aloud.)
 - [ ] **Langfuse: token/model capture for AzureChatOpenAI** (found in Module 12.2 self-audit) — traces
       flow + structure is captured, but generations show `model=null` / `usage=null`. The `@langfuse/langchain`
       v5 OTEL handler doesn't map `AzureChatOpenAI` token usage (the docs' example uses plain OpenAI). The
