@@ -1,6 +1,6 @@
 # Lesson 7.3 — The golden set (Foundry vs Claude)
 
-**Date:** 2026-08-17   **Module:** 7   **WAF pillar(s):** Cost · Performance   **Status:** 🟡 Harness built + wired — awaiting the golden run (needs your PDFs).
+**Date:** 2026-08-18   **Module:** 7   **WAF pillar(s):** Cost · Performance   **Status:** ✅ Done — ran on 9 real docs (mixed layouts); verdict below.
 
 ## What this is
 A **taste test before we change the cook.** Before flipping `AI_PROVIDER=foundry`, run a fixed
@@ -35,9 +35,44 @@ database (only the AI providers on local files). The golden tree is excluded fro
 Flip `AI_PROVIDER=foundry` when, across the set, Foundry finds the same recipes with comparable
 ingredient/step coverage and no systematic misses. Record the verdict below after the run.
 
-## Verdict
-_TBD — fill in after the golden run: does gpt-4o-mini match Claude closely enough to switch, or do
-we keep Claude for vision extraction and only use Foundry for the cheaper tagging/bulk tiers?_
+## What the run taught us (two bugs the golden set caught before a switch would have)
+1. **Whole-document dumps overflow the token cap.** The first harness sent every page in one
+   call; a 10-recipe doc produced >12,000 output tokens → truncated JSON → Claude failed 3× and
+   burned ~120K–150K tokens per doc for **zero output** (~$8 wasted). Production never hits this
+   because the pipeline **chunks pages into 5-page groups** (`chunkPages`/`dedupeRecipes` in
+   `lib/ingestion/pipeline-helpers.ts`). Fix: the harness now uses those exact helpers, so it
+   mirrors production. Lesson: **a fair model comparison must replicate the real call shape.**
+2. **The deployment's 10K TPM cap** (from 7.1) rate-limited multi-image vision requests. Bumped to
+   100K TPM — on GlobalStandard that's a rate ceiling only, **no cost change** (pay-per-token).
+
+## Verdict — gpt-4o-mini is good enough to be the default extraction model
+Chunked, apples-to-apples on real docs:
+
+| Dimension | Claude Opus | Foundry gpt-4o-mini |
+|---|---|---|
+| Recipes found (10pp / 14pp docs) | 10 / 8 | 10 / 8 — **tie** |
+| Junk filtering (planner/shopping pages) | ✓ | ✓ — **tie** |
+| Ingredient sections (main/filling/salad) | ✓ | ✓ — **tie** |
+| Structural completeness | slightly fuller (17 vs 15 ing on complex) | — |
+| **Tips/notes capture** | most recipes | ~2 of 10 — **Claude wins** |
+| Total-time → structured field | often in notes | parsed to field — **Foundry wins** |
+| Cost | 141¢ (2 docs) | 24¢ — **~6× cheaper** (~10× on simple recipes) |
+| Latency | steady ~3 min | spiky (once 15 min — throttling) |
+
+**Decision:** default extraction to Foundry `gpt-4o-mini` — same recipes, same junk-filtering, same
+sections, a fraction of the cost. Two follow-ups, neither a blocker:
+- **Tip-capture gap** — likely a prompt issue, not a capability ceiling. Try a prompt tweak
+  emphasizing tips/back-tips before concluding Claude is needed for it.
+- **Latency spikes** — watch throttling/retry behaviour under load (it's a background job, so
+  wall-time is tolerable).
+
+This is the tiered-model story (Lesson 0.5): cheap model for the bulk, escalate only where a
+quality gap is proven real.
+
+## The harness (reusable)
+`npm run test:golden` runs the whole set; `GOLDEN_ONLY=<substr,substr>` re-runs just some docs to
+a separate `_report_subset.md`; `GOLDEN_SKIP_CLAUDE=1` runs Foundry-only. Report writes
+**incrementally** (survives a timeout) and dumps full JSON to `_results.json`.
 
 ## Next (7.4)
 MSW-mock the provider so the normal test suite exercises the extraction path at **zero token cost**.

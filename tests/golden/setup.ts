@@ -4,6 +4,7 @@
 // setup that refuses to run against a non-local database.
 import { config as dotenv } from "dotenv";
 
-dotenv({ path: ".env.test", override: false });
+// No .env.test here — the golden set touches no DB, and .env.test's
+// ANTHROPIC_API_KEY is a stale placeholder that would shadow the real key.
 dotenv({ path: ".env.local", override: false });
 dotenv({ path: ".env", override: false });

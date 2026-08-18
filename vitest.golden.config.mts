@@ -8,10 +8,11 @@ import { defineConfig } from "vitest/config";
 // setup guard (that refuses to run unless Supabase is local), because the golden
 // set touches no database: it only calls the AI providers on local files.
 //
-// Env precedence mirrors the main config: .env.test → .env.local → .env.
-// The golden set reads ANTHROPIC_API_KEY (Claude) + AZURE_FOUNDRY_ENDPOINT (Foundry,
-// keyless — needs `az login`), which typically live in .env.local.
-dotenv({ path: ".env.test", override: false });
+// The golden set touches no DB, so it deliberately does NOT load .env.test (that
+// file exists for the integration suite's throwaway Supabase, and its
+// ANTHROPIC_API_KEY is a stale placeholder that would shadow the real one). It
+// reads ANTHROPIC_API_KEY (Claude baseline) + AZURE_FOUNDRY_ENDPOINT (keyless
+// Foundry — needs `az login`) from .env.local / .env.
 dotenv({ path: ".env.local", override: false });
 dotenv({ path: ".env", override: false });
 
@@ -32,8 +33,10 @@ export default defineConfig({
     include: ["tests/golden/**/*.test.ts"],
     setupFiles: ["tests/golden/setup.ts"],
     fileParallelism: false,
-    // Vision extraction is slow (~10–60s per call, ×2 providers × N docs).
-    testTimeout: 1_200_000,
+    // Vision extraction is slow — Claude Opus with adaptive thinking can take
+    // minutes per multi-page doc. Report is written incrementally, but give the
+    // whole set a generous 40-min ceiling so it finishes in one pass.
+    testTimeout: 2_400_000,
     hookTimeout: 60_000,
   },
 });

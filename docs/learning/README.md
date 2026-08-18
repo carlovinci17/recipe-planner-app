@@ -58,7 +58,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [6.4](06-4-timers-and-cutover.md) | Timer triggers (+ cutover deferrals) | 6 | Reliability | ✅ Done | `3bfa7058-fd84-81c9-b5a2-db05055dd4e7` |
 | [7.1](07-1-foundry-model.md) | Deploy the model on Azure AI Foundry (keyless, cheap) | 7 | Cost · Security | ✅ Done | `3bfa7058-fd84-81ca-8651-d63261648cc9` |
 | [7.2](07-2-foundry-provider.md) | The Azure Foundry provider (keyless) | 7 | Cost · Security | ✅ Done | `3bfa7058-fd84-8158-a75b-e2eb39872f43` |
-| [7.3](07-3-golden-set.md) | The golden set (Foundry vs Claude) | 7 | Cost · Performance | 🟡 Harness built — awaiting run | _pending_ |
+| [7.3](07-3-golden-set.md) | The golden set (Foundry vs Claude) | 7 | Cost · Performance | ✅ Done | `3c0a7058-fd84-8131-a3a0-c8d525ade25c` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
