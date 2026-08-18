@@ -63,6 +63,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [8.0](08-0-module-8-plan.md) | Module 8 mini-plan: Realtime → Web PubSub | 8 | Performance · Cost · Security | 🟡 Plan | `3c0a7058-fd84-8121-a3de-c5b3e4ddb483` |
 | [8.1](08-1-webpubsub-provision.md) | Provision Web PubSub (keyless, Free tier) | 8 | Cost · Security | ✅ Done | `3c0a7058-fd84-8176-8792-fc5f8e7499c7` |
 | [8.2](08-2-realtime-seam.md) | The realtime seam (negotiate + publisher + hook) | 8 | Security · Performance | ✅ Done | `3c0a7058-fd84-81ee-a924-fa71230eab17` |
+| [8.3](08-3-wire-publishes.md) | Wire publishes + swap interactive consumers | 8 | Performance · Reliability | 🟡 Planner+shopping done | `3c0a7058-fd84-81ba-adc0-c72515aedc5a` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
