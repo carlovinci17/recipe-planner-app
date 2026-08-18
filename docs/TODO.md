@@ -8,6 +8,12 @@ and cutover teardown in [`decommission-checklist.md`](decommission-checklist.md)
 Add a line here whenever something small surfaces mid-task so it isn't forgotten.
 
 ## Open
+- [ ] **Langfuse: token/model capture for AzureChatOpenAI** (found in Module 12.2 self-audit) — traces
+      flow + structure is captured, but generations show `model=null` / `usage=null`. The `@langfuse/langchain`
+      v5 OTEL handler doesn't map `AzureChatOpenAI` token usage (the docs' example uses plain OpenAI). The
+      model *does* emit `usage_metadata` + `response_metadata.model_name`. Options: a manual usage bridge
+      (custom callback → set Langfuse observation usage), OpenAI-SDK OTEL instrumentation, or the OpenAI v1
+      endpoint via `ChatOpenAI`. Needed for ADR-0010's cost monitoring. Revisit in 12.3.
 - [ ] **Cover image: dark circle top-right** — a dark circle/blob appears in the top-right of recipe
       cover images, under the source pill. Investigate what it is (leftover element? focal-point/crop
       artifact? gradient/overlay?) and fix. Check `components/recipes/*` cover rendering + the source
