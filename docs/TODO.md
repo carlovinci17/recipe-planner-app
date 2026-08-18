@@ -14,6 +14,8 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       model *does* emit `usage_metadata` + `response_metadata.model_name`. Options: a manual usage bridge
       (custom callback → set Langfuse observation usage), OpenAI-SDK OTEL instrumentation, or the OpenAI v1
       endpoint via `ChatOpenAI`. Needed for ADR-0010's cost monitoring. Revisit in 12.3.
+- [ ] **Copy / move icons** (design fix) — the copy and move icons need fixing (wrong/unclear icons).
+      Check the recipe/planner/shopping actions that use copy + move.
 - [ ] **Cover image: dark circle top-right** — a dark circle/blob appears in the top-right of recipe
       cover images, under the source pill. Investigate what it is (leftover element? focal-point/crop
       artifact? gradient/overlay?) and fix. Check `components/recipes/*` cover rendering + the source
