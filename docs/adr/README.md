@@ -16,6 +16,7 @@ instead). Format: `NNNN-slug.md`.
 | [0006](0006-storage.md) | Storage (Supabase Storage → Azure Blob) | ✅ Accepted — keyless Blob, private, server route + `next/image`, 2 containers, separate dev account |
 | [0007](0007-background-jobs.md) | Background jobs (Inngest → Durable Functions) | ✅ Accepted — Flex Consumption, scale-to-zero, Azure Storage backend; Module 6 |
 | [0008](0008-agentic-strategy.md) | Agentic strategy (Kitchen Assistant + roster) | ✅ Accepted (design) — Foundry Agent Service (TS), 6-agent roster, cheap models + hard caps, propose→confirm→execute writes |
+| [0009](0009-realtime.md) | Realtime (Supabase Realtime → Azure Web PubSub) | ✅ Accepted — publish from the write path to household groups; keyless negotiate (Managed Identity); Free tier; dual-run via `REALTIME_PROVIDER` |
 
 _Numbering note: architecture ADRs live here (`docs/adr/`). Tooling choices are tracked separately
 in `docs/tooling-decisions.md` — a living scorecard, not a numbered ADR._
