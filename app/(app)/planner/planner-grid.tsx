@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
 import { ChefHat, ChevronLeft, ChevronRight, Plus, ShoppingBasket, Trash2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
@@ -133,6 +134,10 @@ function computeDayMacros(
   return totals;
 }
 
+// Realtime transport (ADR-0009): dual-run gate. When azure, the Supabase channel
+// below is skipped and the Web PubSub hook drives updates via router.refresh().
+const REALTIME_IS_AZURE = process.env.NEXT_PUBLIC_REALTIME_PROVIDER === "azure";
+
 export function PlannerGrid({
   householdId,
   weekStartIso,
@@ -239,6 +244,7 @@ export function PlannerGrid({
   // feel laggy. Recipe info for new entries is looked up from the `recipes`
   // prop (already in memory), so the thumbnail renders without a fetch.
   useEffect(() => {
+    if (REALTIME_IS_AZURE) return; // azure path uses the Web PubSub hook below
     const supabase = createClient();
 
     function attachRecipe(row: Tables<"planner_entries">): EntryWithRecipe {
@@ -288,6 +294,17 @@ export function PlannerGrid({
       void supabase.removeChannel(channel);
     };
   }, [householdId, weekStartIso, recipes]);
+
+  // Azure realtime (ADR-0009): events carry ids only, so on a planner change we
+  // refetch (router.refresh re-runs the server component) instead of applying a
+  // row delta. Trade-off vs the Supabase path: a server round-trip per change.
+  useHouseholdRealtime((e) => {
+    if (e.type === "planner.changed") router.refresh();
+  });
+  useEffect(() => {
+    // Sync the refreshed server data into local state (azure path only).
+    if (REALTIME_IS_AZURE) setEntries(initialEntries as EntryWithRecipe[]);
+  }, [initialEntries]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, EntryWithRecipe[]>();

@@ -8,7 +8,7 @@
  */
 export type RealtimeEvent =
   | { type: "planner.changed"; weekStartIso?: string }
-  | { type: "shopping.changed"; listId: string }
+  | { type: "shopping.changed"; listId?: string }
   | { type: "ingestion.job"; jobId: string }
   | { type: "ingestion.event"; jobId: string }
   | { type: "recipe.changed"; recipeId?: string };

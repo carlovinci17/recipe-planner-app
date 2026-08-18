@@ -10,12 +10,24 @@ import { MealPlanSchema } from "@/lib/ai/schemas";
 import { MEAL_PLAN_SYSTEM } from "@/lib/ai/prompts";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { getActiveHousehold } from "@/lib/services/active-household";
+import { publishToHousehold } from "@/lib/realtime/publish";
 
 async function assertMembership(householdId: string) {
   const memberships = await householdService.listForCurrentUser();
   if (!memberships.some((m) => m.household.id === householdId)) {
     throw new Error("Not a member of this household");
   }
+}
+
+/**
+ * Signal a planner change over realtime (Module 8 / ADR-0009). Best-effort and a
+ * no-op unless REALTIME_PROVIDER=azure. When the input carries the household id we
+ * use it; otherwise (move/remove operate by entry id) we resolve the active one.
+ */
+async function notifyPlanner(householdId?: string) {
+  const id = householdId ?? (await getActiveHousehold()).id;
+  await publishToHousehold(id, { type: "planner.changed" });
 }
 
 const AddSchema = z.object({
@@ -35,6 +47,7 @@ export async function addEntryAction(input: z.infer<typeof AddSchema>) {
   try {
     const entry = await plannerService.addEntry(parsed.data);
     revalidatePath("/planner");
+    await notifyPlanner(parsed.data.householdId);
     return { ok: true as const, entry };
   } catch (err) {
     logger.error({ err }, "addEntryAction failed");
@@ -55,6 +68,7 @@ export async function moveEntryAction(input: z.infer<typeof MoveSchema>) {
   try {
     await plannerService.moveEntry(parsed.data);
     revalidatePath("/planner");
+    await notifyPlanner();
     return { ok: true as const };
   } catch (err) {
     logger.error({ err }, "moveEntryAction failed");
@@ -66,6 +80,7 @@ export async function removeEntryAction(entryId: string) {
   try {
     await plannerService.removeEntry(entryId);
     revalidatePath("/planner");
+    await notifyPlanner();
     return { ok: true as const };
   } catch (err) {
     logger.error({ err }, "removeEntryAction failed");

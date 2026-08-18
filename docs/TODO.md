@@ -22,6 +22,11 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       tips/notes on only ~2 of 10 recipes vs Claude's near-full coverage. Likely a prompt
       fix, not a capability gap: nudge `RECIPE_EXTRACTION_SYSTEM` to always capture
       tips/back-tips into `source_notes`, then re-run `npm run test:golden` to confirm.
+- [ ] **Realtime: publish ingestion progress** (Module 8.3 remainder) — `active-jobs.tsx` watches
+      `ingestion_jobs`/`ingestion_events`/`recipes`. Add `publishToHousehold(job.householdId, …)` at
+      the job-status/event/recipe write sites (~10, across Inngest functions + Durable internal
+      endpoints) and swap `active-jobs.tsx` to `useHouseholdRealtime`. Cutover-coupled; do alongside
+      the JOBS_PROVIDER=durable flip.
 - [ ] **Revoke the migration-era Anthropic key** at Module 11 cutover — the low-cap key
       used for golden-set/local Claude runs during the Foundry migration. (Belt-and-suspenders
       with `decommission-checklist.md`'s `anthropic-api-key` line.) Also rotate the key that

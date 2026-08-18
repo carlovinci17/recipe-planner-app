@@ -3,6 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { shoppingService } from "@/lib/services/shopping-service";
+import { getActiveHousehold } from "@/lib/services/active-household";
+import { publishToHousehold } from "@/lib/realtime/publish";
+
+/**
+ * Signal a shopping change over realtime (Module 8 / ADR-0009). Best-effort,
+ * no-op unless REALTIME_PROVIDER=azure. `listId` is an optional hint — the
+ * client refetches on any shopping.changed regardless.
+ */
+async function notifyShopping(listId?: string) {
+  const { id } = await getActiveHousehold();
+  await publishToHousehold(id, { type: "shopping.changed", listId });
+}
 
 const AddSchema = z.object({
   listId: z.string().uuid(),
@@ -16,17 +28,20 @@ export async function addItemAction(input: z.infer<typeof AddSchema>) {
   if (!parsed.success) return { ok: false as const, error: "Invalid input" };
   await shoppingService.addItem(parsed.data);
   revalidatePath("/shopping");
+  await notifyShopping(parsed.data.listId);
   return { ok: true as const };
 }
 
 export async function toggleCheckedAction(itemId: string, checked: boolean) {
   await shoppingService.toggleChecked(itemId, checked);
   revalidatePath("/shopping");
+  await notifyShopping();
 }
 
 export async function removeItemAction(itemId: string) {
   await shoppingService.removeItem(itemId);
   revalidatePath("/shopping");
+  await notifyShopping();
 }
 
 const ListIdSchema = z.object({ listId: z.string().uuid() });
@@ -37,6 +52,7 @@ export async function setAllCheckedAction(input: z.infer<typeof ListCheckedSchem
   if (!parsed.success) return { ok: false as const, error: "Invalid input" };
   const updated = await shoppingService.setAllChecked(parsed.data.listId, parsed.data.checked);
   revalidatePath("/shopping");
+  await notifyShopping(parsed.data.listId);
   return { ok: true as const, updated };
 }
 
@@ -45,6 +61,7 @@ export async function clearListAction(input: z.infer<typeof ListIdSchema>) {
   if (!parsed.success) return { ok: false as const, error: "Invalid input" };
   const deleted = await shoppingService.clearList(parsed.data.listId);
   revalidatePath("/shopping");
+  await notifyShopping(parsed.data.listId);
   return { ok: true as const, deleted };
 }
 

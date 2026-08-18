@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
 import { Check, CheckSquare, Copy, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -243,6 +245,10 @@ const CATEGORY_LABEL: Record<string, string> = {
   other:     "🛒 Other",
 };
 
+// Realtime transport (ADR-0009): dual-run gate. When azure, the Supabase channel
+// is skipped and the Web PubSub hook drives updates via router.refresh().
+const REALTIME_IS_AZURE = process.env.NEXT_PUBLIC_REALTIME_PROVIDER === "azure";
+
 export function ShoppingList({
   householdId,
   list,
@@ -255,11 +261,13 @@ export function ShoppingList({
   /** Map of recipe id → title for items that came from a recipe. */
   sourceRecipeTitles?: Record<string, string>;
 }) {
+  const router = useRouter();
   const [items, setItems] = useState<Item[]>(initialItems);
   const [newName, setNewName] = useState("");
   const [, start] = useTransition();
 
   useEffect(() => {
+    if (REALTIME_IS_AZURE) return; // azure path uses the Web PubSub hook below
     const supabase = createClient();
     const channel = supabase
       .channel(`shopping-${list.id}`)
@@ -283,6 +291,15 @@ export function ShoppingList({
       void supabase.removeChannel(channel);
     };
   }, [list.id]);
+
+  // Azure realtime (ADR-0009): refetch on any shopping change (events carry ids
+  // only). router.refresh() re-runs the server component; sync the fresh items in.
+  useHouseholdRealtime((e) => {
+    if (e.type === "shopping.changed") router.refresh();
+  });
+  useEffect(() => {
+    if (REALTIME_IS_AZURE) setItems(initialItems);
+  }, [initialItems]);
 
   // ── Ingredient merging ───────────────────────────────────────────────────
   // Normalise names (lowercase, singular) so "Lemons", "lemon", "LEMON" all
