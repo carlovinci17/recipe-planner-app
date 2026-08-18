@@ -22,6 +22,9 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       tips/notes on only ~2 of 10 recipes vs Claude's near-full coverage. Likely a prompt
       fix, not a capability gap: nudge `RECIPE_EXTRACTION_SYSTEM` to always capture
       tips/back-tips into `source_notes`, then re-run `npm run test:golden` to confirm.
+- [ ] **Null out 10 dangling `cover_image_path`s** (found in Module 9.2) — 10 recipes (one household)
+      reference a `recipe-uploads` page that no longer exists (intermediate cleanup deleted it), so
+      their cover already shows a placeholder. Null the ref during the Neon load so the data is clean.
 - [ ] **Realtime: publish ingestion progress** (Module 8.3 remainder) — `active-jobs.tsx` watches
       `ingestion_jobs`/`ingestion_events`/`recipes`. Add `publishToHousehold(job.householdId, …)` at
       the job-status/event/recipe write sites (~10, across Inngest functions + Durable internal

@@ -13,13 +13,26 @@ page preview in `recipe-uploads`** (`cover_image_path`). So "skip all of recipe-
 blanked out every recipe whose cover is a source page. Corrected rule: **migrate the union of
 referenced blobs; skip unreferenced intermediates.**
 
-## Measured against prod (read-only)
+## Measured against prod (full run, read-only)
 - **Referenced: 261 blobs** — 100 in `recipe-images` (user photos) + 161 in `recipe-uploads` (AI cover
   pages). Out of ~2,701 total files, so **~2,440 files (~2 GB) are unreferenced and skipped.**
-- **Sample of 40 user photos: 87.3 MB → 4.9 MB = −94%** (WebP q80, ≤1200px longest edge, EXIF stripped
-  — `sharp` drops metadata by default).
 
-That's the double win: **skip ~2 GB** of intermediates *and* shrink the kept covers ~90%+.
+| Bucket | Files | Before → After (WebP ≤1200px) | Shrink |
+|---|---|---|---|
+| `recipe-images` (user photos) | 100 | 221.0 MB → **11.9 MB** | **−95%** |
+| `recipe-uploads` (AI cover pages) | 151 | 16.4 MB → **8.9 MB** | −46% |
+| **Total migrated** | **251** | **237.4 MB → 20.8 MB** | **−91%** |
+
+Whole storage footprint: **~2.18 GB → ~21 MB migrated** (skip ~2 GB unreferenced) — a **~99%** cut.
+`recipe-uploads` shrinks less (−46%) because those pages are already compressed JPEGs; the big win is
+the user photos (−95%).
+
+## ⚠️ Finding: 10 already-broken covers
+10 recipes (all under one household) have a `cover_image_path` pointing to a `recipe-uploads` page that
+**no longer exists** ("Object not found") — the intermediate cleanup deleted the page but left the
+reference. So those covers already show a placeholder in prod today. The migration can't recover a
+deleted source; clean fix = **null out `cover_image_path` for those 10 during the load** (tracked in
+`docs/TODO.md`). This is why we processed 251, not 261.
 
 ## Approach notes
 - Preserve the **path and source bucket** for each blob so `resolveCoverImage`'s bucket resolution
