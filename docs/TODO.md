@@ -8,6 +8,10 @@ and cutover teardown in [`decommission-checklist.md`](decommission-checklist.md)
 Add a line here whenever something small surfaces mid-task so it isn't forgotten.
 
 ## Open
+- [ ] **Cover image: dark circle top-right** — a dark circle/blob appears in the top-right of recipe
+      cover images, under the source pill. Investigate what it is (leftover element? focal-point/crop
+      artifact? gradient/overlay?) and fix. Check `components/recipes/*` cover rendering + the source
+      pill overlay.
 - [ ] **Forgot-password flow** — missing entirely; `app/(auth)/login` has only login +
       signup. Add a "Forgot password?" link → `resetPasswordForEmail` → a reset page.
       (Manual recovery meanwhile: `scripts/set-password.ts`.)
