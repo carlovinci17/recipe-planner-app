@@ -70,7 +70,8 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [9.2](09-2-asset-optimise.md) | Asset optimisation (referenced-only, WebP) | 9 | Cost · Performance | ✅ Done | `3c0a7058-fd84-81b3-8573-ee70e70bc1b5` |
 | [9.3](09-3-asset-upload.md) | Upload optimized covers to Azure Blob | 9 | Cost · Performance | ✅ Done | `3c0a7058-fd84-8109-af4c-eb0bf7c5b580` |
 | [9.4](09-4-validate.md) | Validate the migration on Neon + Azure | 9 | Reliability | ✅ Done | `3c0a7058-fd84-8164-a3b6-d287e01d9a50` |
-| [12.0](12-0-agentic-plan.md) | Agentic module mini-plan: the Kitchen Assistant | 12 | Cost · Performance · Security | 🟡 Plan | `3c0a7058-fd84-812a-8254-df4f2430bc0a` |
+| [12.0](12-0-agentic-plan.md) | Agentic module mini-plan (grilled → ADR-0010) | 12 | Cost · Performance · Security | ✅ Done | `3c0a7058-fd84-812a-8254-df4f2430bc0a` |
+| [12.1](12-1-semantic-search.md) | Semantic search (the finder's data) | 12 | Performance · Cost | ✅ Done | `3c0a7058-fd84-8198-a8e4-f63169d62051` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
