@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { householdService } from "@/lib/services/household-service";
 import { buildAssistant, pickReply } from "@/lib/agents/assistant";
+import { extractProposals } from "@/lib/agents/proposals";
 import { env } from "@/lib/env";
 
 // Node runtime: LangGraph + @azure/identity + postgres are Node-only. Multi-agent
@@ -40,8 +41,10 @@ export async function POST(req: Request): Promise<Response> {
       { messages: [...history, { role: "user", content: message }] },
       { recursionLimit: 20 },
     );
-    const { specialist, text } = pickReply(res.messages as Array<{ name?: string; content: unknown }>);
-    return Response.json({ specialist, answer: text });
+    const msgs = res.messages as Array<{ name?: string; content: unknown }>;
+    const { specialist, text } = pickReply(msgs);
+    const proposals = extractProposals(msgs); // propose → confirm → execute (12.6)
+    return Response.json({ specialist, answer: text, proposals });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });
   } finally {

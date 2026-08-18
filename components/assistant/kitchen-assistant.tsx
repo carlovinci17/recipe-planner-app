@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChefHat, Send, Sparkles } from "lucide-react";
+import { ChefHat, Check, Send, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { confirmProposalAction } from "@/components/assistant/actions";
+import type { AssistantProposal } from "@/lib/agents/proposals";
 
 /**
  * The "Ask AI" Kitchen Assistant chat (Module 12.5 / ADR-0010). A floating button
@@ -19,13 +21,28 @@ const AVATAR: Record<string, { face: string; label: string }> = {
 };
 const COORDINATOR = { face: "🧑‍🍳", label: "Kitchen Assistant" };
 
-type Msg = { role: "user" | "assistant"; content: string; specialist?: string | null };
+type Msg = {
+  role: "user" | "assistant";
+  content: string;
+  specialist?: string | null;
+  proposals?: AssistantProposal[];
+};
+
+/** One-line human summary of a proposal for the Confirm card. */
+function describeProposal(p: AssistantProposal): string {
+  return p.kind === "generate_shopping_list"
+    ? `Generate a shopping list for the week of ${p.weekStartIso}`
+    : `Add “${p.recipeTitle}” to ${p.date} (${p.slot})`;
+}
 
 export function KitchenAssistant() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  // Per-proposal confirm state, keyed `${msgIndex}-${proposalIndex}`:
+  // "running" | "done" | an error string.
+  const [confirming, setConfirming] = useState<Record<string, string>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,15 +62,41 @@ export function KitchenAssistant() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: q, history }),
       });
-      const data = (await res.json()) as { specialist?: string | null; answer?: string; error?: string };
+      const data = (await res.json()) as {
+        specialist?: string | null;
+        answer?: string;
+        error?: string;
+        proposals?: AssistantProposal[];
+      };
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: data.answer ?? data.error ?? "Sorry, something went wrong.", specialist: data.specialist },
+        {
+          role: "assistant",
+          content: data.answer ?? data.error ?? "Sorry, something went wrong.",
+          specialist: data.specialist,
+          proposals: data.proposals,
+        },
       ]);
     } catch {
       setMessages((prev) => [...prev, { role: "assistant", content: "Sorry, I couldn't reach the kitchen right now." }]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function confirm(key: string, p: AssistantProposal) {
+    if (confirming[key] === "running" || confirming[key] === "done") return;
+    setConfirming((s) => ({ ...s, [key]: "running" }));
+    try {
+      const res = await confirmProposalAction(p);
+      if (res.ok) {
+        setConfirming((s) => ({ ...s, [key]: "done" }));
+        setMessages((prev) => [...prev, { role: "assistant", content: `✅ ${res.message}`, specialist: null }]);
+      } else {
+        setConfirming((s) => ({ ...s, [key]: res.error }));
+      }
+    } catch {
+      setConfirming((s) => ({ ...s, [key]: "Couldn't complete that — try again." }));
     }
   }
 
@@ -90,12 +133,35 @@ export function KitchenAssistant() {
                     {av.face}
                   </span>
                 )}
-                <div
-                  className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
-                    m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
-                  }`}
-                >
-                  {m.content}
+                <div className="flex max-w-[80%] flex-col gap-2">
+                  <div
+                    className={`whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
+                      m.role === "user" ? "self-end bg-primary text-primary-foreground" : "self-start bg-muted"
+                    }`}
+                  >
+                    {m.content}
+                  </div>
+                  {m.proposals?.map((p, pi) => {
+                    const key = `${i}-${pi}`;
+                    const st = confirming[key];
+                    return (
+                      <div key={pi} className="rounded-xl border bg-background p-3 text-sm">
+                        <p className="mb-2">{describeProposal(p)}</p>
+                        {st === "done" ? (
+                          <p className="flex items-center gap-1 text-xs font-medium text-green-600">
+                            <Check className="h-3 w-3" /> Done
+                          </p>
+                        ) : (
+                          <>
+                            <Button size="sm" disabled={st === "running"} onClick={() => void confirm(key, p)}>
+                              {st === "running" ? "Working…" : "Confirm"}
+                            </Button>
+                            {st && st !== "running" && <p className="mt-1 text-xs text-destructive">{st}</p>}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
