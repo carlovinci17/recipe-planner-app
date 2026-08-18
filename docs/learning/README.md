@@ -60,12 +60,12 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [7.2](07-2-foundry-provider.md) | The Azure Foundry provider (keyless) | 7 | Cost · Security | ✅ Done | `3bfa7058-fd84-8158-a75b-e2eb39872f43` |
 | [7.3](07-3-golden-set.md) | The golden set (Foundry vs Claude) | 7 | Cost · Performance | ✅ Done | `3c0a7058-fd84-8131-a3a0-c8d525ade25c` |
 | [7.4](07-4-token-free-tests.md) | Token-free tests (mock the AI seam) | 7 | Cost · Operational Excellence | ✅ Done | `3c0a7058-fd84-81e1-8f86-e4df3e9b8011` |
-| [8.0](08-0-module-8-plan.md) | Module 8 mini-plan: Realtime → Web PubSub | 8 | Performance · Cost · Security | 🟡 Plan | `3c0a7058-fd84-8121-a3de-c5b3e4ddb483` |
+| [8.0](08-0-module-8-plan.md) | Module 8 mini-plan: Realtime → Web PubSub | 8 | Performance · Cost · Security | ✅ Done | `3c0a7058-fd84-8121-a3de-c5b3e4ddb483` |
 | [8.1](08-1-webpubsub-provision.md) | Provision Web PubSub (keyless, Free tier) | 8 | Cost · Security | ✅ Done | `3c0a7058-fd84-8176-8792-fc5f8e7499c7` |
 | [8.2](08-2-realtime-seam.md) | The realtime seam (negotiate + publisher + hook) | 8 | Security · Performance | ✅ Done | `3c0a7058-fd84-81ee-a924-fa71230eab17` |
 | [8.3](08-3-wire-publishes.md) | Wire publishes + swap interactive consumers | 8 | Performance · Reliability | 🟡 Planner+shopping done | `3c0a7058-fd84-81ba-adc0-c72515aedc5a` |
 | [8.4](08-4-verify.md) | Verify realtime end-to-end (two browsers) | 8 | Reliability | ✅ Verified | _runbook_ |
-| [9.0](09-0-module-9-plan.md) | Module 9 mini-plan: Data migration + asset optimisation | 9 | Cost · Reliability · Security | 🟡 Plan | `3c0a7058-fd84-81fe-b2b0-e76634340a59` |
+| [9.0](09-0-module-9-plan.md) | Module 9 mini-plan: Data migration + asset optimisation | 9 | Cost · Reliability · Security | ✅ Done | `3c0a7058-fd84-81fe-b2b0-e76634340a59` |
 | [9.1](09-1-db-export.md) | Migrate the DB to Neon (export → schema → load) | 9 | Reliability | ✅ Done | `3c0a7058-fd84-819c-956a-c1ea1da86a2f` |
 | [9.2](09-2-asset-optimise.md) | Asset optimisation (referenced-only, WebP) | 9 | Cost · Performance | ✅ Done | `3c0a7058-fd84-81b3-8573-ee70e70bc1b5` |
 | [9.3](09-3-asset-upload.md) | Upload optimized covers to Azure Blob | 9 | Cost · Performance | ✅ Done | `3c0a7058-fd84-8109-af4c-eb0bf7c5b580` |
