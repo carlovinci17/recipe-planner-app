@@ -1,6 +1,14 @@
 # Lesson 8.4 — Verify realtime end-to-end (two browsers)
 
-**Date:** 2026-08-18   **Module:** 8   **WAF pillar(s):** Reliability   **Status:** 🟡 Ready to verify — seam + route pre-checked; two-browser cross-sync is the live confirmation.
+**Date:** 2026-08-18   **Module:** 8   **WAF pillar(s):** Reliability   **Status:** ✅ Verified — two-browser cross-sync confirmed visually + by Web PubSub metrics.
+
+## Verified (2026-08-18)
+Added/moved a recipe in the planner from a private-window browser → the change appeared **live** in a
+second (public) browser. Confirmed server-side via Azure Monitor on `wps-recipe-planner`:
+`ConnectionOpenCount` = 4+4 (both browsers connecting via the keyless negotiate flow) and
+`OutboundTraffic` = 1,864 + 3,214 bytes (group messages pushed to the subscribed clients) in the
+matching 5-minute buckets. The sync genuinely flowed **action → publish → Web PubSub → browser**,
+keyless — not a shared-tab illusion. Shopping list follows the same wired path.
 
 ## Pre-checked (no browser needed)
 - **Transport** — `scripts/webpubsub-roundtrip.ts` proved keyless mint → connect → publish → receive (8.2).
