@@ -65,6 +65,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [8.2](08-2-realtime-seam.md) | The realtime seam (negotiate + publisher + hook) | 8 | Security · Performance | ✅ Done | `3c0a7058-fd84-81ee-a924-fa71230eab17` |
 | [8.3](08-3-wire-publishes.md) | Wire publishes + swap interactive consumers | 8 | Performance · Reliability | 🟡 Planner+shopping done | `3c0a7058-fd84-81ba-adc0-c72515aedc5a` |
 | [8.4](08-4-verify.md) | Verify realtime end-to-end (two browsers) | 8 | Reliability | ✅ Verified | _runbook_ |
+| [9.0](09-0-module-9-plan.md) | Module 9 mini-plan: Data migration + asset optimisation | 9 | Cost · Reliability · Security | 🟡 Plan | `3c0a7058-fd84-81fe-b2b0-e76634340a59` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
