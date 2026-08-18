@@ -53,6 +53,13 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       with `decommission-checklist.md`'s `anthropic-api-key` line.) Also rotate the key that
       was pasted into chat on 2026-08-18.
 
+## Post-project deliverables
+- [ ] **Monthly cost overview** — after cutover, produce a clear guide to *where to find the monthly
+      cost* of the whole app: Azure Cost Management (per resource group / service — Container Apps,
+      Foundry models + embeddings, Web PubSub, Blob, Key Vault, App Insights, Functions) **plus** the
+      third-party services (Neon, Langfuse, Anthropic if still used, Google). One place that says "this
+      is what it costs and where to see each line." Pairs with the [[notion-tech-stack-onepager]].
+
 ## Noted (fix happens at the Module 11 cutover)
 - Prod **Google sign-in** + **Drive import** are broken — their Google client (`581514…`)
   was deleted. Prod runs on email/password for now; both are fixed when prod flips to the

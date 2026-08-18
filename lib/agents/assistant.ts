@@ -19,6 +19,32 @@ import {
 export const SPECIALISTS = ["finder", "planner", "shopping"] as const;
 export type Specialist = (typeof SPECIALISTS)[number];
 
+/**
+ * Pick the reply to show the user from a supervisor run: the last SUBSTANTIVE
+ * specialist message (skipping "Transferring back to supervisor" handoffs), plus
+ * which specialist produced it (→ the per-turn avatar). Falls back to the last message.
+ */
+export function pickReply(messages: Array<{ name?: string; content: unknown }>): {
+  specialist: Specialist | null;
+  text: string;
+} {
+  const isSpec = (m: { name?: string }) => !!m.name && (SPECIALISTS as readonly string[]).includes(m.name);
+  const answer =
+    [...messages]
+      .reverse()
+      .find(
+        (m) =>
+          isSpec(m) &&
+          typeof m.content === "string" &&
+          (m.content as string).length > 20 &&
+          !/transferring back/i.test(m.content as string),
+      ) ?? messages[messages.length - 1];
+  return {
+    specialist: answer && isSpec(answer) ? (answer.name as Specialist) : null,
+    text: answer && typeof answer.content === "string" ? answer.content : "",
+  };
+}
+
 export function buildAssistant(deps: ToolDeps) {
   const model = chatModel();
 

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { KitchenAssistant } from "@/components/assistant/kitchen-assistant";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -229,6 +230,8 @@ export function AppShell({
           );
         })}
       </nav>
+
+      <KitchenAssistant />
     </div>
   );
 }
