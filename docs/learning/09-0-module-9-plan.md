@@ -14,12 +14,19 @@
 ## Crux decisions (proposed)
 1. **DB → Neon Free** (ADR-0001, already accepted). Module 9 **provisions the Neon project** (a
    Neon.tech account action — you create it, I guide) and gets its pooled connection string.
-2. **Skip `recipe-uploads` entirely.** Don't migrate the ~2 GB of source uploads + rasterized pages —
-   they're per-job intermediates a published recipe no longer needs. (Confirm nothing still reads them
-   post-publish, e.g. the review screen — recon says covers live in `recipe-images`.)
-3. **Optimise `recipe-images` covers** with the `sharp` dep already in the repo: WebP, cap longest
-   edge (~1200px for covers), strip EXIF → expect **60–80% smaller** (~235 MB → ~50–90 MB) → upload to
-   the existing Azure Blob `recipe-images` container, **preserving `{householdId}/…` paths**.
+2. **Migrate only *referenced* images; skip *unreferenced* intermediates.**
+   ⚠️ **Correction (verified 2026-08-18):** a recipe's cover can live in **either** bucket —
+   `resolveCoverImage` uses a user photo in `recipe-images` if present, **else falls back to the AI
+   page preview in `recipe-uploads`** (`cover_image_path`). So skipping *all* of `recipe-uploads`
+   would blank out every recipe whose cover is a source page. Instead, the migration set is the
+   **union of referenced blobs**: all `image_paths` (recipe-images) **+** every `cover_image_path`
+   still used as a cover (a small *subset* of recipe-uploads, ~173 pages ≈ tens of MB). Everything
+   *unreferenced* in `recipe-uploads` (raw uploads + rasterized pages not used as covers — the bulk of
+   the ~2 GB) is skipped.
+3. **Optimise the referenced images** with the `sharp` dep already in the repo: WebP, cap longest edge
+   (~1200px), strip EXIF → expect **60–80% smaller** → upload to the existing Azure Blob containers,
+   **preserving `{householdId}/…` paths and the source bucket** (so `resolveCoverImage`'s bucket still
+   resolves).
 4. **Identity: no app-UUID remap needed.** profiles use an app-owned `uuid` PK; every FK references it,
    so rows copy across unchanged. `entra_oid` links by **verified email** via the existing login shim
    (ADR-0005) when each of the 2 users next signs in — no id rewriting of app data.
