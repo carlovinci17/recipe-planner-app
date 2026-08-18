@@ -60,6 +60,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [7.2](07-2-foundry-provider.md) | The Azure Foundry provider (keyless) | 7 | Cost · Security | ✅ Done | `3bfa7058-fd84-8158-a75b-e2eb39872f43` |
 | [7.3](07-3-golden-set.md) | The golden set (Foundry vs Claude) | 7 | Cost · Performance | ✅ Done | `3c0a7058-fd84-8131-a3a0-c8d525ade25c` |
 | [7.4](07-4-token-free-tests.md) | Token-free tests (mock the AI seam) | 7 | Cost · Operational Excellence | ✅ Done | `3c0a7058-fd84-81e1-8f86-e4df3e9b8011` |
+| [8.0](08-0-module-8-plan.md) | Module 8 mini-plan: Realtime → Web PubSub | 8 | Performance · Cost · Security | 🟡 Plan | `3c0a7058-fd84-8121-a3de-c5b3e4ddb483` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
