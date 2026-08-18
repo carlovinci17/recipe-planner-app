@@ -14,6 +14,8 @@ instead). Format: `NNNN-slug.md`.
 | [0004](0004-mobile-strategy.md) | Mobile strategy | ✅ Accepted — responsive PWA on the shared web session; no native app, no Bearer API |
 | [0005](0005-authentication.md) | Authentication (Entra External ID + Auth.js) | ✅ Accepted — Auth.js + External ID; app-owned UUID + `entra_oid`; JIT provision; link-by-email shim |
 | [0006](0006-storage.md) | Storage (Supabase Storage → Azure Blob) | ✅ Accepted — keyless Blob, private, server route + `next/image`, 2 containers, separate dev account |
+| [0007](0007-background-jobs.md) | Background jobs (Inngest → Durable Functions) | ✅ Accepted — Flex Consumption, scale-to-zero, Azure Storage backend; Module 6 |
+| [0008](0008-agentic-strategy.md) | Agentic strategy (Kitchen Assistant + roster) | ✅ Accepted (design) — Foundry Agent Service (TS), 6-agent roster, cheap models + hard caps, propose→confirm→execute writes |
 
 _Numbering note: architecture ADRs live here (`docs/adr/`). Tooling choices are tracked separately
 in `docs/tooling-decisions.md` — a living scorecard, not a numbered ADR._
