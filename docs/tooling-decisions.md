@@ -38,3 +38,9 @@ value · 4) Cost & maintenance · 5) Reversibility.
 | trivy | | | | | | ⬜ pending (Module 2) | Scan Dockerfile + Bicep for misconfig |
 | Infracost | | | | | | ❌ reject | Terraform-first; use Diagram Builder MCP for Bicep cost |
 | Azure VS Code extension (GUI) | 4 | 5 | 4 | 5 | 5 | ✅ adopt | Lesson 2.7 — in-editor resource tree + log streaming; good for hands-on exploration. Doesn't replace Bicep/IaC. Pair with the Bicep extension for authoring |
+
+## Libraries
+| Tool | Need | Fit | Learn | Cost | Rev | Verdict | Why |
+|---|---|---|---|---|---|---|---|
+| vitest module mocking (`vi.mock`/`vi.hoisted`) | 5 | 5 | 4 | 5 | 5 | ✅ adopt | Lesson 7.4 — this app funnels all AI through one `ai.callStructured` seam (ADR-0003), so mocking that one module makes the whole extraction path token-free. Also faked the `openai` SDK directly to test the Foundry provider's retry loop |
+| MSW (Mock Service Worker) | 2 | 2 | 3 | 5 | 5 | ⬜ defer | Lesson 7.4 — HTTP-level interception is the wrong layer *here*: the single seam is cleaner, and Foundry's Managed-Identity token fetch would also need stubbing. Re-evaluate if we ever need to test raw HTTP behaviour we don't control the client of |
