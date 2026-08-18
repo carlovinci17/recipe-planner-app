@@ -14,6 +14,15 @@ async function main(): Promise<void> {
   console.log("public tables:", tables.length ? tables.map((t) => t.table_name).join(", ") : "(none — empty DB)");
   const exts = await sql<{ extname: string }[]>`select extname from pg_extension order by extname`;
   console.log("extensions:", exts.map((e) => e.extname).join(", "));
+  // Cutover prep (P1): the `authenticated` role must exist — withUserContext
+  // does `set local role authenticated`, which Supabase ships but a bare Neon
+  // doesn't. Its absence is what breaks RLS-scoped queries after the DB flip.
+  const roles = await sql<{ rolname: string }[]>`
+    select rolname from pg_roles where rolname in ('authenticated', 'anon', 'service_role') order by rolname`;
+  console.log(
+    "auth roles:",
+    roles.length ? roles.map((r) => r.rolname).join(", ") : "(none — run scripts/neon-roles.sql)",
+  );
   await sql.end();
 }
 
