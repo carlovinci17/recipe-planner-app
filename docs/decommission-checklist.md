@@ -27,6 +27,16 @@ when its service is replaced:
 - [ ] `anthropic-api-key` — replaced by Azure AI Foundry credentials (Module 7).
 - [ ] `google-client-id`, `google-client-secret` — likely **retained**, but re-homed under Entra External ID federation (Module 4) — verify before removing (Google sign-in is kept).
 
+## Database (Neon cutover — Module 9 → 11)
+- [ ] **Create the `authenticated` role on prod Neon** before flipping — run `scripts/neon-roles.sql`.
+  `withUserContext` does `set local role authenticated`; Supabase ships that role, a bare Neon doesn't,
+  so RLS-scoped queries fail without it (surfaced in Lesson 9.4). Also the `auth.uid()` GUC shim +
+  extensions from `scripts/neon-prelude.sql`.
+- [ ] **Point prod `DATABASE_URL` at the *pooled* Neon connection** (`…-pooler…neon.tech`); the direct
+  string is for migrations/DDL only.
+- [ ] **Re-run the migration `--write`/import for a final data sync** at cutover (data drifts between
+  the staging migration and go-live).
+
 ## App code
 - [ ] **Auth: remove the email-linking migration shim** (ADR-0005 Decision 6). Once both existing
   users have signed in via Entra and their `profiles.entra_oid` is set, delete the "unknown `oid` +
