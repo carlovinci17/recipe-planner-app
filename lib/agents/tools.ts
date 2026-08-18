@@ -85,3 +85,39 @@ export function plannerProposeTool() {
     },
   );
 }
+
+/** Read the household's active shopping list. */
+export function shoppingReadTool(deps: ToolDeps) {
+  return tool(
+    async (): Promise<string> => {
+      const rows = await deps.sql`
+        select sli.ingredient, sli.quantity, sli.unit, sli.category, sli.is_checked
+        from shopping_lists sl
+        join shopping_list_items sli on sli.list_id = sl.id
+        where sl.household_id = ${deps.householdId} and sl.is_active = true
+        order by sli.category, sli.position
+        limit 80`;
+      return JSON.stringify(rows);
+    },
+    {
+      name: "read_shopping_list",
+      description: "Read the household's active shopping list (ingredient, quantity, unit, category, checked).",
+      schema: z.object({}),
+    },
+  );
+}
+
+/** PROPOSE generating a shopping list from the planner — propose-only, writes nothing. */
+export function shoppingProposeTool() {
+  return tool(
+    async ({ weekStartIso }): Promise<string> =>
+      JSON.stringify({ proposal: "generate_shopping_list", weekStartIso, status: "awaiting_confirmation" }),
+    {
+      name: "propose_shopping_list",
+      description:
+        "Propose generating a shopping list from the planner for the week starting weekStartIso (YYYY-MM-DD). " +
+        "Does NOT write — the app confirms + generates via the RPC.",
+      schema: z.object({ weekStartIso: z.string().describe("week start date YYYY-MM-DD") }),
+    },
+  );
+}

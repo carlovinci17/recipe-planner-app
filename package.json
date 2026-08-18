@@ -37,6 +37,7 @@
     "@hookform/resolvers": "^3.9.0",
     "@langchain/core": "^1.2.8",
     "@langchain/langgraph": "^1.4.10",
+    "@langchain/langgraph-supervisor": "^1.1.1",
     "@langchain/openai": "^1.5.8",
     "@langfuse/core": "^5.10.1",
     "@langfuse/langchain": "^5.10.1",
