@@ -76,6 +76,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [12.3](12-3-agent-tools.md) | The agent seam + tools (the finder works) | 12 | Performance · Security | ✅ Done | `3c0a7058-fd84-81e7-a6bd-dcfb5e23bd0a` |
 | [12.4](12-4-supervisor-graph.md) | The supervisor graph (multi-agent + avatars) | 12 | Performance | ✅ Done | `3c0a7058-fd84-81fa-a110-e63e03a74e5f` |
 | [12.5](12-5-chat-surface.md) | The "Ask AI" chat surface | 12 | Performance · Security | ✅ Done | `3c0a7058-fd84-81c3-b76b-faa6f3b8062b` |
+| [12.6](12-6-confirm-execute.md) | Confirm → execute (proposals become real actions) | 12 | Security · Reliability | ✅ Done | `3c0a7058-fd84-8179-87e2-fadabc6bf0b8` |
 
 **Which skill when:** see [`../skill-playbook.md`](../skill-playbook.md) — trigger→skill map + skills-per-module table.
 
