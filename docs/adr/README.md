@@ -17,6 +17,7 @@ instead). Format: `NNNN-slug.md`.
 | [0007](0007-background-jobs.md) | Background jobs (Inngest → Durable Functions) | ✅ Accepted — Flex Consumption, scale-to-zero, Azure Storage backend; Module 6 |
 | [0008](0008-agentic-strategy.md) | Agentic strategy (Kitchen Assistant + roster) | ✅ Accepted (design) — Foundry Agent Service (TS), 6-agent roster, cheap models + hard caps, propose→confirm→execute writes |
 | [0009](0009-realtime.md) | Realtime (Supabase Realtime → Azure Web PubSub) | ✅ Accepted — publish from the write path to household groups; keyless negotiate (Managed Identity); Free tier; dual-run via `REALTIME_PROVIDER` |
+| [0010](0010-agentic-orchestration.md) | Agentic orchestration (LangGraph + Langfuse) | ✅ Accepted — supersedes 0008's Foundry Agent Service; LangGraph.js graph + Langfuse Cloud, keyless gpt-4o-mini + text-embedding-3-small; streaming route; layered caps |
 
 _Numbering note: architecture ADRs live here (`docs/adr/`). Tooling choices are tracked separately
 in `docs/tooling-decisions.md` — a living scorecard, not a numbered ADR._

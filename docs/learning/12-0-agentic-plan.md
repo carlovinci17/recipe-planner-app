@@ -1,7 +1,14 @@
 # Lesson 12.0 — Agentic module mini-plan: the Kitchen Assistant
 
-**Date:** 2026-08-18   **Module:** 12 (Agentic)   **WAF pillar(s):** Cost · Performance · Security   **Status:** 🟡 Plan — open decisions to grill before building.
+**Date:** 2026-08-18   **Module:** 12 (Agentic)   **WAF pillar(s):** Cost · Performance · Security   **Status:** ✅ Planned + grilled → **ADR-0010**. Building.
 _(The optional Mobile module shifts to 13; agentic slots in as its own module per ADR-0008.)_
+
+> **Grilled 2026-08-18 → [ADR-0010](../adr/0010-agentic-orchestration.md):** orchestration is **LangGraph.js
+> + Langfuse Cloud** on keyless Azure Foundry `gpt-4o-mini` (supersedes ADR-0008's Foundry Agent Service).
+> Semantic search via `text-embedding-3-small` (1536) + pgvector. v1 roster = coordinator + finder +
+> planner + shopping. Runtime = Next streaming route `/api/assistant`. Caps: recursionLimit≤15 /
+> maxTokens≤1500 / hop≤6 + Langfuse. The "verified Azure facts" below re: Foundry *Agent Service* are
+> now background — we use Foundry only for the model, not its agent runtime.
 
 ## What we're building (ADR-0008)
 A **multi-agent Kitchen Assistant**: a **coordinator** + specialists (**finder/chef · planner · critic ·
@@ -32,24 +39,20 @@ continuity.
 - **A new seam.** Agent Service is a *different* API (`@azure/ai-agents`) from the chat-completions `ai`
   seam (Module 7) — `lib/agents/` is its own thing, not a swap of `lib/ai`.
 
-## Draft lessons
+## Lessons (revised per ADR-0010)
 | # | Lesson |
 |---|---|
-| 12.1 | Provision the Foundry **project** + first keyless agent (hello-world function-tool call) |
-| 12.2 | **Semantic search**: pgvector index + embedding backfill — the finder's data |
-| 12.3 | The **agent seam** + function-tools (recipe search, planner read, propose-write); reads-free / writes propose→confirm→execute |
-| 12.4 | The **roster**: coordinator + connected specialists, per-turn avatar |
-| 12.5 | **Two surfaces**: the "Ask AI" chat + the proactive floating panel (rides Module 8 realtime) |
-| 12.6 | **Guardrails**: hard step/token caps, cost monitoring, safety-eval overhead |
+| 12.1 | **Semantic search**: deploy `text-embedding-3-small` (Foundry, keyless) + pgvector index + backfill the 173 recipes; hybrid finder query |
+| 12.2 | **Wire the stack**: LangGraph + Langfuse → keyless Foundry `gpt-4o-mini` (`AzureChatOpenAI`), hello-world agent + first Langfuse trace |
+| 12.3 | **Tools**: semantic recipe search, planner read, propose-write; reads-free / writes propose→confirm→execute |
+| 12.4 | **Supervisor graph** + finder/planner/shopping nodes + per-turn avatar |
+| 12.5 | **"Ask AI" streaming chat** surface (`/api/assistant`) + guardrails (caps + Langfuse) |
+| 12.6 | **Proactive floating surface** (rides Module 8 realtime) — likely fast-follow |
 
-## Open decisions to grill (before building)
-1. **v1 roster** — ship finder + planner + shopping first; critic + nutrition as fast-follow? (ADR-0008 leaning.)
-2. **Orchestration** — Foundry **Connected Agents** (native) vs a TypeScript coordinator loop that calls
-   specialists as function tools? ADR-0008 picked Foundry Agent Service; Connected Agents is the native path.
-3. **Embedding model** — which deployment for `recipes.embedding` (dimensions must match the 1536 column),
-   and its cost/backfill approach.
-4. **Where orchestration runs** — Next server action/route vs a Durable Function (long multi-agent runs).
-5. **Caps** — concrete step/token/turn limits + how we enforce + monitor them.
+## Decisions (grilled → ADR-0010)
+All resolved: LangGraph.js + Langfuse Cloud · keyless Foundry `gpt-4o-mini` · `text-embedding-3-small`
+(1536) + pgvector, hybrid with full-text · v1 roster coordinator+finder+planner+shopping · Next streaming
+route · recursionLimit≤15 / maxTokens≤1500 / hop≤6 + Langfuse dashboards. Critic + nutrition are fast-follows.
 
 ## Exit criteria
 Ask *"quick high-protein dinner"* → the finder (semantic) + planner propose meals → you confirm → it
