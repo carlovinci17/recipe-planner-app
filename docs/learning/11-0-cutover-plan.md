@@ -18,8 +18,26 @@ to the old one (delete the services). That last step is the only one we can't un
 | # | Task | Gates which flip | Where |
 |---|---|---|---|
 | P1 | **Neon prod prep**: confirm `authenticated` role + prelude (extensions + `auth.uid()` shim) are applied; do a **final data re-sync**; switch prod `DATABASE_URL` to the **pooled** (`…-pooler…`) string | DB | `scripts/neon-roles.sql`, `scripts/neon-prelude.sql`, migrate import |
-| P2 | **Realtime ingestion publish** (Lesson 8.3 remainder): add `publishToHousehold(...)` at the job-status / event / recipe write sites; swap `active-jobs.tsx` → `useHouseholdRealtime` | Realtime | Inngest/Durable fns + `active-jobs.tsx` |
-| P3 | **Port URL pipeline + Drive poller** to Durable Functions (repeat of Lesson 6.2 thin-orchestrator); set Functions prod env | Jobs | `lib/inngest/functions/process-url.ts`, Drive cron |
+| **P2+P3** | **The ingestion cutover (one unit).** See finding below. | DB · Realtime · Jobs | ingestion-service, Durable/internal endpoints, `active-jobs.tsx` |
+
+### Finding (2026-08-18): P2 and P3 are one job — "the ingestion cutover"
+P2 was scoped as "swap `active-jobs.tsx` realtime + publish ingestion progress." Investigation
+showed that can't stand alone: **the entire ingestion subsystem was never ported to the Neon data
+layer.** The core services dual-dispatch on `DATABASE_URL` (recipe-service 13 branches, planner 6),
+but **`ingestion-service.ts` has 0** — it, the Inngest functions, and `active-jobs.tsx` are 100%
+Supabase (`createSupabaseServerClient` / browser `supabase.from`). So the moment `DATABASE_URL`→Neon,
+ingestion reads/writes hit an empty Supabase — regardless of realtime.
+
+Therefore the realtime swap (P2) and the Durable port (P3) share the same prerequisite — porting
+ingestion data access to Neon — and are done as **one unit**:
+1. **Port ingestion data access** to the Drizzle/Neon dual-dispatch pattern (service reads/writes).
+2. **Port the URL pipeline + Drive poller** to Durable Functions (Lesson 6.2 thin-orchestrator).
+3. **Publish from the new write path** (`publishToHousehold` at job-status / event / recipe writes) —
+   lands in the *permanent* Durable/internal-endpoint code, not throwaway Inngest code.
+4. **Swap `active-jobs.tsx`** to server-fed reads (Neon) + `useHouseholdRealtime` (dual-run).
+
+This unit gates the DB, Realtime, **and** Jobs flips. It's the biggest remaining piece of Module 11
+and deserves its own focused pass (likely its own mini-plan).
 
 ## The staged flip order (each: set flag → redeploy → smoke-test → watch → tick checklist)
 | Step | Flag → value | Why here | Smoke test |
@@ -46,4 +64,6 @@ to the old one (delete the services). That last step is the only one we can't un
 - **Keep Inngest for URL/Drive** — leaves a service (and n8n) alive past cutover; incomplete teardown.
 
 ## Next
-Start **P1 — Neon prod prep** (you drive: run the role/prelude check + final re-sync), then flip step 1.
+Two tracks run in parallel: **P1 — Neon prod prep** (you drive: role/prelude check + final re-sync,
+then switch to the pooled string) unblocks the DB flip; **the ingestion cutover (P2+P3)** — a focused
+coding unit — unblocks the Realtime + Jobs flips.
