@@ -8,6 +8,13 @@ and cutover teardown in [`decommission-checklist.md`](decommission-checklist.md)
 Add a line here whenever something small surfaces mid-task so it isn't forgotten.
 
 ## Open
+- [ ] **Verify PDF import on the cutover stack (Slice 6)** — photo/image import verified working on
+      Neon+Durable (2026-08-19, after the ingestion_events INSERT-policy fix). Still need to run a
+      **PDF** import end-to-end on the new stack (rasterize → skim/extract → needs_review) to confirm
+      the `prepare` → vision-chunk path works on Durable+Neon, not just the single-image path.
+- [ ] **Confirmed: Google Drive integration can't connect** (2026-08-19) — expected. The prod Google
+      client (`581514…`) was deleted and the Drive subsystem is deferred/disabled (see the Drive-port
+      TODO below); re-enable with the Entra/Google stack + the Durable port.
 - [ ] **Port the Google Drive subsystem to Durable Functions** — deferred at the Module 11 cutover
       (decided 2026-08-19). The 4 Inngest Drive functions (`drive-poller` cron, `process-drive-file`,
       `index-drive-file`, `sweep-stuck-drive-index` cron) were NOT ported — Drive import is already
