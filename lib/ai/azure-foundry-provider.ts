@@ -72,7 +72,12 @@ export const azureFoundryProvider: AIProvider = {
     opts: StructuredCallOptions<TSchema>,
   ): Promise<StructuredCallResult<z.output<TSchema>>> {
     const client = getClient();
-    const model = opts.model ?? env.AZURE_FOUNDRY_DEPLOYMENT;
+    // Foundry runs a SINGLE deployment for all tiers (ADR-0010). Callers pass
+    // Anthropic tier-model names via opts.model (e.g. ANTHROPIC_MODEL_VISION =
+    // "claude-opus-4-7", the default in extractRecipeFromImages) — those are not
+    // Foundry deployments and would 404 (DeploymentNotFound). So always target
+    // the configured Foundry deployment and ignore the provider-specific name.
+    const model = env.AZURE_FOUNDRY_DEPLOYMENT;
     const maxRetries = opts.maxRetries ?? 2;
     const messages = toOpenAIMessages(opts.messages);
 
