@@ -1,11 +1,63 @@
 import "server-only";
+import { and, desc, eq, inArray, or, sql as dsql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { inngest } from "@/lib/inngest/client";
 import { startFileIngestion } from "@/lib/ingestion/start-job";
+import { ingestionEvents, ingestionJobs, recipes } from "@/lib/db/schema";
+import { runInUserTx } from "./user-tx";
 import { env } from "@/lib/env";
-import type { RecipeSourceKind } from "@/types/database.types";
+import type { RecipeSourceKind, RecipeStatus, Tables } from "@/types/database.types";
 
 const UPLOADS_BUCKET = "recipe-uploads";
+
+/**
+ * The recipe fields the import page's "Recent imports" list needs per job —
+ * the subset active-jobs.tsx renders (title, status, cover thumbnail). Kept in
+ * snake_case to match the Supabase shape the component already consumes.
+ */
+export type ActiveJobRecipe = {
+  id: string;
+  title: string;
+  status: RecipeStatus;
+  ingestion_job_id: string | null;
+  cover_image_path: string | null;
+  image_paths: string[] | null;
+  cover_focal_x: number;
+  cover_focal_y: number;
+};
+
+export type ActiveJobsBundle = {
+  jobs: Tables<"ingestion_jobs">[];
+  events: Tables<"ingestion_events">[];
+  recipes: ActiveJobRecipe[];
+};
+
+/**
+ * Sign (or, on keyless Azure Blob, stub) N per-photo upload slots. Shared by the
+ * Neon and Supabase branches of createMultiPhotoJob so the storage behaviour is
+ * identical regardless of which DB the job row landed in. Storage dispatches on
+ * STORAGE_PROVIDER; the DB is a separate axis (ADR-0006 / ADR-0011 coupling).
+ */
+async function signUploadSlots(
+  householdId: string,
+  jobId: string,
+  photos: Array<{ fileName: string; contentType: string }>,
+): Promise<Array<{ uploadUrl: string; path: string; index: number }>> {
+  return Promise.all(
+    photos.map(async (photo, i) => {
+      const ext = photo.contentType === "image/png" ? "png" : "jpg";
+      const path = `${householdId}/${jobId}/page-${String(i).padStart(3, "0")}.${ext}`;
+      // Azure is keyless — the browser POSTs each photo to /api/storage/upload.
+      if (env.STORAGE_PROVIDER === "azure") return { uploadUrl: "", path, index: i };
+      const supabase = await createSupabaseServerClient();
+      const { data: signed, error: signErr } = await supabase.storage
+        .from(UPLOADS_BUCKET)
+        .createSignedUploadUrl(path);
+      if (signErr || !signed) throw signErr ?? new Error(`Failed to sign upload ${i}`);
+      return { uploadUrl: signed.signedUrl, path, index: i };
+    }),
+  );
+}
 
 export const ingestionService = {
   /**
@@ -18,6 +70,32 @@ export const ingestionService = {
     fileName: string;
     contentType: string;
   }) {
+    if (env.DATABASE_URL) {
+      const jobId = await runInUserTx(async (tx, userId) => {
+        const [job] = await tx
+          .insert(ingestionJobs)
+          .values({
+            householdId: args.householdId,
+            createdBy: userId,
+            sourceKind: args.sourceKind,
+            storageBucket: UPLOADS_BUCKET,
+          })
+          .returning({ id: ingestionJobs.id });
+        if (!job) throw new Error("Failed to create job");
+        return job.id;
+      });
+      const safeName = args.fileName.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const path = `${args.householdId}/${jobId}/source-${safeName}`;
+      if (env.STORAGE_PROVIDER === "azure") {
+        return { jobId, uploadUrl: "", token: "", path, bucket: UPLOADS_BUCKET };
+      }
+      const supabase = await createSupabaseServerClient();
+      const { data: signed, error: signErr } = await supabase.storage
+        .from(UPLOADS_BUCKET)
+        .createSignedUploadUrl(path);
+      if (signErr || !signed) throw signErr ?? new Error("Failed to sign upload");
+      return { jobId, uploadUrl: signed.signedUrl, token: signed.token, path, bucket: UPLOADS_BUCKET };
+    }
     const supabase = await createSupabaseServerClient();
     const {
       data: { user },
@@ -58,6 +136,31 @@ export const ingestionService = {
    * The browser calls this after the storage PUT succeeds.
    */
   async completeUpload(args: { jobId: string; storagePath: string }) {
+    if (env.DATABASE_URL) {
+      const job = await runInUserTx(async (tx) => {
+        const [j] = await tx
+          .update(ingestionJobs)
+          .set({ storagePath: args.storagePath })
+          .where(eq(ingestionJobs.id, args.jobId))
+          .returning({
+            householdId: ingestionJobs.householdId,
+            sourceKind: ingestionJobs.sourceKind,
+          });
+        if (!j) throw new Error("Job not found");
+        await tx.insert(ingestionEvents).values({
+          jobId: args.jobId,
+          kind: "file_uploaded",
+          payload: { storage_path: args.storagePath },
+        });
+        return j;
+      });
+      await startFileIngestion({
+        jobId: args.jobId,
+        householdId: job.householdId,
+        sourceKind: job.sourceKind,
+      });
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     // Don't transition to 'processing' here — that's the worker's job. The
     // gap between this call and the worker actually starting can be tens
@@ -94,6 +197,22 @@ export const ingestionService = {
     householdId: string;
     photos: Array<{ fileName: string; contentType: string }>;
   }) {
+    if (env.DATABASE_URL) {
+      const jobId = await runInUserTx(async (tx, userId) => {
+        const [job] = await tx
+          .insert(ingestionJobs)
+          .values({
+            householdId: args.householdId,
+            createdBy: userId,
+            sourceKind: "image",
+            storageBucket: UPLOADS_BUCKET,
+          })
+          .returning({ id: ingestionJobs.id });
+        if (!job) throw new Error("Failed to create job");
+        return job.id;
+      });
+      return { jobId, uploadSlots: await signUploadSlots(args.householdId, jobId, args.photos) };
+    }
     const supabase = await createSupabaseServerClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Not authenticated");
@@ -105,24 +224,7 @@ export const ingestionService = {
       .single();
     if (error || !job) throw error ?? new Error("Failed to create job");
 
-    const uploadSlots = await Promise.all(
-      args.photos.map(async (photo, i) => {
-        const ext = photo.contentType === "image/png" ? "png" : "jpg";
-        const path = `${args.householdId}/${job.id}/page-${String(i).padStart(3, "0")}.${ext}`;
-        // Azure is keyless — the browser POSTs each photo to /api/storage/upload
-        // (no signature). Just hand back the target path.
-        if (env.STORAGE_PROVIDER === "azure") {
-          return { uploadUrl: "", path, index: i };
-        }
-        const { data: signed, error: signErr } = await supabase.storage
-          .from(UPLOADS_BUCKET)
-          .createSignedUploadUrl(path);
-        if (signErr || !signed) throw signErr ?? new Error(`Failed to sign upload ${i}`);
-        return { uploadUrl: signed.signedUrl, path, index: i };
-      }),
-    );
-
-    return { jobId: job.id, uploadSlots };
+    return { jobId: job.id, uploadSlots: await signUploadSlots(args.householdId, job.id, args.photos) };
   },
 
   /**
@@ -134,6 +236,25 @@ export const ingestionService = {
     householdId: string;
     pageImagePaths: string[];
   }) {
+    if (env.DATABASE_URL) {
+      await runInUserTx(async (tx) => {
+        await tx
+          .update(ingestionJobs)
+          .set({ pageImagePaths: args.pageImagePaths })
+          .where(eq(ingestionJobs.id, args.jobId));
+        await tx.insert(ingestionEvents).values({
+          jobId: args.jobId,
+          kind: "file_uploaded",
+          payload: { source: "multi_photo", photo_count: args.pageImagePaths.length },
+        });
+      });
+      await startFileIngestion({
+        jobId: args.jobId,
+        householdId: args.householdId,
+        sourceKind: "image" as const,
+      });
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     await supabase
       .from("ingestion_jobs")
@@ -154,6 +275,34 @@ export const ingestionService = {
   },
 
   async createUrlJob(args: { householdId: string; url: string }) {
+    if (env.DATABASE_URL) {
+      const jobId = await runInUserTx(async (tx, userId) => {
+        const [job] = await tx
+          .insert(ingestionJobs)
+          .values({
+            householdId: args.householdId,
+            createdBy: userId,
+            sourceKind: "url",
+            sourceUrl: args.url,
+          })
+          .returning({ id: ingestionJobs.id });
+        if (!job) throw new Error("Failed to create job");
+        await tx.insert(ingestionEvents).values({
+          jobId: job.id,
+          kind: "ingestion_requested",
+          payload: { url: args.url },
+        });
+        return job.id;
+      });
+      // NOTE (Slice 5): URL imports still dispatch to Inngest here. Porting the
+      // URL pipeline to Durable Functions swaps this send for a Durable start,
+      // and must land before JOBS_PROVIDER=durable at the coupled flip.
+      await inngest.send({
+        name: "ingestion/url.requested",
+        data: { jobId, householdId: args.householdId, url: args.url },
+      });
+      return { jobId };
+    }
     const supabase = await createSupabaseServerClient();
     const {
       data: { user },
@@ -209,6 +358,16 @@ export const ingestionService = {
    * existing `failed` status so "Clear failed" sweeps cancelled rows too.
    */
   async cancelJob(jobId: string): Promise<{ cancelled: boolean }> {
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx) => {
+        const rows = await tx
+          .update(ingestionJobs)
+          .set({ status: "failed", error: "Cancelled by user" })
+          .where(and(eq(ingestionJobs.id, jobId), inArray(ingestionJobs.status, ["draft", "processing"])))
+          .returning({ id: ingestionJobs.id });
+        return { cancelled: rows.length > 0 };
+      });
+    }
     const supabase = await createSupabaseServerClient();
     const { error, count } = await supabase
       .from("ingestion_jobs")
@@ -220,5 +379,110 @@ export const ingestionService = {
       .in("status", ["draft", "processing"]);
     if (error) throw error;
     return { cancelled: (count ?? 0) > 0 };
+  },
+
+  /**
+   * Load the "Recent imports" bundle for a household: the recent jobs, all their
+   * events, and the recipes linked to them (reverse FK `ingestion_job_id`, plus
+   * the primary FK `job.recipe_id` for legacy single-recipe jobs). Dual-dispatch
+   * (Neon vs Supabase); returns snake_case so active-jobs.tsx's assembly is
+   * unchanged (Module 11.1 — the ingestion read path off the browser client).
+   */
+  async listActiveJobs(args: {
+    householdId: string;
+    limit: number;
+    offset?: number;
+  }): Promise<ActiveJobsBundle> {
+    const offset = args.offset ?? 0;
+
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx) => {
+        // Raw select * → native snake_case rows matching Tables<"ingestion_jobs">.
+        const jobs = (await tx.execute(dsql`
+          select * from ingestion_jobs
+          where household_id = ${args.householdId}
+          order by created_at desc
+          limit ${args.limit} offset ${offset}
+        `)) as unknown as Tables<"ingestion_jobs">[];
+        if (jobs.length === 0) return { jobs, events: [], recipes: [] };
+
+        const jobIds = jobs.map((j) => j.id);
+        const primaryIds = jobs.map((j) => j.recipe_id).filter((id): id is string => !!id);
+
+        const eventRows = await tx
+          .select()
+          .from(ingestionEvents)
+          .where(inArray(ingestionEvents.jobId, jobIds))
+          .orderBy(desc(ingestionEvents.createdAt));
+        const events: Tables<"ingestion_events">[] = eventRows.map((e) => ({
+          id: e.id,
+          job_id: e.jobId,
+          kind: e.kind,
+          payload: e.payload as Tables<"ingestion_events">["payload"],
+          created_at: e.createdAt,
+        }));
+
+        const recipeFilter = primaryIds.length
+          ? or(inArray(recipes.ingestionJobId, jobIds), inArray(recipes.id, primaryIds))
+          : inArray(recipes.ingestionJobId, jobIds);
+        const recipeRows = await tx
+          .select({
+            id: recipes.id,
+            title: recipes.title,
+            status: recipes.status,
+            ingestionJobId: recipes.ingestionJobId,
+            coverImagePath: recipes.coverImagePath,
+            imagePaths: recipes.imagePaths,
+            coverFocalX: recipes.coverFocalX,
+            coverFocalY: recipes.coverFocalY,
+          })
+          .from(recipes)
+          .where(and(eq(recipes.householdId, args.householdId), recipeFilter));
+        const recipeList: ActiveJobRecipe[] = recipeRows.map((r) => ({
+          id: r.id,
+          title: r.title,
+          status: r.status,
+          ingestion_job_id: r.ingestionJobId,
+          cover_image_path: r.coverImagePath,
+          image_paths: r.imagePaths,
+          cover_focal_x: r.coverFocalX,
+          cover_focal_y: r.coverFocalY,
+        }));
+
+        return { jobs, events, recipes: recipeList };
+      });
+    }
+
+    // Supabase branch — mirrors active-jobs.tsx's current inline reads.
+    const supabase = await createSupabaseServerClient();
+    const { data: jobsData } = await supabase
+      .from("ingestion_jobs")
+      .select("*")
+      .eq("household_id", args.householdId)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + args.limit - 1);
+    const jobs = (jobsData ?? []) as Tables<"ingestion_jobs">[];
+    if (jobs.length === 0) return { jobs, events: [], recipes: [] };
+
+    const jobIds = jobs.map((j) => j.id);
+    const primaryIds = jobs.map((j) => j.recipe_id).filter((id): id is string => !!id);
+    const RECIPE_COLS =
+      "id, title, status, ingestion_job_id, cover_image_path, image_paths, cover_focal_x, cover_focal_y";
+    const [eventsRes, reverseRes, primaryRes] = await Promise.all([
+      supabase.from("ingestion_events").select("*").in("job_id", jobIds).order("created_at", { ascending: false }),
+      supabase.from("recipes").select(RECIPE_COLS).in("ingestion_job_id", jobIds),
+      primaryIds.length
+        ? supabase.from("recipes").select(RECIPE_COLS).in("id", primaryIds)
+        : Promise.resolve({ data: [] as ActiveJobRecipe[] }),
+    ]);
+    const byId = new Map<string, ActiveJobRecipe>();
+    for (const r of [...((reverseRes.data ?? []) as ActiveJobRecipe[]), ...((primaryRes.data ?? []) as ActiveJobRecipe[])]) {
+      byId.set(r.id, r);
+    }
+    return {
+      jobs,
+      events: (eventsRes.data ?? []) as Tables<"ingestion_events">[],
+      recipes: [...byId.values()],
+    };
   },
 };
