@@ -720,3 +720,23 @@ export async function commitSkimSelectionAction(input: z.infer<typeof CommitSkim
     return { ok: false as const, error: (err as Error).message };
   }
 }
+
+/**
+ * Load the "Recent imports" bundle for the import page's ActiveJobs list
+ * (Module 11.1). Reads via the service layer (Neon or Supabase), so the client
+ * no longer talks to the browser Supabase client — the DB-cutover-safe read path.
+ */
+export async function loadActiveJobsAction(input: {
+  householdId: string;
+  limit: number;
+  offset?: number;
+}) {
+  try {
+    await assertMembership(input.householdId);
+    const bundle = await ingestionService.listActiveJobs(input);
+    return { ok: true as const, ...bundle };
+  } catch (err) {
+    logger.error({ err }, "loadActiveJobsAction failed");
+    return { ok: false as const, error: (err as Error).message };
+  }
+}

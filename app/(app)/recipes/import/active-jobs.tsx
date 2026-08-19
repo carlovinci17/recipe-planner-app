@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { CheckCircle2, CheckCheck, Clock, Trash2, X, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
+import { loadActiveJobsAction } from "./actions";
+import type { ActiveJobRecipe } from "@/lib/services/ingestion-service";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -176,6 +179,95 @@ function computeLabel(kind: IngestionEventKind | undefined, meta: ProgressMeta):
 
 const PAGE_SIZE = 25;
 
+const REALTIME_IS_AZURE = process.env.NEXT_PUBLIC_REALTIME_PROVIDER === "azure";
+
+type Derived = {
+  jobs: Job[];
+  recipesByJob: Record<string, JobRecipe[]>;
+  latestEvents: Record<string, IngestionEventKind>;
+  extractionCounts: Record<string, { found: number; kept: number }>;
+  persistFailures: Record<string, { titles: string[]; reasons: string[] }>;
+  progressMeta: Record<string, ProgressMeta>;
+};
+
+const toJobRecipe = (r: ActiveJobRecipe): JobRecipe => ({
+  id: r.id,
+  title: r.title,
+  status: r.status,
+  cover_image_path: r.cover_image_path,
+  image_paths: r.image_paths,
+  cover_focal_x: r.cover_focal_x,
+  cover_focal_y: r.cover_focal_y,
+});
+
+/**
+ * Assemble the raw import bundle (jobs + events + recipes) into the derived maps
+ * the UI renders. Events must be newest-first (the service returns them so).
+ * Shared by the initial load and the realtime refetch (Module 11.1).
+ */
+function assembleBundle(bundle: { jobs: Job[]; events: Event[]; recipes: ActiveJobRecipe[] }): Derived {
+  const { jobs, events, recipes } = bundle;
+
+  const recipesByJob: Record<string, JobRecipe[]> = {};
+  for (const r of recipes) {
+    if (!r.ingestion_job_id) continue;
+    (recipesByJob[r.ingestion_job_id] ??= []).push(toJobRecipe(r));
+  }
+  // Primary-FK fallback for legacy single-recipe jobs (recipe has no ingestion_job_id).
+  const byId = new Map(recipes.map((r) => [r.id, r]));
+  for (const job of jobs) {
+    if (!job.recipe_id || recipesByJob[job.id]) continue;
+    const p = byId.get(job.recipe_id);
+    if (p) recipesByJob[job.id] = [toJobRecipe(p)];
+  }
+
+  const latestEvents: Record<string, IngestionEventKind> = {};
+  const extractionCounts: Record<string, { found: number; kept: number }> = {};
+  const persistFailures: Record<string, { titles: string[]; reasons: string[] }> = {};
+  const progressMeta: Record<string, ProgressMeta> = {};
+  for (const ev of events) {
+    if (!latestEvents[ev.job_id]) latestEvents[ev.job_id] = ev.kind;
+    if (ev.kind === "ai_processing_started") {
+      const p = ev.payload as { chunk?: number; total_chunks?: number } | null;
+      if (p?.chunk && p.total_chunks) {
+        const cur = progressMeta[ev.job_id] ?? {};
+        if (cur.chunk === undefined)
+          progressMeta[ev.job_id] = { ...cur, chunk: p.chunk, totalChunks: p.total_chunks };
+      }
+    }
+    if (ev.kind === "recipe_ready_for_review") {
+      const p = ev.payload as { index?: number; total?: number } | null;
+      if (typeof p?.index === "number" && p.total) {
+        const cur = progressMeta[ev.job_id] ?? {};
+        if (cur.recipeIndex === undefined)
+          progressMeta[ev.job_id] = { ...cur, recipeIndex: p.index, recipeTotal: p.total };
+      }
+    }
+    if (ev.kind === "extraction_completed" && !extractionCounts[ev.job_id]) {
+      const p = ev.payload as { recipes_found?: number; recipes_kept?: number } | null;
+      if (p && typeof p.recipes_found === "number") {
+        extractionCounts[ev.job_id] = { found: p.recipes_found, kept: p.recipes_kept ?? p.recipes_found };
+      }
+    }
+    if (ev.kind === "validation_completed") {
+      const p = ev.payload as { partial?: boolean; failed_titles?: string[]; failure_reasons?: string[] } | null;
+      if (p?.partial && p.failed_titles && !persistFailures[ev.job_id]) {
+        persistFailures[ev.job_id] = { titles: p.failed_titles, reasons: p.failure_reasons ?? [] };
+      }
+    }
+    if (ev.kind === "failed") {
+      const p = ev.payload as { reason?: string; title?: string; error?: string } | null;
+      if (p?.reason === "persist_recipe" && p.title) {
+        const bucket = (persistFailures[ev.job_id] ??= { titles: [], reasons: [] });
+        if (!bucket.titles.includes(p.title)) bucket.titles.push(p.title);
+        if (p.error && !bucket.reasons.includes(p.error)) bucket.reasons.push(p.error);
+      }
+    }
+  }
+
+  return { jobs, recipesByJob, latestEvents, extractionCounts, persistFailures, progressMeta };
+}
+
 export function ActiveJobs({ householdId }: { householdId: string }) {
   const supabase = createClient();
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -214,212 +306,38 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
     jobId: string;
   } | null>(null);
   const [pending, start] = useTransition();
+  // How many jobs are currently loaded — so a realtime refetch reloads the same
+  // span (not just the first page). A ref so the realtime callback stays stable.
+  const loadedCountRef = useRef(PAGE_SIZE);
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const { data: jobsData } = await supabase
-        .from("ingestion_jobs")
-        .select("*")
-        .eq("household_id", householdId)
-        .order("created_at", { ascending: false })
-        .limit(PAGE_SIZE + 1);
-      if (cancelled) return;
-      const list = (jobsData ?? []) as Job[];
-      // Load PAGE_SIZE+1 to detect if more exist, then trim.
-      const trimmed = list.slice(0, PAGE_SIZE);
-      setJobs(trimmed);
+      const res = await loadActiveJobsAction({ householdId, limit: PAGE_SIZE + 1 });
+      if (cancelled || !res.ok) return;
+      const list = res.jobs as Job[];
+      const more = list.length > PAGE_SIZE;
+      const trimmed = more ? list.slice(0, PAGE_SIZE) : list;
+      const d = assembleBundle({ jobs: trimmed, events: res.events, recipes: res.recipes });
+      setJobs(d.jobs);
       setTotalLoaded(trimmed.length);
-      if (list.length > PAGE_SIZE) setVisibleCount(PAGE_SIZE);
-
-      const jobIds = list.map((j) => j.id);
-      if (jobIds.length === 0) return;
-
-      // Two lookup paths cover both eras of imports:
-      //   (a) reverse FK — `recipes.ingestion_job_id IN (jobIds)` finds all
-      //       recipes from the new multi-recipe pipeline.
-      //   (b) primary FK — `recipes.id IN (ingestion_jobs.recipe_id)` finds
-      //       the single recipe attached to legacy jobs (whose recipes
-      //       predate the FK and have ingestion_job_id = NULL).
-      // We merge results, preferring (a) when both populate.
-      const primaryIds = list
-        .map((j) => j.recipe_id)
-        .filter((id): id is string => typeof id === "string" && id.length > 0);
-
-      const [reverseRes, primaryRes, eventsRes] = await Promise.all([
-        // Reverse-FK query is best-effort: if the migration that adds
-        // ingestion_job_id hasn't been pushed yet, the column is missing
-        // and the request errors. Treat that as "no reverse hits" rather
-        // than blowing up the whole page.
-        supabase
-          .from("recipes")
-          .select("id, title, status, ingestion_job_id, cover_image_path, image_paths, cover_focal_x, cover_focal_y")
-          .in("ingestion_job_id", jobIds),
-        primaryIds.length > 0
-          ? supabase.from("recipes").select("id, title, status, cover_image_path, image_paths, cover_focal_x, cover_focal_y").in("id", primaryIds)
-          : Promise.resolve({ data: [] as Array<Pick<Recipe, "id" | "title" | "status">> }),
-        supabase
-          .from("ingestion_events")
-          .select("*")
-          .in("job_id", jobIds)
-          .order("created_at", { ascending: false }),
-      ]);
-
-      if (cancelled) return;
-
-      const grouped: Record<string, JobRecipe[]> = {};
-
-      // (a) reverse FK
-      const reverseRows = (reverseRes.data ?? []) as Array<
-        Pick<
-          Recipe,
-          | "id"
-          | "title"
-          | "status"
-          | "cover_image_path"
-          | "image_paths"
-          | "cover_focal_x"
-          | "cover_focal_y"
-        > & { ingestion_job_id: string | null }
-      >;
-      for (const r of reverseRows) {
-        if (!r.ingestion_job_id) continue;
-        (grouped[r.ingestion_job_id] ??= []).push({
-          id: r.id,
-          title: r.title,
-          status: r.status,
-          cover_image_path: r.cover_image_path,
-          image_paths: r.image_paths,
-          cover_focal_x: r.cover_focal_x,
-          cover_focal_y: r.cover_focal_y,
-        });
-      }
-
-      // (b) primary FK — only fill in for jobs the reverse FK didn't cover
-      const primaryById = new Map(
-        (
-          (primaryRes.data ?? []) as Array<
-            Pick<
-              Recipe,
-              | "id"
-              | "title"
-              | "status"
-              | "cover_image_path"
-              | "image_paths"
-              | "cover_focal_x"
-              | "cover_focal_y"
-            >
-          >
-        ).map((r) => [r.id, r]),
-      );
-      for (const job of list) {
-        if (!job.recipe_id) continue;
-        if (grouped[job.id]) continue;
-        const primary = primaryById.get(job.recipe_id);
-        if (primary) {
-          grouped[job.id] = [
-            {
-              id: primary.id,
-              title: primary.title,
-              status: primary.status,
-              cover_image_path: primary.cover_image_path,
-              image_paths: primary.image_paths,
-              cover_focal_x: primary.cover_focal_x,
-              cover_focal_y: primary.cover_focal_y,
-            },
-          ];
-        }
-      }
-
-      setRecipesByJob(grouped);
-
-      const events = (eventsRes.data ?? []) as Event[];
-      const byJobKind: Record<string, IngestionEventKind> = {};
-      const byJobCounts: Record<string, { found: number; kept: number }> = {};
-      const byJobFailures: Record<string, { titles: string[]; reasons: string[] }> = {};
-      const byJobMeta: Record<string, ProgressMeta> = {};
-      for (const ev of events) {
-        // Iterating newest-first; first hit per job wins for the latest
-        // event kind / progress bar.
-        if (!byJobKind[ev.job_id]) byJobKind[ev.job_id] = ev.kind;
-        // Pull chunk / recipe progress out of event payloads so the bar
-        // can show real incremental progress, not just kind-keyed jumps.
-        // Newest-first iteration → first hit wins per job.
-        if (ev.kind === "ai_processing_started") {
-          const p = ev.payload as { chunk?: number; total_chunks?: number } | null;
-          if (p?.chunk && p.total_chunks) {
-            const cur = byJobMeta[ev.job_id] ?? {};
-            if (cur.chunk === undefined) {
-              byJobMeta[ev.job_id] = {
-                ...cur,
-                chunk: p.chunk,
-                totalChunks: p.total_chunks,
-              };
-            }
-          }
-        }
-        if (ev.kind === "recipe_ready_for_review") {
-          const p = ev.payload as { index?: number; total?: number } | null;
-          if (typeof p?.index === "number" && p.total) {
-            const cur = byJobMeta[ev.job_id] ?? {};
-            if (cur.recipeIndex === undefined) {
-              byJobMeta[ev.job_id] = {
-                ...cur,
-                recipeIndex: p.index,
-                recipeTotal: p.total,
-              };
-            }
-          }
-        }
-        // Extraction-completed events carry the recipe count in their
-        // payload — recover it for any visible job, regardless of whether
-        // it's the latest event.
-        if (ev.kind === "extraction_completed" && !byJobCounts[ev.job_id]) {
-          const payload = ev.payload as { recipes_found?: number; recipes_kept?: number } | null;
-          if (payload && typeof payload.recipes_found === "number") {
-            byJobCounts[ev.job_id] = {
-              found: payload.recipes_found,
-              kept: payload.recipes_kept ?? payload.recipes_found,
-            };
-          }
-        }
-        // The persist summary event carries failed titles + reasons.
-        // We prefer the partial-summary payload; per-recipe failure
-        // events provide a fallback when the summary wasn't emitted.
-        if (ev.kind === "validation_completed") {
-          const p = ev.payload as
-            | {
-                partial?: boolean;
-                failed_titles?: string[];
-                failure_reasons?: string[];
-              }
-            | null;
-          if (p?.partial && p.failed_titles && !byJobFailures[ev.job_id]) {
-            byJobFailures[ev.job_id] = {
-              titles: p.failed_titles,
-              reasons: p.failure_reasons ?? [],
-            };
-          }
-        }
-        if (ev.kind === "failed") {
-          const p = ev.payload as {
-            reason?: string;
-            title?: string;
-            error?: string;
-          } | null;
-          if (p?.reason === "persist_recipe" && p.title) {
-            const bucket = (byJobFailures[ev.job_id] ??= { titles: [], reasons: [] });
-            if (!bucket.titles.includes(p.title)) bucket.titles.push(p.title);
-            if (p.error && !bucket.reasons.includes(p.error))
-              bucket.reasons.push(p.error);
-          }
-        }
-      }
-      setLatestEvents(byJobKind);
-      setExtractionCounts(byJobCounts);
-      setPersistFailures(byJobFailures);
-      setProgressMeta(byJobMeta);
+      loadedCountRef.current = trimmed.length;
+      if (more) setVisibleCount(PAGE_SIZE);
+      setRecipesByJob(d.recipesByJob);
+      setLatestEvents(d.latestEvents);
+      setExtractionCounts(d.extractionCounts);
+      setPersistFailures(d.persistFailures);
+      setProgressMeta(d.progressMeta);
     })();
+
+    // Azure realtime path: the Supabase postgres_changes channels below don't
+    // apply (writes go to Neon); the Web PubSub hook drives refetches instead.
+    if (REALTIME_IS_AZURE) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const jobsChannel = supabase
       .channel(`ingestion-${householdId}`)
@@ -634,20 +552,53 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
     };
   }, [householdId, supabase]);
 
+  // Azure realtime (ADR-0009): events carry ids only, so on any ingestion signal
+  // we refetch the whole visible span from the server (Neon) and re-derive. No-op
+  // unless NEXT_PUBLIC_REALTIME_PROVIDER=azure. Debounced (~500ms) so a burst of
+  // per-chunk events during a long extraction collapses into one reload.
+  const refetchAll = useCallback(async () => {
+    const res = await loadActiveJobsAction({
+      householdId,
+      limit: Math.max(loadedCountRef.current, PAGE_SIZE),
+    });
+    if (!res.ok) return;
+    const d = assembleBundle({ jobs: res.jobs as Job[], events: res.events, recipes: res.recipes });
+    loadedCountRef.current = d.jobs.length;
+    setJobs(d.jobs);
+    setTotalLoaded(d.jobs.length);
+    setRecipesByJob(d.recipesByJob);
+    setLatestEvents(d.latestEvents);
+    setExtractionCounts(d.extractionCounts);
+    setPersistFailures(d.persistFailures);
+    setProgressMeta(d.progressMeta);
+  }, [householdId]);
+
+  useHouseholdRealtime((e) => {
+    if (e.type !== "ingestion.job" && e.type !== "ingestion.event" && e.type !== "recipe.changed") {
+      return;
+    }
+    if (refetchTimer.current) clearTimeout(refetchTimer.current);
+    refetchTimer.current = setTimeout(() => void refetchAll(), 500);
+  });
+
   async function loadMore() {
-    const { data } = await supabase
-      .from("ingestion_jobs")
-      .select("*")
-      .eq("household_id", householdId)
-      .order("created_at", { ascending: false })
-      .range(jobs.length, jobs.length + PAGE_SIZE);
-    const more = (data ?? []) as Job[];
+    const res = await loadActiveJobsAction({ householdId, limit: PAGE_SIZE + 1, offset: jobs.length });
+    if (!res.ok) return;
+    const more = res.jobs as Job[];
     if (more.length > 0) {
+      // Merge the new page's jobs + derived maps into what's already loaded.
+      const d = assembleBundle({ jobs: more, events: res.events, recipes: res.recipes });
       setJobs((prev) => {
         const existing = new Set(prev.map((j) => j.id));
-        return [...prev, ...more.filter((j) => !existing.has(j.id))];
+        return [...prev, ...d.jobs.filter((j) => !existing.has(j.id))];
       });
       setTotalLoaded((n) => n + more.length);
+      loadedCountRef.current += more.length;
+      setRecipesByJob((prev) => ({ ...prev, ...d.recipesByJob }));
+      setLatestEvents((prev) => ({ ...prev, ...d.latestEvents }));
+      setExtractionCounts((prev) => ({ ...prev, ...d.extractionCounts }));
+      setPersistFailures((prev) => ({ ...prev, ...d.persistFailures }));
+      setProgressMeta((prev) => ({ ...prev, ...d.progressMeta }));
     }
     setVisibleCount((n) => n + PAGE_SIZE);
   }
