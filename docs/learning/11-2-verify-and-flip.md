@@ -21,12 +21,18 @@ FUNCTIONS_BASE_URL=http://localhost:7071
 INGESTION_INTERNAL_SECRET=<any dev value, must match the functions app>
 AZURE_WEBPUBSUB_ENDPOINT=... AZURE_FOUNDRY_ENDPOINT=... AZURE_STORAGE_ACCOUNT=...
 ```
-Then, three terminals (Web PubSub + Foundry + Blob are keyless cloud services — `az login` covers them):
+Then, **four** processes (Web PubSub + Foundry + Blob are keyless cloud services — `az login` covers
+them). Note the extra one vs the old Inngest loop: **Azurite**, because Durable Functions stores its
+orchestration state in Azure Storage and `local.settings.json` uses `AzureWebJobsStorage=UseDevelopmentStorage=true`:
 ```bash
 az login                                  # DefaultAzureCredential for the keyless services
-cd functions && func start                # Durable Functions host on :7071 (replaces inngest dev)
+azurite --silent --location /tmp/azurite  # local Azure Storage emulator — Durable's task hub
+cd functions && npm start                 # Durable Functions host on :7071 (replaces inngest dev)
 npm run dev                               # Next on :3000
 ```
+Confirm the functions list prints `ingestionStart` + `ingestionUrlStart` and "Host started" before
+importing. A "fetch failed" on import means the app couldn't reach `:7071` — the host (or Azurite
+under it) isn't up.
 **Verify — a file import:** sign in → Import → upload a PDF. Expect:
 - The job appears in **Recent imports** (reads via `loadActiveJobsAction` → Neon).
 - The progress bar **climbs live** (Web PubSub publishes from `ingestionStore`).
