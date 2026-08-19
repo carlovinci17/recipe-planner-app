@@ -1,5 +1,6 @@
 import "server-only";
 import { inngest } from "@/lib/inngest/client";
+import { publishToHousehold } from "@/lib/realtime/publish";
 import { env } from "@/lib/env";
 import type { RecipeSourceKind } from "@/types/database.types";
 
@@ -22,6 +23,10 @@ type FileUploadedData = {
  * until the Module 11 cutover.
  */
 export async function startFileIngestion(data: FileUploadedData): Promise<void> {
+  // Surface the new job in the import UI immediately (no-op unless realtime=azure).
+  // Otherwise the row doesn't appear until the first pipeline event fires, which
+  // reads as "nothing happened" during Durable startup + rasterize.
+  await publishToHousehold(data.householdId, { type: "ingestion.job", jobId: data.jobId });
   if (env.JOBS_PROVIDER === "durable") {
     const base = env.FUNCTIONS_BASE_URL;
     const secret = env.INGESTION_INTERNAL_SECRET;
@@ -51,6 +56,7 @@ export async function startUrlIngestion(data: {
   householdId: string;
   url: string;
 }): Promise<void> {
+  await publishToHousehold(data.householdId, { type: "ingestion.job", jobId: data.jobId });
   if (env.JOBS_PROVIDER === "durable") {
     const base = env.FUNCTIONS_BASE_URL;
     const secret = env.INGESTION_INTERNAL_SECRET;
