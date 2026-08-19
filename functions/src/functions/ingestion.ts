@@ -194,3 +194,43 @@ app.http("ingestionRaiseEvent", {
     return { status: 202, jsonBody: { ok: true } };
   },
 });
+
+// ── URL import pipeline (Module 11.1 / Slice 5) — text-based, single-shot. ──
+type UrlStartInput = { jobId: string; householdId: string; url: string };
+
+df.app.activity("processUrl", { handler: (i: UrlStartInput) => callApp("process-url", i) });
+
+const urlIngestionOrchestrator: OrchestrationHandler = function* (context: OrchestrationContext) {
+  const input = context.df.getInput() as UrlStartInput;
+  const result = (yield context.df.callActivity("processUrl", input)) as {
+    recipeIds: string[];
+    primaryRecipeId: string | null;
+  };
+  // Fan out AI tagging per persisted recipe (reuses the file pipeline's activity).
+  const tagTasks = (result.recipeIds ?? []).map((id) =>
+    context.df.callActivity("tagRecipe", { recipeId: id }),
+  );
+  if (tagTasks.length > 0) yield context.df.Task.all(tagTasks);
+  return { jobId: input.jobId, recipeIds: result.recipeIds };
+};
+df.app.orchestration("urlIngestionOrchestrator", urlIngestionOrchestrator);
+
+app.http("ingestionUrlStart", {
+  route: "ingestion/url-start",
+  methods: ["POST"],
+  authLevel: "anonymous",
+  extraInputs: [df.input.durableClient()],
+  handler: async (req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    if (req.headers.get("x-internal-secret") !== process.env.INGESTION_INTERNAL_SECRET) {
+      return { status: 403, jsonBody: { error: "Forbidden" } };
+    }
+    const client = df.getClient(context);
+    const body = (await req.json()) as UrlStartInput;
+    const instanceId = await client.startNew("urlIngestionOrchestrator", {
+      instanceId: body.jobId,
+      input: body,
+    });
+    context.log(`Started URL ingestion orchestration '${instanceId}' for job ${body.jobId}`);
+    return client.createCheckStatusResponse(req, instanceId);
+  },
+});

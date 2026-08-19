@@ -42,6 +42,35 @@ export async function startFileIngestion(data: FileUploadedData): Promise<void> 
 }
 
 /**
+ * Start the URL-import pipeline (Module 11.1 / Slice 5). Same JOBS_PROVIDER gate
+ * as startFileIngestion: "durable" → the Durable URL orchestrator's HTTP starter;
+ * else → the Inngest `ingestion/url.requested` event (prod today).
+ */
+export async function startUrlIngestion(data: {
+  jobId: string;
+  householdId: string;
+  url: string;
+}): Promise<void> {
+  if (env.JOBS_PROVIDER === "durable") {
+    const base = env.FUNCTIONS_BASE_URL;
+    const secret = env.INGESTION_INTERNAL_SECRET;
+    if (!base || !secret) {
+      throw new Error("FUNCTIONS_BASE_URL and INGESTION_INTERNAL_SECRET are required for JOBS_PROVIDER=durable");
+    }
+    const res = await fetch(`${base}/api/ingestion/url-start`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-internal-secret": secret },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      throw new Error(`Durable URL ingestion start failed (${res.status}): ${await res.text()}`);
+    }
+    return;
+  }
+  await inngest.send({ name: "ingestion/url.requested", data });
+}
+
+/**
  * Raise an external event to a running Durable Functions orchestration (Module 6,
  * 6.3). Used to resume a job parked on `waitForExternalEvent` — e.g. the skim
  * selection. The orchestration's instanceId is the jobId (set at start).

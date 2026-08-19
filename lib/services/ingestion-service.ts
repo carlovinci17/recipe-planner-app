@@ -1,8 +1,7 @@
 import "server-only";
 import { and, desc, eq, inArray, or, sql as dsql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { inngest } from "@/lib/inngest/client";
-import { startFileIngestion } from "@/lib/ingestion/start-job";
+import { startFileIngestion, startUrlIngestion } from "@/lib/ingestion/start-job";
 import { ingestionEvents, ingestionJobs, recipes } from "@/lib/db/schema";
 import { runInUserTx } from "./user-tx";
 import { env } from "@/lib/env";
@@ -294,13 +293,7 @@ export const ingestionService = {
         });
         return job.id;
       });
-      // NOTE (Slice 5): URL imports still dispatch to Inngest here. Porting the
-      // URL pipeline to Durable Functions swaps this send for a Durable start,
-      // and must land before JOBS_PROVIDER=durable at the coupled flip.
-      await inngest.send({
-        name: "ingestion/url.requested",
-        data: { jobId, householdId: args.householdId, url: args.url },
-      });
+      await startUrlIngestion({ jobId, householdId: args.householdId, url: args.url });
       return { jobId };
     }
     const supabase = await createSupabaseServerClient();
@@ -329,10 +322,7 @@ export const ingestionService = {
       payload: { url: args.url },
     });
 
-    await inngest.send({
-      name: "ingestion/url.requested",
-      data: { jobId: job.id, householdId: args.householdId, url: args.url },
-    });
+    await startUrlIngestion({ jobId: job.id, householdId: args.householdId, url: args.url });
 
     return { jobId: job.id };
   },

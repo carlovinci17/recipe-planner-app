@@ -12,7 +12,7 @@ import {
 } from "@/lib/inngest/helpers/mark-failed";
 import { logger } from "@/lib/logger";
 
-type PageData = {
+export type PageData = {
   /** Plain-text payload for the model — JSON-LD recipe object if present, else stripped HTML. */
   text: string;
   /** Best-guess hero image URL for the recipe (absolute), or null if we couldn't find one. */
@@ -173,7 +173,7 @@ async function fetchYouTubeData(url: string): Promise<PageData> {
  *   2. A best-guess hero-image URL — JSON-LD `image` first, then OpenGraph,
  *      then Twitter Card, all resolved against the page URL.
  */
-async function fetchPageData(url: string): Promise<PageData> {
+export async function fetchPageData(url: string): Promise<PageData> {
   // YouTube pages don't render content server-side, so JSON-LD scraping
   // returns nothing useful. Route to a dedicated YouTube extractor that
   // pulls description/title/channel from the embedded ytInitialPlayerResponse.
