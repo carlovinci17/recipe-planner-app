@@ -372,6 +372,31 @@ export const ingestionService = {
   },
 
   /**
+   * Delete a household's import jobs — all of them, or only the failed ones.
+   * Returns the count deleted. Dual-dispatch (Neon vs Supabase). ingestion_events
+   * rows cascade via the FK. (Module 11.1 — the delete path off the Supabase client.)
+   */
+  async clearJobs(args: { householdId: string; onlyFailed?: boolean }): Promise<number> {
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx) => {
+        const where = args.onlyFailed
+          ? and(eq(ingestionJobs.householdId, args.householdId), eq(ingestionJobs.status, "failed"))
+          : eq(ingestionJobs.householdId, args.householdId);
+        const rows = await tx.delete(ingestionJobs).where(where).returning({ id: ingestionJobs.id });
+        return rows.length;
+      });
+    }
+    const supabase = await createSupabaseServerClient();
+    const base = supabase
+      .from("ingestion_jobs")
+      .delete({ count: "exact" })
+      .eq("household_id", args.householdId);
+    const { error, count } = args.onlyFailed ? await base.eq("status", "failed") : await base;
+    if (error) throw error;
+    return count ?? 0;
+  },
+
+  /**
    * Load the "Recent imports" bundle for a household: the recent jobs, all their
    * events, and the recipes linked to them (reverse FK `ingestion_job_id`, plus
    * the primary FK `job.recipe_id` for legacy single-recipe jobs). Dual-dispatch

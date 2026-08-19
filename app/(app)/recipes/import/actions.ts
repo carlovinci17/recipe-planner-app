@@ -528,15 +528,12 @@ export async function clearFailedJobsAction(input: z.infer<typeof ClearFailedSch
   if (!parsed.success) return { ok: false as const, error: "Invalid input" };
   try {
     await assertMembership(parsed.data.householdId);
-    const supabase = await createSupabaseServerClient();
-    const { error, count } = await supabase
-      .from("ingestion_jobs")
-      .delete({ count: "exact" })
-      .eq("household_id", parsed.data.householdId)
-      .eq("status", "failed");
-    if (error) throw error;
+    const cleared = await ingestionService.clearJobs({
+      householdId: parsed.data.householdId,
+      onlyFailed: true,
+    });
     revalidatePath("/recipes/import");
-    return { ok: true as const, cleared: count ?? 0 };
+    return { ok: true as const, cleared };
   } catch (err) {
     logger.error({ err }, "clearFailedJobsAction failed");
     return { ok: false as const, error: (err as Error).message };
@@ -558,14 +555,9 @@ export async function clearAllJobsAction(input: z.infer<typeof ClearAllSchema>) 
   if (!parsed.success) return { ok: false as const, error: "Invalid input" };
   try {
     await assertMembership(parsed.data.householdId);
-    const supabase = await createSupabaseServerClient();
-    const { error, count } = await supabase
-      .from("ingestion_jobs")
-      .delete({ count: "exact" })
-      .eq("household_id", parsed.data.householdId);
-    if (error) throw error;
+    const cleared = await ingestionService.clearJobs({ householdId: parsed.data.householdId });
     revalidatePath("/recipes/import");
-    return { ok: true as const, cleared: count ?? 0 };
+    return { ok: true as const, cleared };
   } catch (err) {
     logger.error({ err }, "clearAllJobsAction failed");
     return { ok: false as const, error: (err as Error).message };
