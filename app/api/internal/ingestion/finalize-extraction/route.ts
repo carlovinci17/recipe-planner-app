@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { ingestionStore } from "@/lib/ingestion/store";
 import { dedupeRecipes, normalizeTitle } from "@/lib/ingestion/pipeline-helpers";
 import { normalizeExtractedRecipe } from "@/lib/ingestion/normalize";
 import type { ExtractedRecipe } from "@/lib/ai/schemas";
@@ -24,12 +24,7 @@ export async function POST(req: NextRequest) {
     usage?: { model: string; promptTokens: number; completionTokens: number; costCents: number };
   };
 
-  const supabase = createSupabaseAdmin();
-  const { data: job } = await supabase
-    .from("ingestion_jobs")
-    .select("raw_extraction, skim_results")
-    .eq("id", jobId)
-    .single();
+  const job = await ingestionStore.getJob(jobId);
   const rawRecipes = ((job?.raw_extraction as { recipes?: ExtractedRecipe[] } | null)?.recipes ??
     []) as ExtractedRecipe[];
 
@@ -55,33 +50,24 @@ export async function POST(req: NextRequest) {
   if (kept.length === 0) {
     const reason = deduped.length === 0 ? "no_recipes" : "below_threshold";
     // Bulk mode completes gracefully; interactive fails.
-    await supabase
-      .from("ingestion_jobs")
-      .update({
-        status: bulkMode ? "needs_review" : "failed",
-        error:
-          reason === "no_recipes"
-            ? "Source did not appear to contain any recipes"
-            : "Detected content didn't reach the confidence threshold",
-        raw_extraction: { recipes: deduped },
-        ...usagePatch,
-      })
-      .eq("id", jobId);
-    await supabase
-      .from("ingestion_events")
-      .insert({ job_id: jobId, kind: "failed", payload: { reason } });
+    await ingestionStore.updateJob(jobId, {
+      status: bulkMode ? "needs_review" : "failed",
+      error:
+        reason === "no_recipes"
+          ? "Source did not appear to contain any recipes"
+          : "Detected content didn't reach the confidence threshold",
+      raw_extraction: { recipes: deduped },
+      ...usagePatch,
+    });
+    await ingestionStore.insertEvent(jobId, "failed", { reason });
     return Response.json({ count: 0, reason });
   }
 
   const normalized = kept.map((r) => normalizeExtractedRecipe(r));
-  await supabase
-    .from("ingestion_jobs")
-    .update({ raw_extraction: { recipes: deduped }, normalized, ...usagePatch })
-    .eq("id", jobId);
-  await supabase.from("ingestion_events").insert({
-    job_id: jobId,
-    kind: "extraction_completed",
-    payload: { recipes_found: deduped.length, recipes_kept: kept.length },
+  await ingestionStore.updateJob(jobId, { raw_extraction: { recipes: deduped }, normalized, ...usagePatch });
+  await ingestionStore.insertEvent(jobId, "extraction_completed", {
+    recipes_found: deduped.length,
+    recipes_kept: kept.length,
   });
 
   return Response.json({ count: normalized.length });

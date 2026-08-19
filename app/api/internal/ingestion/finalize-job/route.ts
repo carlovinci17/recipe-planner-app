@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { ingestionStore } from "@/lib/ingestion/store";
 
 export const runtime = "nodejs";
 
@@ -18,18 +18,13 @@ export async function POST(req: NextRequest) {
     succeeded: number;
     failed: number;
   };
-  const supabase = createSupabaseAdmin();
-
-  await supabase
-    .from("ingestion_jobs")
-    .update({ recipe_id: primaryRecipeId, status: "needs_review" })
-    .eq("id", jobId);
+  await ingestionStore.updateJob(jobId, { recipe_id: primaryRecipeId, status: "needs_review" });
 
   if (failed > 0) {
-    await supabase.from("ingestion_events").insert({
-      job_id: jobId,
-      kind: "validation_completed",
-      payload: { partial: true, succeeded, failed },
+    await ingestionStore.insertEvent(jobId, "validation_completed", {
+      partial: true,
+      succeeded,
+      failed,
     });
   }
   return Response.json({ ok: true });

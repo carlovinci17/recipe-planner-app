@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { ingestionStore } from "@/lib/ingestion/store";
 import { ingestionStorage } from "@/lib/ingestion/storage";
 import { pdfBufferToPageImages } from "@/lib/ingestion/pdf-to-images";
 import { logger } from "@/lib/logger";
@@ -27,19 +27,11 @@ export async function POST(req: NextRequest) {
     startPage?: number;
   };
 
-  const supabase = createSupabaseAdmin();
+  const job = await ingestionStore.getJob(jobId);
+  if (!job) return Response.json({ error: `Job ${jobId} not found` }, { status: 404 });
 
-  const { data: job, error } = await supabase
-    .from("ingestion_jobs")
-    .select("*")
-    .eq("id", jobId)
-    .single();
-  if (error || !job) return Response.json({ error: `Job ${jobId} not found` }, { status: 404 });
-
-  await supabase.from("ingestion_jobs").update({ status: "processing" }).eq("id", jobId);
-  await supabase
-    .from("ingestion_events")
-    .insert({ job_id: jobId, kind: "ai_processing_started", payload: {} });
+  await ingestionStore.updateJob(jobId, { status: "processing" });
+  await ingestionStore.insertEvent(jobId, "ai_processing_started", {});
 
   // Render cap mirrors process-upload: bulk covers startOffset + range; interactive caps at 100.
   const startOffset = Math.max(0, (startPage ?? 1) - 1);
@@ -101,10 +93,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  await supabase
-    .from("ingestion_jobs")
-    .update({ page_image_paths: pageImagePaths })
-    .eq("id", jobId);
+  await ingestionStore.updateJob(jobId, { page_image_paths: pageImagePaths });
 
   if (pageImagePaths.length === 0) {
     return Response.json({ error: "No page images produced" }, { status: 422 });

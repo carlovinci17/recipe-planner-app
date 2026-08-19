@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { ingestionStore } from "@/lib/ingestion/store";
 import { ingestionStorage } from "@/lib/ingestion/storage";
 import { extractRecipeFromImages } from "@/lib/ai/recipe-extraction";
 import { env } from "@/lib/env";
@@ -29,8 +29,6 @@ export async function POST(req: NextRequest) {
     useOpus?: boolean;
   };
 
-  const supabase = createSupabaseAdmin();
-
   const urls = await ingestionStorage.signedUrls({
     bucket: ingestionStorage.uploadsBucket,
     paths: pages,
@@ -47,21 +45,17 @@ export async function POST(req: NextRequest) {
   const recipes = result.data.recipes ?? [];
 
   // Append this chunk's raw recipes to the job (sequential chunks → no race).
-  const { data: job } = await supabase
-    .from("ingestion_jobs")
-    .select("raw_extraction")
-    .eq("id", jobId)
-    .single();
+  const job = await ingestionStore.getJob(jobId);
   const existing = ((job?.raw_extraction as { recipes?: ExtractedRecipe[] } | null)?.recipes ??
     []) as ExtractedRecipe[];
-  await supabase
-    .from("ingestion_jobs")
-    .update({ raw_extraction: { recipes: [...existing, ...recipes] }, updated_at: new Date().toISOString() })
-    .eq("id", jobId);
-  await supabase.from("ingestion_events").insert({
-    job_id: jobId,
-    kind: "ai_processing_started",
-    payload: { chunk: chunkIndex + 1, total_chunks: totalChunks, recipes_this_chunk: recipes.length },
+  await ingestionStore.updateJob(jobId, {
+    raw_extraction: { recipes: [...existing, ...recipes] },
+    updated_at: new Date().toISOString(),
+  });
+  await ingestionStore.insertEvent(jobId, "ai_processing_started", {
+    chunk: chunkIndex + 1,
+    total_chunks: totalChunks,
+    recipes_this_chunk: recipes.length,
   });
 
   return Response.json({

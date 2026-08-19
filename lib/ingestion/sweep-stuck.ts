@@ -1,5 +1,7 @@
 import "server-only";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { ingestionStore } from "@/lib/ingestion/store";
+import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 
 /**
@@ -20,8 +22,48 @@ const STEP_LABELS: Record<string, string> = {
 };
 
 export async function sweepStuckJobs(): Promise<{ cleared: number }> {
-  const supabase = createSupabaseAdmin();
   const cutoff = new Date(Date.now() - NO_PROGRESS_MIN * 60 * 1000).toISOString();
+
+  if (env.DATABASE_URL) {
+    const { db } = await import("@/lib/db");
+    const { and, desc, eq, lt } = await import("drizzle-orm");
+    const { ingestionEvents, ingestionJobs } = await import("@/lib/db/schema");
+    const stuck = await db
+      .select({
+        id: ingestionJobs.id,
+        updatedAt: ingestionJobs.updatedAt,
+        sourceKind: ingestionJobs.sourceKind,
+      })
+      .from(ingestionJobs)
+      .where(and(eq(ingestionJobs.status, "processing"), lt(ingestionJobs.updatedAt, cutoff)));
+    if (stuck.length === 0) return { cleared: 0 };
+
+    let updated = 0;
+    for (const job of stuck) {
+      const [lastEvent] = await db
+        .select({ kind: ingestionEvents.kind })
+        .from(ingestionEvents)
+        .where(eq(ingestionEvents.jobId, job.id))
+        .orderBy(desc(ingestionEvents.createdAt))
+        .limit(1);
+      const minutesIdle = Math.max(1, Math.round((Date.now() - new Date(job.updatedAt).getTime()) / 60000));
+      const stepLabel = lastEvent?.kind ? (STEP_LABELS[lastEvent.kind] ?? lastEvent.kind) : "starting up";
+      const error =
+        `Stuck during ${stepLabel} for ${minutesIdle} min and gave up. ` +
+        `The original ${job.sourceKind} may have been too large for one pass — ` +
+        `try a smaller PDF or split it into pages, then re-import.`;
+      await ingestionStore.updateJob(job.id, { status: "failed", error });
+      await ingestionStore.insertEvent(job.id, "failed", {
+        reason: "sweep_timeout",
+        minutes_idle: minutesIdle,
+        last_step: lastEvent?.kind ?? null,
+      });
+      updated++;
+    }
+    return { cleared: updated };
+  }
+
+  const supabase = createSupabaseAdmin();
 
   const { data: stuck, error: stuckErr } = await supabase
     .from("ingestion_jobs")

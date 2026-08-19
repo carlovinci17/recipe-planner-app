@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { ingestionStore } from "@/lib/ingestion/store";
 import { normalizeTitle } from "@/lib/ingestion/pipeline-helpers";
 
 export const runtime = "nodejs";
@@ -23,22 +23,16 @@ export async function POST(req: NextRequest) {
     sourceName?: string | null;
     sourceUrl?: string | null;
   };
-  const supabase = createSupabaseAdmin();
-
-  const { data: job } = await supabase
-    .from("ingestion_jobs")
-    .select("skim_results, page_image_paths")
-    .eq("id", jobId)
-    .single();
+  const job = await ingestionStore.getJob(jobId);
   const skim = ((job?.skim_results as { recipes?: SkimRecipe[] } | null)?.recipes ?? []) as SkimRecipe[];
   const pageImagePaths = job?.page_image_paths ?? [];
 
   const selected = selectedIndices ?? [];
   if (selected.length === 0) {
-    await supabase
-      .from("ingestion_jobs")
-      .update({ status: "failed", error: "Cancelled at the recipe selection step." })
-      .eq("id", jobId);
+    await ingestionStore.updateJob(jobId, {
+      status: "failed",
+      error: "Cancelled at the recipe selection step.",
+    });
     return Response.json({ cancelled: true });
   }
 
@@ -63,13 +57,10 @@ export async function POST(req: NextRequest) {
   const name = sourceName && sourceName.trim().length > 0 ? sourceName.trim() : null;
   const url = sourceUrl && sourceUrl.trim().length > 0 ? sourceUrl.trim() : null;
 
-  await supabase
-    .from("ingestion_jobs")
-    .update({
-      skim_results: { recipes: skim, selected_titles: selectedTitles, source_override: { name, url } },
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", jobId);
+  await ingestionStore.updateJob(jobId, {
+    skim_results: { recipes: skim, selected_titles: selectedTitles, source_override: { name, url } },
+    updated_at: new Date().toISOString(),
+  });
 
   return Response.json({ cancelled: false, pagesToExtract });
 }

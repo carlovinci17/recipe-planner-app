@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { ingestionStore } from "@/lib/ingestion/store";
 import { ingestionStorage } from "@/lib/ingestion/storage";
 import { logger } from "@/lib/logger";
 import type { ExtractedRecipe } from "@/lib/ai/schemas";
@@ -17,13 +17,8 @@ export async function POST(req: NextRequest) {
   if (deny) return deny;
 
   const { jobId } = (await req.json()) as { jobId: string };
-  const supabase = createSupabaseAdmin();
 
-  const { data: job } = await supabase
-    .from("ingestion_jobs")
-    .select("storage_path, page_image_paths, normalized")
-    .eq("id", jobId)
-    .single();
+  const job = await ingestionStore.getJob(jobId);
   if (!job) return Response.json({ ok: true, deleted: 0 });
 
   const pageImagePaths = job.page_image_paths ?? [];

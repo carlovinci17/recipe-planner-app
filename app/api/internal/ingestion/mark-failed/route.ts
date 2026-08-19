@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { ingestionStore } from "@/lib/ingestion/store";
 
 export const runtime = "nodejs";
 
@@ -17,9 +17,7 @@ export async function POST(req: NextRequest) {
     error: string;
     reason: string;
   };
-  const supabase = createSupabaseAdmin();
-
-  await supabase.from("ingestion_jobs").update({ status: "failed", error }).eq("id", jobId);
-  await supabase.from("ingestion_events").insert({ job_id: jobId, kind: "failed", payload: { reason } });
+  await ingestionStore.updateJob(jobId, { status: "failed", error });
+  await ingestionStore.insertEvent(jobId, "failed", { reason });
   return Response.json({ ok: true });
 }

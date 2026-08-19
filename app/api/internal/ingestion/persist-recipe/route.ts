@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { ingestionStore } from "@/lib/ingestion/store";
 import { persistDraftRecipe } from "@/lib/ingestion/persist-recipe";
 import { logger } from "@/lib/logger";
 import type { ExtractedRecipe } from "@/lib/ai/schemas";
@@ -19,14 +19,9 @@ export async function POST(req: NextRequest) {
   if (deny) return deny;
 
   const { jobId, index } = (await req.json()) as { jobId: string; index: number };
-  const supabase = createSupabaseAdmin();
 
-  const { data: job, error } = await supabase
-    .from("ingestion_jobs")
-    .select("*")
-    .eq("id", jobId)
-    .single();
-  if (error || !job) return Response.json({ ok: false, error: `Job ${jobId} not found` });
+  const job = await ingestionStore.getJob(jobId);
+  if (!job) return Response.json({ ok: false, error: `Job ${jobId} not found` });
 
   const normalized = (job.normalized as ExtractedRecipe[] | null) ?? [];
   const recipe = normalized[index];
@@ -56,19 +51,20 @@ export async function POST(req: NextRequest) {
       ingestionJobId: jobId,
       externalSourceId: job.external_file_id,
     });
-    await supabase.from("ingestion_events").insert({
-      job_id: jobId,
-      kind: "recipe_ready_for_review",
-      payload: { recipeId: id, index, total: normalized.length },
+    await ingestionStore.insertEvent(jobId, "recipe_ready_for_review", {
+      recipeId: id,
+      index,
+      total: normalized.length,
     });
     return Response.json({ ok: true, id, title: recipe.title });
   } catch (err) {
     const message = (err as Error).message;
     logger.warn({ jobId, index, err: message }, "recipe persistence failed; continuing");
-    await supabase.from("ingestion_events").insert({
-      job_id: jobId,
-      kind: "failed",
-      payload: { reason: "persist_recipe", index, title: recipe.title, error: message },
+    await ingestionStore.insertEvent(jobId, "failed", {
+      reason: "persist_recipe",
+      index,
+      title: recipe.title,
+      error: message,
     });
     return Response.json({ ok: false, error: message, title: recipe.title });
   }

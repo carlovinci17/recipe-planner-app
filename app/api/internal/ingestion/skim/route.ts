@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { ingestionStore } from "@/lib/ingestion/store";
 import { ingestionStorage } from "@/lib/ingestion/storage";
 import { skimRecipesFromImages } from "@/lib/ai/recipe-extraction";
 
@@ -18,7 +18,6 @@ export async function POST(req: NextRequest) {
   if (deny) return deny;
 
   const { jobId, pages } = (await req.json()) as { jobId: string; pages: string[] };
-  const supabase = createSupabaseAdmin();
 
   const urls = await ingestionStorage.signedUrls({
     bucket: ingestionStorage.uploadsBucket,
@@ -28,14 +27,13 @@ export async function POST(req: NextRequest) {
   const result = await skimRecipesFromImages({ imageUrls: urls });
   const skim = result.data.recipes;
 
-  await supabase
-    .from("ingestion_jobs")
-    .update({ skim_results: { recipes: skim }, updated_at: new Date().toISOString() })
-    .eq("id", jobId);
-  await supabase.from("ingestion_events").insert({
-    job_id: jobId,
-    kind: "extraction_completed",
-    payload: { phase: "skim", recipes_found: skim.length },
+  await ingestionStore.updateJob(jobId, {
+    skim_results: { recipes: skim },
+    updated_at: new Date().toISOString(),
+  });
+  await ingestionStore.insertEvent(jobId, "extraction_completed", {
+    phase: "skim",
+    recipes_found: skim.length,
   });
 
   return Response.json({ count: skim.length });
