@@ -31,8 +31,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
-import { switchHouseholdAction } from "./actions";
+import { switchHouseholdAction, signOutAction } from "./actions";
 
 type HouseholdSummary = { id: string; name: string; role: "owner" | "member" };
 
@@ -56,13 +55,11 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const supabase = createClient();
   const [menuOpen, setMenuOpen] = useState(false);
 
   async function logout() {
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
+    // Signs out the ACTIVE session (Auth.js under Entra) + redirects to /login.
+    await signOutAction();
   }
 
   async function switchHousehold(id: string) {
