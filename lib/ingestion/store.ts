@@ -84,29 +84,36 @@ export const ingestionStore = {
 
   /** Patch a job by id. Patch keys are the DB (snake_case) column names. */
   async updateJob(jobId: string, patch: IngestionJobPatch): Promise<void> {
+    // cost_cents is an INTEGER column, but providers report fractional cents (a
+    // cheap gpt-4o-mini call can cost 0.62¢) — round before writing or Postgres
+    // rejects "invalid input syntax for type integer".
+    const p: IngestionJobPatch =
+      typeof patch.cost_cents === "number"
+        ? { ...patch, cost_cents: Math.round(patch.cost_cents) }
+        : patch;
     if (env.DATABASE_URL) {
       const { db } = await import("@/lib/db");
       const set: Record<string, unknown> = {};
-      if (patch.status !== undefined) set.status = patch.status;
-      if (patch.error !== undefined) set.error = patch.error;
-      if (patch.recipe_id !== undefined) set.recipeId = patch.recipe_id;
-      if (patch.raw_extraction !== undefined) set.rawExtraction = patch.raw_extraction;
-      if (patch.normalized !== undefined) set.normalized = patch.normalized;
-      if (patch.ai_model !== undefined) set.aiModel = patch.ai_model;
-      if (patch.prompt_tokens !== undefined) set.promptTokens = patch.prompt_tokens;
-      if (patch.completion_tokens !== undefined) set.completionTokens = patch.completion_tokens;
-      if (patch.cost_cents !== undefined) set.costCents = patch.cost_cents;
-      if (patch.skim_results !== undefined) set.skimResults = patch.skim_results;
-      if (patch.page_image_paths !== undefined) set.pageImagePaths = patch.page_image_paths;
-      if (patch.storage_path !== undefined) set.storagePath = patch.storage_path;
-      if (patch.updated_at !== undefined) set.updatedAt = patch.updated_at;
+      if (p.status !== undefined) set.status = p.status;
+      if (p.error !== undefined) set.error = p.error;
+      if (p.recipe_id !== undefined) set.recipeId = p.recipe_id;
+      if (p.raw_extraction !== undefined) set.rawExtraction = p.raw_extraction;
+      if (p.normalized !== undefined) set.normalized = p.normalized;
+      if (p.ai_model !== undefined) set.aiModel = p.ai_model;
+      if (p.prompt_tokens !== undefined) set.promptTokens = p.prompt_tokens;
+      if (p.completion_tokens !== undefined) set.completionTokens = p.completion_tokens;
+      if (p.cost_cents !== undefined) set.costCents = p.cost_cents;
+      if (p.skim_results !== undefined) set.skimResults = p.skim_results;
+      if (p.page_image_paths !== undefined) set.pageImagePaths = p.page_image_paths;
+      if (p.storage_path !== undefined) set.storagePath = p.storage_path;
+      if (p.updated_at !== undefined) set.updatedAt = p.updated_at;
       await db.update(ingestionJobs).set(set).where(eq(ingestionJobs.id, jobId));
     } else {
       const supabase = createSupabaseAdmin();
-      await supabase.from("ingestion_jobs").update(patch).eq("id", jobId);
+      await supabase.from("ingestion_jobs").update(p).eq("id", jobId);
     }
     // Signal the import UI on status transitions (no-op unless realtime=azure).
-    if (patch.status !== undefined) {
+    if (p.status !== undefined) {
       const hid = await jobHouseholdId(jobId);
       if (hid) await publishToHousehold(hid, { type: "ingestion.job", jobId });
     }
