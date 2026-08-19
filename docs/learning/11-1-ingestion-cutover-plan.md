@@ -43,7 +43,7 @@ Grilling the cutover surfaced two findings that reshape Module 11:
 5. ✅ **URL pipeline → Durable** (`process-url-core.ts` + `urlIngestionOrchestrator` + `startUrlIngestion`).
    ⚠️ **Drive subsystem deferred** (decided 2026-08-19): its 4 Inngest functions are deleted with
    Inngest — Drive import is already broken in prod, re-ported to Durable when re-enabled (TODO).
-6. ⬜ **Local end-to-end verify on Neon** (you drive): `DATABASE_URL`=Neon + `JOBS_PROVIDER=durable` +
+6. ✅ **Local end-to-end verify on Neon** (2026-08-19 — passed; 8 bugs caught, see 11.2): `DATABASE_URL`=Neon + `JOBS_PROVIDER=durable` +
    `func` + Web PubSub → import a PDF and a URL → reach `needs_review` on Neon, covers render, live
    progress. See the verification runbook in Lesson 11.2.
 

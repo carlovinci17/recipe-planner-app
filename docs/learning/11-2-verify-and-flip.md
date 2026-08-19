@@ -1,6 +1,25 @@
 # Lesson 11.2 — Verify the ingestion cutover, then flip (the runbook)
 
-**Date:** 2026-08-19   **Module:** 11 (Cutover & decommission)   **WAF pillar(s):** Operational Excellence · Reliability   **Status:** 🟡 Code complete — execution (verify → flip → watch → decommission) is yours to run.
+**Date:** 2026-08-19   **Module:** 11 (Cutover & decommission)   **WAF pillar(s):** Operational Excellence · Reliability   **Status:** 🟢 Slice 6 (local verify) DONE — the ingestion cutover is proven end-to-end on Neon + Azure. Prod flip → watch → decommission are still yours to run.
+
+## Slice 6 result (2026-08-19): PASSED — and caught 8 real bugs before prod
+Ran the full local rig (Azurite + `func` + `npm run dev`, keyless cloud via `az login`) and verified:
+**photo import · URL import · PDF import with the skim picker** (multi-recipe + Durable
+`waitForExternalEvent` pause/resume) · **covers render** (Azure Blob) · **tags applied** · **recipe
+edit saves** persist to Neon · **clear jobs** · **live two-window realtime** (Web PubSub push).
+
+Every one of these was a would-be production incident, fixed during the dry-run:
+1. **Missing `ingestion_events` INSERT RLS policy** — dashboard-drift gap (policy existed on Supabase, never in a migration). Added migration `20260819120000_*`.
+2. **Local Durable rig needs Azurite** — `UseDevelopmentStorage=true` → the task hub needs the emulator; documented above.
+3. **`/manifest.webmanifest` auth-gated** → redirect stripped the port → `ERR_CONNECTION_REFUSED`. Excluded from the middleware matcher.
+4. **Foundry provider forwarded Anthropic tier-names** (`claude-opus-4-7`) as deployment names → `DeploymentNotFound`. Foundry runs one deployment for all tiers — ignore `opts.model`.
+5. **`cost_cents` fractional** (0.62¢ from gpt-4o-mini) into an integer column → round in `ingestionStore.updateJob`.
+6. **Clear-jobs un-ported** → deleted from empty Supabase → "Nothing to clear" + jobs reappeared. Added `ingestionService.clearJobs` (dual-dispatch).
+7. **No job-creation signal** → new imports didn't appear until the first pipeline event. Publish `ingestion.job` at job start.
+8. **`commitSkimSelectionAction` un-ported** → read the job from Supabase → "Job not found" on skim commit → Durable `raiseEvent` never fired. Read via `ingestionStore.getJob`.
+
+Lesson: a local dry-run against the real target infra (not just typecheck/build) is where cutover bugs
+actually surface — especially RLS/policy drift and provider-abstraction leaks.
 
 The ingestion cutover code (Slices 1–5) is done and passes typecheck + build. Nothing is
 runtime-verified yet — everything is dual-dispatch, so **production (still on the old stack) is
