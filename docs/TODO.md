@@ -8,6 +8,20 @@ and cutover teardown in [`decommission-checklist.md`](decommission-checklist.md)
 Add a line here whenever something small surfaces mid-task so it isn't forgotten.
 
 ## Open
+- [ ] **Up-front page/range selection for PDF import** (File tab + Google Drive) — requested 2026-08-19.
+      Before extraction starts, let the user pick a page range (e.g. "pages 12–28") and/or specific
+      pages, so a large multi-recipe PDF only rasterizes + vision-processes the chosen pages (saves
+      time + tokens; not every recipe in a cookbook needs importing).
+      - **Backend already supports it:** `prepare` + `startFileIngestion` accept `startPage` + `maxPages`
+        (used by bulk today). Extend to an explicit page set if we want non-contiguous pages, or keep
+        it to start+count for v1. The vision loop then only sees the selected pages.
+      - **Distinct from the existing skim picker** (which selects *recipes* by title *after* rasterizing
+        everything). This is a *coarse, pre-rasterize* filter; the two compose (pick pages → then skim
+        the recipes within them).
+      - **UI design:** File PDF — a page-range control (start + count, or "pages A–B"); ideally client-side
+        page thumbnails (pdfjs in the browser) to pick visually, but a numeric range is a fine v1. Google
+        Drive — no up-front preview available, so a numeric range input (optionally read page count first).
+      - Worth a short grill/design pass; own feature, not cutover-critical.
 - [ ] **Every recipe must get ≥1 meal-type** (breakfast / lunch / dinner / snack) — noticed 2026-08-19
       when a URL import ("Crispy Parmesan Crusted Chicken") landed with `meal_types: []`. The tagger
       (`RECIPE_TAGGING_SYSTEM` prompt + `tagRecipe` → `applyRecipeTags`) leaves it empty when the model
