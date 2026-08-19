@@ -58,5 +58,14 @@ removals. Deletion is the one irreversible step — it comes last, deliberately.
 ## The staged runbook
 Per-subsystem detail lives in [`docs/learning/11-0-cutover-plan.md`](../learning/11-0-cutover-plan.md).
 Each flip is the same shape: **set the flag in prod (Key Vault / Container Apps) → redeploy →
-smoke-test the one subsystem → watch → tick the checklist**. Pre-flight (Neon final sync, realtime
-ingestion publish, Jobs port) lands first; deletion lands last.
+smoke-test → watch → tick the checklist**. Pre-flight lands first; deletion lands last.
+
+### Amendment (2026-08-19, after grilling the ingestion cutover)
+The "flip one flag at a time" premise was **partly wrong**: the flags are not all independent. Neon's
+migrated data couples them — **DB ⇒ Storage** (Neon holds Azure `.webp` cover paths, so Supabase
+storage 404s) and **DB ⇒ Jobs** (the ingestion subsystem — service, Inngest functions, *and* the
+Durable internal endpoints — is still 100% Supabase, so it can't run on Neon until ported). Realtime
+rides with them (the `active-jobs` swap is in the same unit). Only **Auth** and **AI** are truly
+independent. So the revised go-live is **two solo flips then one coupled batch**:
+**AI → Auth → {DB + Storage + Realtime + Jobs}**, the batch gated on the ingestion port. See
+[`docs/learning/11-1-ingestion-cutover-plan.md`](../learning/11-1-ingestion-cutover-plan.md).
