@@ -64,6 +64,11 @@ when its service is replaced:
 - [ ] **Port the URL pipeline** (`lib/inngest/functions/process-url.ts` → Durable Functions) — a mechanical repeat of the 6.2 Architecture-B port; deferred so it moves with the cutover (URL imports stay on Inngest meanwhile).
 - [ ] **Swap the Drive poller** Inngest cron → a Durable Functions timer — a *flip* (one off, one on), not coexistence: polling isn't idempotent, so both running would double-import.
 - [ ] **Delete `app/api/webhooks/drive/`** (n8n Drive webhook) once the poller swap is live.
+- [ ] **Drive subsystem NOT ported (decided 2026-08-19).** The 4 Inngest Drive functions
+  (`drive-poller`, `process-drive-file`, `index-drive-file`, `sweep-stuck-drive-index`) are deleted
+  **with** Inngest at cutover — Drive import is already broken in prod (deleted Google client) so it's
+  a switched-off feature. Re-port to Durable when re-enabling Drive (TODO). The other import paths
+  (upload, multi-photo, URL) all run on Durable+Neon after Slice 5.
 - [ ] Set the Functions app's prod env: `APP_BASE_URL`, `INGESTION_INTERNAL_SECRET` (Key Vault); and the app's `FUNCTIONS_BASE_URL` → the deployed `func-recipe-jobs`.
 
 ## Repo / infra

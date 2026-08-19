@@ -35,14 +35,17 @@ Grilling the cutover surfaced two findings that reshape Module 11:
   *permanent* code, not throwaway Inngest.
 
 ## Build slices (each: typecheck + build)
-1. **`ingestion-service` → dual-dispatch** (create/complete/getJob/cancel) + a new `listActiveJobs`.
-2. **Internal endpoints (11) + `persist-recipe`/`applyRecipeTags`** data access → `db` (dual-dispatch),
-   household-scoped.
-3. **Publishes** in the ported endpoints.
-4. **`active-jobs.tsx`** → `loadActiveJobs` server action + `useHouseholdRealtime` (dual-run guarded).
-5. **URL pipeline + Drive poller → Durable orchestration** (remaining P3; Lesson 6.2 pattern).
-6. **Local end-to-end verify on Neon:** `DATABASE_URL`=Neon + `JOBS_PROVIDER=durable` + `func` + Web
-   PubSub → import a PDF → reaches `needs_review` on Neon, covers render, progress updates live.
+1. ✅ **`ingestion-service` → dual-dispatch** (create/complete/getJob/cancel) + new `listActiveJobs`.
+2. ✅ **Internal endpoints (11) + `persist-recipe`/`applyRecipeTags`** → `db` (dual-dispatch), via a
+   shared `lib/ingestion/store.ts` (admin `getJob`/`updateJob`/`insertEvent`); storage on the seam.
+3. ✅ **Publishes** in the store (`ingestion.event` on events, `ingestion.job` on status changes).
+4. ✅ **`active-jobs.tsx`** → `loadActiveJobsAction` + `useHouseholdRealtime` (debounced, dual-run).
+5. ✅ **URL pipeline → Durable** (`process-url-core.ts` + `urlIngestionOrchestrator` + `startUrlIngestion`).
+   ⚠️ **Drive subsystem deferred** (decided 2026-08-19): its 4 Inngest functions are deleted with
+   Inngest — Drive import is already broken in prod, re-ported to Durable when re-enabled (TODO).
+6. ⬜ **Local end-to-end verify on Neon** (you drive): `DATABASE_URL`=Neon + `JOBS_PROVIDER=durable` +
+   `func` + Web PubSub → import a PDF and a URL → reach `needs_review` on Neon, covers render, live
+   progress. See the verification runbook in Lesson 11.2.
 
 ## Rollback / safety
 Every slice is dual-dispatch, so unsetting `DATABASE_URL` reverts to Supabase. The Inngest code stays

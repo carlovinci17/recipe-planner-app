@@ -8,6 +8,14 @@ and cutover teardown in [`decommission-checklist.md`](decommission-checklist.md)
 Add a line here whenever something small surfaces mid-task so it isn't forgotten.
 
 ## Open
+- [ ] **Port the Google Drive subsystem to Durable Functions** — deferred at the Module 11 cutover
+      (decided 2026-08-19). The 4 Inngest Drive functions (`drive-poller` cron, `process-drive-file`,
+      `index-drive-file`, `sweep-stuck-drive-index` cron) were NOT ported — Drive import is already
+      broken in prod (deleted Google client `581514…`) and gets re-enabled only with the Entra/Google
+      stack. They're deleted with Inngest at decommission; re-port them to Durable + Neon (pattern:
+      `process-url-core.ts` + a Durable orchestrator/timer, like Slice 5) **when re-enabling Drive
+      import**. Until then, Drive import + "find by name" indexing stay disabled. See
+      [[migration-human-in-loop]] and `docs/learning/11-1-ingestion-cutover-plan.md`.
 - [ ] **Kitchen Assistant: speech-to-text (voice input)** — let the user *talk* to the assistant instead
       of typing. Add a mic button to the chat (`components/assistant/kitchen-assistant.tsx`) that
       captures speech → text → drops it in the input / sends it. Two paths to weigh: the browser's
