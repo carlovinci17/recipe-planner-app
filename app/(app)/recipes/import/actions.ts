@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { ingestionService } from "@/lib/services/ingestion-service";
+import { ingestionStore } from "@/lib/ingestion/store";
 import { householdService } from "@/lib/services/household-service";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { inngest } from "@/lib/inngest/client";
@@ -672,13 +673,9 @@ export async function commitSkimSelectionAction(input: z.infer<typeof CommitSkim
   if (!parsed.success) return { ok: false as const, error: "Invalid input" };
   try {
     // Membership check: the job must belong to a household the caller is in.
-    const supabase = await createSupabaseServerClient();
-    const { data: job, error: jobErr } = await supabase
-      .from("ingestion_jobs")
-      .select("id, household_id")
-      .eq("id", parsed.data.jobId)
-      .single();
-    if (jobErr || !job) {
+    // Read via the Neon-aware store (admin), then authorize explicitly.
+    const job = await ingestionStore.getJob(parsed.data.jobId);
+    if (!job) {
       return { ok: false as const, error: "Job not found" };
     }
     const memberships = await householdService.listForCurrentUser();
