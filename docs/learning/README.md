@@ -71,7 +71,7 @@ within it — e.g. `00-1-plan-before-you-build.md` is Module 0, Lesson 1.
 | [9.3](09-3-asset-upload.md) | Upload optimized covers to Azure Blob | 9 | Cost · Performance | ✅ Done | `3c0a7058-fd84-8109-af4c-eb0bf7c5b580` |
 | [9.4](09-4-validate.md) | Validate the migration on Neon + Azure | 9 | Reliability | ✅ Done | `3c0a7058-fd84-8164-a3b6-d287e01d9a50` |
 | [11.0](11-0-cutover-plan.md) | Cutover & decommission: the plan (grilled → ADR-0011) | 11 | Operational Excellence · Reliability | ✅ Plan set | `3c0a7058-fd84-8136-806e-eb261da3b1b3` |
-| [11.1](11-1-ingestion-cutover-plan.md) | The ingestion cutover: mini-plan (grilled) | 11 | Reliability · Operational Excellence | ✅ Plan set | _pending_ |
+| [11.1](11-1-ingestion-cutover-plan.md) | The ingestion cutover: mini-plan (grilled) | 11 | Reliability · Operational Excellence | ✅ Plan set | `3c1a7058-fd84-81b6-8f48-ed32000eae14` |
 | [12.0](12-0-agentic-plan.md) | Agentic module mini-plan (grilled → ADR-0010) | 12 | Cost · Performance · Security | ✅ Done | `3c0a7058-fd84-812a-8254-df4f2430bc0a` |
 | [12.1](12-1-semantic-search.md) | Semantic search (the finder's data) | 12 | Performance · Cost | ✅ Done | `3c0a7058-fd84-8198-a8e4-f63169d62051` |
 | [12.2](12-2-langgraph-langfuse.md) | Wire LangGraph + Langfuse (keyless gpt-4o-mini) | 12 | Performance · Ops | ✅ Done (token-capture TODO) | `3c0a7058-fd84-81c1-87fb-fb887d5014eb` |
