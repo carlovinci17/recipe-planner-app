@@ -8,6 +8,13 @@ and cutover teardown in [`decommission-checklist.md`](decommission-checklist.md)
 Add a line here whenever something small surfaces mid-task so it isn't forgotten.
 
 ## Open
+- [ ] **Every recipe must get ≥1 meal-type** (breakfast / lunch / dinner / snack) — noticed 2026-08-19
+      when a URL import ("Crispy Parmesan Crusted Chicken") landed with `meal_types: []`. The tagger
+      (`RECIPE_TAGGING_SYSTEM` prompt + `tagRecipe` → `applyRecipeTags`) leaves it empty when the model
+      doesn't commit. Fix at the prompt (require at least one of the four, inferring the best fit) and/or
+      a fallback in `applyRecipeTags` (default to a sensible meal-type when the array is empty) so the
+      planner + meal-type filters always have something to work with. Same shape as the tip-capture
+      tweak; re-run a golden recipe to confirm. Optionally backfill existing empties.
 - [ ] **Verify PDF import on the cutover stack (Slice 6)** — photo/image import verified working on
       Neon+Durable (2026-08-19, after the ingestion_events INSERT-policy fix). Still need to run a
       **PDF** import end-to-end on the new stack (rasterize → skim/extract → needs_review) to confirm
