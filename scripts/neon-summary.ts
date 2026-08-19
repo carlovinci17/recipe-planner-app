@@ -14,9 +14,9 @@ const sql = postgres(url, { ssl: "require" });
 
 async function main(): Promise<void> {
   const households = await sql<
-    { id: string; name: string; created_at: string; members: number; recipes: number }[]
+    { id: string; name: string; created: string; members: number; recipes: number }[]
   >`
-    select h.id, h.name, h.created_at,
+    select h.id, h.name, to_char(h.created_at, 'YYYY-MM-DD') as created,
       (select count(*) from household_members m where m.household_id = h.id)::int as members,
       (select count(*) from recipes r where r.household_id = h.id)::int as recipes
     from households h
@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   console.log(`\nHouseholds (${households.length}):`);
   for (const h of households) {
     console.log(
-      `  • ${h.name.padEnd(20)} ${String(h.recipes).padStart(4)} recipes · ${h.members} member(s) · created ${h.created_at.slice(0, 10)} · ${h.id}`,
+      `  • ${h.name.padEnd(20)} ${String(h.recipes).padStart(4)} recipes · ${h.members} member(s) · created ${h.created} · ${h.id}`,
     );
   }
 
