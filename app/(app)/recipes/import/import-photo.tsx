@@ -3,19 +3,23 @@
 import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useDropzone } from "react-dropzone";
-import { Camera, ImagePlus, Loader2, X } from "lucide-react";
+import { Camera, FileText, ImagePlus, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   createMultiPhotoJobAction,
   completeMultiPhotoUploadAction,
+  createPhotoJobAction,
+  completePhotoUploadAction,
 } from "./actions";
 import { STORAGE_IS_AZURE, uploadViaServer } from "@/components/recipes/upload-via-server";
 
 interface PhotoEntry {
   file: File;
-  preview: string;
+  preview: string; // object URL for images; "" for a PDF (no <img> preview)
 }
+
+const isPdfFile = (f: File) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
 
 export function ImportPhoto({ householdId }: { householdId: string }) {
   const router = useRouter();
@@ -23,10 +27,19 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
 
   const addFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
     setPhotos((prev) => {
-      const next = [...prev];
+      // A PDF is a whole document — it can't mix with images or another PDF.
+      const pdf = files.find(isPdfFile);
+      if (pdf) {
+        prev.forEach((p) => p.preview && URL.revokeObjectURL(p.preview));
+        return [{ file: pdf, preview: "" }];
+      }
+      // Images: if a PDF was selected, adding images replaces it.
+      const base = prev.some((p) => isPdfFile(p.file)) ? [] : prev;
+      const next = [...base];
       for (const file of files) {
-        if (next.length >= 20) break;
+        if (isPdfFile(file) || next.length >= 20) continue;
         next.push({ file, preview: URL.createObjectURL(file) });
       }
       return next;
@@ -35,22 +48,28 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
 
   const removePhoto = useCallback((index: number) => {
     setPhotos((prev) => {
-      URL.revokeObjectURL(prev[index]!.preview);
+      const p = prev[index]!;
+      if (p.preview) URL.revokeObjectURL(p.preview);
       return prev.filter((_, i) => i !== index);
     });
   }, []);
 
+  const hasPdf = photos.length === 1 && isPdfFile(photos[0]!.file);
+
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop: addFiles,
-    accept: { "image/*": [".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"] },
+    accept: {
+      "image/*": [".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"],
+      "application/pdf": [".pdf"],
+    },
     maxSize: 20 * 1024 * 1024,
     multiple: true,
-    disabled: pending || photos.length >= 20,
-    noClick: photos.length > 0, // once photos added, use the + button instead
+    disabled: pending || photos.length >= 20 || hasPdf,
+    noClick: photos.length > 0, // once files added, use the + button instead
   });
 
   function reset() {
-    photos.forEach((p) => URL.revokeObjectURL(p.preview));
+    photos.forEach((p) => p.preview && URL.revokeObjectURL(p.preview));
     setPhotos([]);
   }
 
@@ -58,6 +77,35 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
     if (photos.length === 0) return;
     start(async () => {
       try {
+        // PDF → single-file path: upload the raw PDF; `prepare` rasterizes it
+        // server-side into page images before extraction.
+        if (hasPdf) {
+          const file = photos[0]!.file;
+          const job = await createPhotoJobAction({
+            householdId,
+            fileName: file.name,
+            contentType: "application/pdf",
+            sourceKind: "pdf",
+          });
+          if (!job.ok) throw new Error(job.error);
+          if (STORAGE_IS_AZURE) {
+            await uploadViaServer({ container: "recipe-uploads", path: job.path, file });
+          } else {
+            const res = await fetch(job.uploadUrl, {
+              method: "PUT",
+              headers: { "Content-Type": "application/pdf" },
+              body: file,
+            });
+            if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+          }
+          const complete = await completePhotoUploadAction({ jobId: job.jobId, storagePath: job.path });
+          if (!complete.ok) throw new Error(complete.error);
+          toast.success("PDF uploaded — AI is scanning it for recipes now");
+          reset();
+          router.refresh();
+          return;
+        }
+
         // 1. Create job + get signed upload URLs for each photo
         const job = await createMultiPhotoJobAction({
           householdId,
@@ -127,14 +175,14 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
           </div>
           <div>
             <p className="font-medium">
-              {isDragActive ? "Drop your photos here" : "Upload recipe photos"}
+              {isDragActive ? "Drop your file here" : "Upload photos or a PDF"}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Tap to choose one or more photos — each photo is treated as one page.
-              Great for multi-page recipes or cookbook spreads.
+              Choose one or more photos (each is treated as one page — great for cookbook
+              spreads), or drop a single PDF and we&apos;ll scan every page.
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              JPG, PNG, WebP, HEIC · up to 20 MB each · max 20 photos
+              JPG, PNG, WebP, HEIC, PDF · up to 20 MB each · max 20 photos
             </p>
           </div>
         </div>
@@ -150,10 +198,17 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
                 key={p.preview}
                 className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border bg-muted"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.preview} alt={`Page ${i + 1}`} className="h-full w-full object-cover" />
+                {isPdfFile(p.file) ? (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 p-1 text-muted-foreground">
+                    <FileText className="h-6 w-6" />
+                    <span className="line-clamp-2 text-center text-[9px] leading-tight">{p.file.name}</span>
+                  </div>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.preview} alt={`Page ${i + 1}`} className="h-full w-full object-cover" />
+                )}
                 <span className="absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 text-[10px] text-white">
-                  {i + 1}
+                  {isPdfFile(p.file) ? "PDF" : i + 1}
                 </span>
                 <button
                   type="button"
@@ -168,7 +223,7 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
             ))}
 
             {/* Add more button */}
-            {photos.length < 20 && (
+            {photos.length < 20 && !hasPdf && (
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); open(); }}
@@ -182,9 +237,11 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
           </div>
 
           <p className="text-sm text-muted-foreground">
-            {photos.length === 1
-              ? "1 photo — AI will extract any recipes it finds."
-              : `${photos.length} photos — AI will scan all pages and extract every recipe found.`}
+            {hasPdf
+              ? "PDF — AI will scan every page and extract the recipes it finds."
+              : photos.length === 1
+                ? "1 photo — AI will extract any recipes it finds."
+                : `${photos.length} photos — AI will scan all pages and extract every recipe found.`}
           </p>
 
           <div className="flex gap-2">
@@ -197,6 +254,8 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Uploading…
                 </>
+              ) : hasPdf ? (
+                "Extract from PDF"
               ) : photos.length === 1 ? (
                 "Extract recipe"
               ) : (

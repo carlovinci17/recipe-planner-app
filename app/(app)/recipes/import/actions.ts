@@ -568,6 +568,8 @@ const CreatePhotoJobSchema = z.object({
   householdId: z.string().uuid(),
   fileName: z.string().min(1).max(255),
   contentType: z.string().min(1).max(100),
+  // "pdf" routes through the rasterize path in `prepare`; defaults to a single image.
+  sourceKind: z.enum(["image", "pdf"]).optional(),
 });
 
 export async function createPhotoJobAction(input: z.infer<typeof CreatePhotoJobSchema>) {
@@ -577,7 +579,7 @@ export async function createPhotoJobAction(input: z.infer<typeof CreatePhotoJobS
     await assertMembership(parsed.data.householdId);
     const result = await ingestionService.createUploadJob({
       householdId: parsed.data.householdId,
-      sourceKind: "image",
+      sourceKind: parsed.data.sourceKind ?? "image",
       fileName: parsed.data.fileName,
       contentType: parsed.data.contentType,
     });

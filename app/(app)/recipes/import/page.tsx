@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Camera, Cloud, Plus } from "lucide-react";
+import { Cloud, FileUp, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -46,8 +46,8 @@ export default async function ImportPage() {
       <Tabs defaultValue="photo">
         <TabsList>
           <TabsTrigger value="photo">
-            <Camera className="mr-1.5 h-3.5 w-3.5" />
-            Photo
+            <FileUp className="mr-1.5 h-3.5 w-3.5" />
+            File
           </TabsTrigger>
           <TabsTrigger value="url">From URL</TabsTrigger>
           <TabsTrigger value="new">Manual</TabsTrigger>
