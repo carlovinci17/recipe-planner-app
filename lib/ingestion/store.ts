@@ -2,8 +2,38 @@ import "server-only";
 import { eq, sql as dsql } from "drizzle-orm";
 import { ingestionEvents, ingestionJobs } from "@/lib/db/schema";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { publishToHousehold } from "@/lib/realtime/publish";
 import { env } from "@/lib/env";
 import type { IngestionEventKind, Json, Tables } from "@/types/database.types";
+
+/**
+ * Resolve (and memoize) a job's household id for realtime publishing (Module
+ * 11.1 / ADR-0009). A job→household mapping never changes, so a process-lifetime
+ * cache means at most one lookup per job instead of one per write.
+ */
+const householdCache = new Map<string, string>();
+async function jobHouseholdId(jobId: string): Promise<string | null> {
+  const cached = householdCache.get(jobId);
+  if (cached) return cached;
+  let hid: string | null = null;
+  if (env.DATABASE_URL) {
+    const { db } = await import("@/lib/db");
+    const rows = (await db.execute(
+      dsql`select household_id from ingestion_jobs where id = ${jobId} limit 1`,
+    )) as unknown as { household_id: string }[];
+    hid = rows[0]?.household_id ?? null;
+  } else {
+    const supabase = createSupabaseAdmin();
+    const { data } = await supabase
+      .from("ingestion_jobs")
+      .select("household_id")
+      .eq("id", jobId)
+      .maybeSingle();
+    hid = (data?.household_id as string | undefined) ?? null;
+  }
+  if (hid) householdCache.set(jobId, hid);
+  return hid;
+}
 
 /**
  * Admin (service-role) data access for the ingestion pipeline's internal steps
@@ -71,10 +101,15 @@ export const ingestionStore = {
       if (patch.storage_path !== undefined) set.storagePath = patch.storage_path;
       if (patch.updated_at !== undefined) set.updatedAt = patch.updated_at;
       await db.update(ingestionJobs).set(set).where(eq(ingestionJobs.id, jobId));
-      return;
+    } else {
+      const supabase = createSupabaseAdmin();
+      await supabase.from("ingestion_jobs").update(patch).eq("id", jobId);
     }
-    const supabase = createSupabaseAdmin();
-    await supabase.from("ingestion_jobs").update(patch).eq("id", jobId);
+    // Signal the import UI on status transitions (no-op unless realtime=azure).
+    if (patch.status !== undefined) {
+      const hid = await jobHouseholdId(jobId);
+      if (hid) await publishToHousehold(hid, { type: "ingestion.job", jobId });
+    }
   },
 
   /** Append an ingestion event for a job. */
@@ -82,9 +117,12 @@ export const ingestionStore = {
     if (env.DATABASE_URL) {
       const { db } = await import("@/lib/db");
       await db.insert(ingestionEvents).values({ jobId, kind, payload });
-      return;
+    } else {
+      const supabase = createSupabaseAdmin();
+      await supabase.from("ingestion_events").insert({ job_id: jobId, kind, payload });
     }
-    const supabase = createSupabaseAdmin();
-    await supabase.from("ingestion_events").insert({ job_id: jobId, kind, payload });
+    // Progress signal for the import UI (no-op unless realtime=azure).
+    const hid = await jobHouseholdId(jobId);
+    if (hid) await publishToHousehold(hid, { type: "ingestion.event", jobId });
   },
 };
