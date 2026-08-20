@@ -16,5 +16,9 @@ declare module "next-auth/jwt" {
   interface JWT {
     profileId?: string;
     oid?: string;
+    // The Entra id_token, kept server-side only (never surfaced on Session).
+    // Used as `id_token_hint` on federated sign-out so Entra skips the
+    // "choose an account to sign out" prompt.
+    idToken?: string;
   }
 }
