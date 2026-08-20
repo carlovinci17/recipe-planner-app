@@ -35,10 +35,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // On sign-in, resolve the Entra user to a profiles.id (create/link — ADR-0005
     // Decisions 3 & 6) and stash it on the token. The dynamic import keeps the DB
     // out of the edge runtime; the `profile` branch only runs on initial sign-in.
-    async jwt({ token, profile, account }) {
-      // Capture the Entra id_token on initial sign-in (server-side only) — used
-      // as id_token_hint on federated sign-out to skip the account picker.
-      if (account?.id_token) token.idToken = account.id_token;
+    async jwt({ token, profile }) {
       if (profile) {
         const oid = (profile as { oid?: string }).oid;
         if (oid) {
@@ -61,9 +58,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = (token.profileId as string | undefined) ?? "";
         session.user.oid = token.oid as string | undefined;
       }
-      // Server-only in practice (no SessionProvider/useSession in this app):
-      // signOutAction reads it as id_token_hint for federated sign-out.
-      session.idToken = token.idToken as string | undefined;
       return session;
     },
   },

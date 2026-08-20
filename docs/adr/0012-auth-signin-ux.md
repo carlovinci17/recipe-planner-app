@@ -31,6 +31,15 @@ buttons, tenant renamed to "BiteBuddy"). See `docs/branding/entra-branding-spec.
   tenant **Name** replaces the header text. External ID tenants are **exempt** from the CSS
   positioning-property retirement.
 
+## Known External ID limitations (verified — do not re-attempt)
+Three Microsoft-hosted screens **cannot** be removed in External ID today:
+- **"Stay signed in?" (KMSI)** — no toggle in external tenants (User Settings / CA session controls don't apply).
+- **"Choose an account to sign out"** — External ID shows it **even with a valid `id_token_hint`** (confirmed:
+  the hint was sent correctly and the picker still appeared). We therefore **don't send `id_token_hint`**.
+- **"Taking you to your organization's sign-in page"** interstitial — inherent to federation.
+
+Making these feel on-brand (Company Branding, Module 10) is the only lever, not removal.
+
 ## Consequences
 - **Code:** the in-app provider chooser + `domain_hint` experiment were removed; `/login` and `/signup`
   are a single button into the branded hosted page; the landing CTAs go straight there. Federated

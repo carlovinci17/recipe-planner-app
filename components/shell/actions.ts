@@ -2,27 +2,11 @@
 
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { auth, signOut } from "@/auth";
+import { signOut } from "@/auth";
 import { setActiveHouseholdCookie } from "@/lib/services/active-household";
 import { householdService } from "@/lib/services/household-service";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { env } from "@/lib/env";
-
-/**
- * Read the Entra id_token via the Auth.js session (server-side). Used as
- * `id_token_hint` on sign-out so Entra ends the right session without prompting
- * "choose an account to sign out". Going through auth() (vs decoding the raw
- * cookie) lets Auth.js reassemble chunked session cookies. Best-effort — on any
- * failure we return undefined and logout still works (just shows the picker).
- */
-async function readIdToken(): Promise<string | undefined> {
-  try {
-    const session = await auth();
-    return session?.idToken;
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * Build Entra External ID's end-session (logout) URL from the OIDC issuer.
@@ -30,8 +14,12 @@ async function readIdToken(): Promise<string | undefined> {
  * https://<tenant>.ciamlogin.com/<tenant>/oauth2/v2.0/logout. The
  * `post_logout_redirect_uri` must be registered in the app registration or Entra
  * ignores it (the session is still cleared, but it won't return to the app).
+ *
+ * NB: we deliberately don't send `id_token_hint` — External ID shows its
+ * "choose an account to sign out" confirmation regardless of the hint (verified),
+ * so it earned nothing but complexity.
  */
-async function entraLogoutUrl(idToken?: string): Promise<string | null> {
+async function entraLogoutUrl(): Promise<string | null> {
   const issuer = env.AUTH_MICROSOFT_ENTRA_ID_ISSUER;
   if (!issuer) return null;
   const authority = issuer.replace(/\/v2\.0\/?$/, "");
@@ -41,14 +29,11 @@ async function entraLogoutUrl(idToken?: string): Promise<string | null> {
   const first = (v: string | null): string | undefined => v?.split(",")[0]?.trim() || undefined;
   const host = first(h.get("x-forwarded-host")) ?? h.get("host") ?? undefined;
   const proto = first(h.get("x-forwarded-proto")) ?? "http";
-  const params = new URLSearchParams();
+  if (!host) return `${authority}/oauth2/v2.0/logout`;
   // Land back on the marketing home page after sign-out. Must be registered as a
   // redirect URI in the app registration, else Entra shows its own signed-out page.
-  if (host) params.set("post_logout_redirect_uri", `${proto}://${host}/`);
-  // id_token_hint tells Entra which session to end → no "choose an account" prompt.
-  if (idToken) params.set("id_token_hint", idToken);
-  const qs = params.toString();
-  return `${authority}/oauth2/v2.0/logout${qs ? `?${qs}` : ""}`;
+  const postLogout = `${proto}://${host}/`;
+  return `${authority}/oauth2/v2.0/logout?post_logout_redirect_uri=${encodeURIComponent(postLogout)}`;
 }
 
 export async function switchHouseholdAction(householdId: string) {
@@ -67,14 +52,12 @@ export async function switchHouseholdAction(householdId: string) {
  */
 export async function signOutAction() {
   if (env.AUTH_PROVIDER === "entra") {
-    // 1. Read the id_token BEFORE clearing the session (the cookie holds it).
-    const idToken = await readIdToken();
-    // 2. Clear the app (Auth.js) session cookie — but don't redirect yet.
+    // 1. Clear the app (Auth.js) session cookie — but don't redirect yet.
     await signOut({ redirect: false });
-    // 3. Federate the logout: send the browser to Entra's end-session endpoint so
+    // 2. Federate the logout: send the browser to Entra's end-session endpoint so
     //    the IdP session is cleared too (without this, SSO silently re-logs the
-    //    same user in). id_token_hint skips the account picker; land on home.
-    const url = await entraLogoutUrl(idToken);
+    //    same user in). Lands back on the home page.
+    const url = await entraLogoutUrl();
     redirect(url ?? "/");
   }
   const supabase = await createSupabaseServerClient();
