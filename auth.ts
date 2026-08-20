@@ -22,6 +22,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientId: env.AUTH_MICROSOFT_ENTRA_ID_ID,
       clientSecret: env.AUTH_MICROSOFT_ENTRA_ID_SECRET,
       issuer: env.AUTH_MICROSOFT_ENTRA_ID_ISSUER,
+      // No `prompt` override: a returning user with a live Entra session is
+      // signed in silently (good UX), and after a *federated* sign-out (see
+      // signOutAction) the session is gone, so the next sign-in shows Entra's
+      // login page fresh — which is how you switch users. We deliberately do NOT
+      // force `select_account`; it added a jarring "pick an account" screen.
       authorization: { params: { scope: "openid profile email offline_access" } },
     }),
   ],

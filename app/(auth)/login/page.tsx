@@ -30,18 +30,25 @@ export default async function LoginPage({
         </div>
 
         {useEntra ? (
-          // Auth.js + Microsoft Entra External ID: sign-in happens on the
-          // Microsoft-hosted page (Google + email/password live there).
-          <form
-            action={async () => {
-              "use server";
-              await signIn("microsoft-entra-id", { redirectTo: nextPath });
-            }}
-          >
-            <Button type="submit" size="lg" className="w-full">
-              Sign in with Microsoft
-            </Button>
-          </form>
+          // One button into the Entra External ID hosted sign-in page, which is
+          // branded to look like BiteBuddy (Company Branding) and shows every
+          // configured provider — Google, email, and later Facebook/Apple.
+          // Account is auto-created on first sign-in.
+          <div className="space-y-2">
+            <form
+              action={async () => {
+                "use server";
+                await signIn("microsoft-entra-id", { redirectTo: nextPath });
+              }}
+            >
+              <Button type="submit" size="lg" className="w-full">
+                Sign in
+              </Button>
+            </form>
+            <p className="text-center text-xs text-muted-foreground">
+              Continue with your email, password, or Google account.
+            </p>
+          </div>
         ) : (
           <>
             <LoginForm next={params.next} />

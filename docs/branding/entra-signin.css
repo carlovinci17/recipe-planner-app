@@ -1,0 +1,126 @@
+/* =========================================================================
+   BiteBuddy — Microsoft Entra External ID sign-in page custom CSS
+   Upload in: Entra admin center → Custom Branding → Default sign-in → Edit →
+   Layout → Custom CSS.
+   Selectors are the documented Entra branding classes (CSS template reference).
+   Colours mirror the app theme in app/globals.css (terracotta primary, warm
+   off-white background, warm-brown text). Deliberately NO positioning
+   properties (position/margin/transform/…) so it stays future-proof.
+   ========================================================================= */
+
+/* App fonts. Google Fonts is allowed; a system stack falls back if blocked. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:wght@600;700&display=swap");
+
+:root {
+  --bb-primary: #d5531b;        /* hsl(18 78% 47%) terracotta */
+  --bb-primary-hover: #b64616;  /* hsl(18 78% 40%) */
+  --bb-fg: #30251d;             /* hsl(25 25% 15%) warm brown */
+  --bb-muted-fg: #6e645c;       /* hsl(25 10% 40%) */
+  --bb-bg: #fcfaf7;             /* hsl(40 14% 98%) warm off-white */
+  --bb-border: #e6e0d9;         /* hsl(30 12% 88%) */
+  --bb-radius: 12px;            /* 0.75rem */
+  --bb-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --bb-display: "Source Serif 4", Georgia, "Times New Roman", serif;
+}
+
+/* Sign-in card */
+.ext-sign-in-box {
+  background-color: var(--bb-bg);
+  border: 1px solid var(--bb-border);
+  border-radius: var(--bb-radius);
+  font-family: var(--bb-sans);
+}
+
+/* Headings */
+.ext-title {
+  color: var(--bb-fg);
+  font-family: var(--bb-display);
+}
+.ext-subtitle {
+  color: var(--bb-muted-fg);
+  font-family: var(--bb-sans);
+}
+.ext-boilerplate-text {
+  color: var(--bb-muted-fg);
+  font-family: var(--bb-sans);
+}
+
+/* Primary button ("Next" / "Sign in") — terracotta */
+.ext-button.ext-primary {
+  background-color: var(--bb-primary);
+  border-color: var(--bb-primary);
+  border-radius: var(--bb-radius);
+  color: #ffffff;
+  font-family: var(--bb-sans);
+  font-weight: 600;
+}
+.ext-button.ext-primary:hover,
+.ext-button.ext-primary:focus,
+.ext-button.ext-primary:focus:hover,
+.ext-button.ext-primary:active {
+  background-color: var(--bb-primary-hover);
+  border-color: var(--bb-primary-hover);
+  color: #ffffff;
+}
+
+/* Secondary button ("Back") — quiet outline */
+.ext-button.ext-secondary {
+  border-radius: var(--bb-radius);
+  border-color: var(--bb-border);
+  color: var(--bb-fg);
+  font-family: var(--bb-sans);
+  font-weight: 500;
+}
+.ext-button.ext-secondary:hover,
+.ext-button.ext-secondary:focus,
+.ext-button.ext-secondary:focus:hover,
+.ext-button.ext-secondary:active {
+  background-color: var(--bb-bg);
+  border-color: var(--bb-muted-fg);
+}
+
+/* Text inputs (email / password) */
+.ext-input.ext-text-box {
+  border-radius: var(--bb-radius);
+  border-color: var(--bb-border);
+  color: var(--bb-fg);
+  font-family: var(--bb-sans);
+}
+.ext-input.ext-text-box:hover {
+  border-color: var(--bb-muted-fg);
+}
+.ext-input.ext-text-box:focus,
+.ext-input.ext-text-box:focus:hover {
+  border-color: var(--bb-primary);
+  box-shadow: 0 0 0 2px rgba(213, 83, 27, 0.25);
+}
+.ext-input.ext-text-box.ext-has-error {
+  border-color: #c0392b;
+}
+
+/* Links ("No account? Create one", "Forgot password") */
+.ext-link {
+  color: var(--bb-primary);
+  font-family: var(--bb-sans);
+}
+
+/* Error text */
+.ext-error {
+  color: #c0392b;
+  font-family: var(--bb-sans);
+}
+
+/* Footer */
+.ext-footer {
+  font-family: var(--bb-sans);
+}
+.ext-footer-item,
+.ext-debug-item {
+  color: var(--bb-muted-fg);
+}
+
+/* Page background fallback colour (when no background image loads) */
+.ext-middle,
+.ext-background-image {
+  background-color: var(--bb-bg);
+}

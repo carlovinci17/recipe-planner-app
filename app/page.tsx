@@ -3,22 +3,29 @@ import { redirect } from "next/navigation";
 import { ArrowRight, Download, ShoppingCart, Sparkles, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { env } from "@/lib/env";
+import { startEntraAuth } from "./(auth)/auth-actions";
 
 export default async function LandingPage() {
   const user = await getCurrentUser();
   if (user) redirect("/recipes");
+
+  // Under Entra the CTAs go straight to the branded hosted sign-in page,
+  // skipping the intermediate /login page. Under the legacy (Supabase) provider
+  // the /login and /signup pages carry the real forms.
+  const useEntra = env.AUTH_PROVIDER === "entra";
 
   return (
     <main className="min-h-dvh bg-background">
       <header className="container flex items-center justify-between py-6">
         <div className="font-display text-xl font-semibold">BiteBuddy</div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" asChild>
-            <Link href="/login">Log in</Link>
-          </Button>
-          <Button asChild>
-            <Link href="/signup">Get started</Link>
-          </Button>
+          <AuthCta useEntra={useEntra} href="/login" variant="ghost">
+            Log in
+          </AuthCta>
+          <AuthCta useEntra={useEntra} href="/signup">
+            Get started
+          </AuthCta>
         </div>
       </header>
 
@@ -32,14 +39,12 @@ export default async function LandingPage() {
             automatic shopping list.
           </p>
           <div className="flex gap-3">
-            <Button size="lg" asChild>
-              <Link href="/signup">
-                Start free <ArrowRight className="ml-1 h-4 w-4" />
-              </Link>
-            </Button>
-            <Button size="lg" variant="outline" asChild>
-              <Link href="/login">Log in</Link>
-            </Button>
+            <AuthCta useEntra={useEntra} href="/signup" size="lg">
+              Start free <ArrowRight className="ml-1 h-4 w-4" />
+            </AuthCta>
+            <AuthCta useEntra={useEntra} href="/login" size="lg" variant="outline">
+              Log in
+            </AuthCta>
           </div>
         </div>
 
@@ -59,6 +64,40 @@ export default async function LandingPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+/**
+ * Landing CTA. Under Entra it's a form that fires the sign-in server action
+ * directly (straight to the branded hosted page, no /login hop); under the
+ * legacy provider it links to the /login or /signup page with the real forms.
+ */
+function AuthCta({
+  useEntra,
+  href,
+  children,
+  variant,
+  size,
+}: {
+  useEntra: boolean;
+  href: string;
+  children: React.ReactNode;
+  variant?: React.ComponentProps<typeof Button>["variant"];
+  size?: React.ComponentProps<typeof Button>["size"];
+}) {
+  if (useEntra) {
+    return (
+      <form action={startEntraAuth}>
+        <Button type="submit" variant={variant} size={size}>
+          {children}
+        </Button>
+      </form>
+    );
+  }
+  return (
+    <Button asChild variant={variant} size={size}>
+      <Link href={href}>{children}</Link>
+    </Button>
   );
 }
 
