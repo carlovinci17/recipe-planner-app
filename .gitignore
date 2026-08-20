@@ -38,3 +38,11 @@ infra/main.json
 /test-results/
 /playwright-report/
 /playwright/.cache/
+
+# Local Azurite emulator state (Durable task hub + blob/queue/table) — created by
+# `azurite` during local dev, never source. Also VS Code workspace settings.
+AzuriteConfig
+__azurite_db_*.json
+__blobstorage__/
+__queuestorage__/
+.vscode/
