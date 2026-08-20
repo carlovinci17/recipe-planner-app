@@ -1,24 +1,45 @@
 import "server-only";
-import { drizzle } from "drizzle-orm/postgres-js";
+import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
 import { env } from "@/lib/env";
 import * as schema from "./schema";
 
-if (!env.DATABASE_URL) {
-  // This module should only ever be imported on a code path where DATABASE_URL
-  // is configured (services import it dynamically after checking). If we got
-  // here without it, that's a wiring bug — fail loud.
-  throw new Error("lib/db imported but DATABASE_URL is not set.");
+type DB = PostgresJsDatabase<typeof schema>;
+
+// Lazily create the connection on FIRST USE, not at import. `next build` imports
+// this module (via the service layer) while collecting page data, when
+// DATABASE_URL — a runtime secret — isn't set; connecting at import time would
+// crash the build. Services only ever *use* `db` after checking env.DATABASE_URL,
+// so the lazy getter never runs on the Supabase path either.
+let _db: DB | undefined;
+function getDb(): DB {
+  if (!_db) {
+    if (!env.DATABASE_URL) {
+      throw new Error("lib/db used but DATABASE_URL is not set.");
+    }
+    // One shared connection pool. `prepare: false` keeps compatibility with
+    // transaction poolers and is harmless on a direct connection.
+    const client = postgres(env.DATABASE_URL, { prepare: false });
+    _db = drizzle(client, { schema });
+  }
+  return _db;
 }
 
-// One shared connection pool. `prepare: false` keeps compatibility with
-// transaction poolers and is harmless on a direct connection.
-const client = postgres(env.DATABASE_URL, { prepare: false });
+/**
+ * The Drizzle db. A Proxy so call sites keep using `db.execute(...)`,
+ * `db.transaction(...)`, `db.select()…` unchanged, while nothing actually
+ * connects until the first property access at runtime.
+ */
+export const db = new Proxy({} as DB, {
+  get(_target, prop, receiver) {
+    const real = getDb();
+    const value = Reflect.get(real as object, prop, receiver);
+    return typeof value === "function" ? value.bind(real) : value;
+  },
+});
 
-export const db = drizzle(client, { schema });
-
-export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 
 /**
  * Run `fn` inside a transaction scoped to a user, so RLS applies exactly as it
