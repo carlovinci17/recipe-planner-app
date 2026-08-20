@@ -61,6 +61,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = (token.profileId as string | undefined) ?? "";
         session.user.oid = token.oid as string | undefined;
       }
+      // Server-only in practice (no SessionProvider/useSession in this app):
+      // signOutAction reads it as id_token_hint for federated sign-out.
+      session.idToken = token.idToken as string | undefined;
       return session;
     },
   },

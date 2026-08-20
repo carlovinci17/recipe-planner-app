@@ -5,6 +5,11 @@ import type { DefaultSession } from "next-auth";
 // used — no DB round-trip on the hot path.
 declare module "next-auth" {
   interface Session {
+    // Entra id_token, used by signOutAction as id_token_hint on federated
+    // sign-out (skips Entra's "choose an account to sign out" prompt). This app
+    // has no SessionProvider/useSession, so the session — and this token — is
+    // only ever read server-side via auth(); it's not sent to client JS.
+    idToken?: string;
     user: {
       id: string;
       oid?: string;

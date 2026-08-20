@@ -1,31 +1,24 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { headers, cookies } from "next/headers";
-import { decode } from "next-auth/jwt";
-import { signOut } from "@/auth";
+import { headers } from "next/headers";
+import { auth, signOut } from "@/auth";
 import { setActiveHouseholdCookie } from "@/lib/services/active-household";
 import { householdService } from "@/lib/services/household-service";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { env } from "@/lib/env";
 
 /**
- * Read the Entra id_token from the Auth.js session cookie (server-side only).
- * Used as `id_token_hint` on sign-out so Entra ends the right session without
- * prompting "choose an account to sign out". Decoding is best-effort — on any
+ * Read the Entra id_token via the Auth.js session (server-side). Used as
+ * `id_token_hint` on sign-out so Entra ends the right session without prompting
+ * "choose an account to sign out". Going through auth() (vs decoding the raw
+ * cookie) lets Auth.js reassemble chunked session cookies. Best-effort — on any
  * failure we return undefined and logout still works (just shows the picker).
  */
 async function readIdToken(): Promise<string | undefined> {
-  if (!env.AUTH_SECRET) return undefined;
-  const c = await cookies();
-  const name = c.get("__Secure-authjs.session-token")
-    ? "__Secure-authjs.session-token"
-    : "authjs.session-token";
-  const raw = c.get(name)?.value;
-  if (!raw) return undefined;
   try {
-    const decoded = await decode({ token: raw, secret: env.AUTH_SECRET, salt: name });
-    return decoded?.idToken;
+    const session = await auth();
+    return session?.idToken;
   } catch {
     return undefined;
   }
