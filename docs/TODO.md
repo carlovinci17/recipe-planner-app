@@ -8,6 +8,13 @@ and cutover teardown in [`decommission-checklist.md`](decommission-checklist.md)
 Add a line here whenever something small surfaces mid-task so it isn't forgotten.
 
 ## Open
+- [ ] **Entra sign-in branding — design + apply in the portal** (do as part of the **Module 10 UI
+      re-design step**, deferred 2026-08-20). Design the hosted sign-in screen alongside the app
+      re-design so they match. Assets already staged in [`branding/`](branding/): `entra-signin.css`
+      (theme-matched) + `entra-branding-spec.md` (palette, asset specs, portal steps). Steps: rename
+      tenant → BiteBuddy; Company Branding (favicon, banner logo, bg `#FCFAF7`, upload the CSS). All in
+      the **External ID "Recipe Planner" tenant**, not the home tenant. See ADR-0012. Nothing in code
+      depends on this. *(Post-logout redirect URI is already registered — done 2026-08-20.)*
 - [ ] **Up-front page/range selection for PDF import** (File tab + Google Drive) — requested 2026-08-19.
       Before extraction starts, let the user pick a page range (e.g. "pages 12–28") and/or specific
       pages, so a large multi-recipe PDF only rasterizes + vision-processes the chosen pages (saves

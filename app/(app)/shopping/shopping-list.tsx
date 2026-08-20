@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
+import { useDebouncedRouterRefresh } from "@/lib/realtime/use-debounced-refresh";
 import { Check, CheckSquare, Copy, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -293,9 +294,11 @@ export function ShoppingList({
   }, [list.id]);
 
   // Azure realtime (ADR-0009): refetch on any shopping change (events carry ids
-  // only). router.refresh() re-runs the server component; sync the fresh items in.
+  // only). Debounced so a burst (e.g. select-all publishing one change, or rapid
+  // toggles) collapses into a single server round-trip instead of many.
+  const debouncedRefresh = useDebouncedRouterRefresh();
   useHouseholdRealtime((e) => {
-    if (e.type === "shopping.changed") router.refresh();
+    if (e.type === "shopping.changed") debouncedRefresh();
   });
   useEffect(() => {
     if (REALTIME_IS_AZURE) setItems(initialItems);
@@ -492,18 +495,25 @@ export function ShoppingList({
                   <span className="text-[10px] text-muted-foreground">
                     {list.length} {list.length === 1 ? "item" : "items"}
                   </span>
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => copyCategoryItems(category, list)}
-                    className="text-muted-foreground transition-colors hover:text-foreground"
-                    aria-label={`Copy ${CATEGORY_LABEL[category] ?? category}`}
-                    title={`Copy ${CATEGORY_LABEL[category] ?? category}`}
+                    className="h-8 gap-1.5"
+                    aria-label={`Copy ${CATEGORY_LABEL[category] ?? category} to clipboard`}
+                    title={`Copy ${CATEGORY_LABEL[category] ?? category} to clipboard`}
                   >
-                    {copiedCategory === category
-                      ? <Check className="h-3.5 w-3.5 text-green-500" />
-                      : <Copy className="h-3.5 w-3.5" />
-                    }
-                  </button>
+                    {copiedCategory === category ? (
+                      <>
+                        <Check className="h-4 w-4 text-green-500" /> Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" /> Copy
+                      </>
+                    )}
+                  </Button>
                 </div>
               </div>
               {list.map((item) => {

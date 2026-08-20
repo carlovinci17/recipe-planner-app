@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { CheckCircle2, CheckCheck, Clock, Trash2, X, XCircle } from "lucide-react";
+import { CheckCircle2, CheckCheck, Clock, Loader2, Trash2, X, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
@@ -271,6 +271,9 @@ function assembleBundle(bundle: { jobs: Job[]; events: Event[]; recipes: ActiveJ
 export function ActiveJobs({ householdId }: { householdId: string }) {
   const supabase = createClient();
   const [jobs, setJobs] = useState<Job[]>([]);
+  // First-load flag so the box shows a spinner instead of popping in whole once
+  // the initial fetch resolves (Import #2).
+  const [loading, setLoading] = useState(true);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [totalLoaded, setTotalLoaded] = useState(0);
   // Map of job_id -> the most recent event kind (drives the progress bar).
@@ -315,7 +318,11 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
     let cancelled = false;
     void (async () => {
       const res = await loadActiveJobsAction({ householdId, limit: PAGE_SIZE + 1 });
-      if (cancelled || !res.ok) return;
+      if (cancelled) return;
+      if (!res.ok) {
+        setLoading(false);
+        return;
+      }
       const list = res.jobs as Job[];
       const more = list.length > PAGE_SIZE;
       const trimmed = more ? list.slice(0, PAGE_SIZE) : list;
@@ -329,6 +336,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
       setExtractionCounts(d.extractionCounts);
       setPersistFailures(d.persistFailures);
       setProgressMeta(d.progressMeta);
+      setLoading(false);
     })();
 
     // Azure realtime path: the Supabase postgres_changes channels below don't
@@ -739,7 +747,26 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
     });
   }
 
-  if (jobs.length === 0) return null;
+  // The box is always present (Import #1): a spinner while the first fetch runs,
+  // and an empty-state message when there are no imports — never disappearing.
+  if (jobs.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <CardTitle className="text-base">Recent imports</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading recent imports…
+            </>
+          ) : (
+            <>No imports yet — import a recipe above and it&apos;ll show up here.</>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   const failedCount = jobs.filter((j) => j.status === "failed").length;
   const inFlightCount = jobs.filter(

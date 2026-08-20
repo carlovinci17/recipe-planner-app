@@ -2,10 +2,21 @@ import "server-only";
 import { and, asc, desc, eq, gte, inArray, isNull, sql as dsql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { recipeIngredients, recipeInstructions, recipes } from "@/lib/db/schema";
+import type { Tx } from "@/lib/db";
 import { env } from "@/lib/env";
+import { ingestionStorage } from "@/lib/ingestion/storage";
 import { runInUserTx } from "./user-tx";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import type { Tables, UpdateTables } from "@/types/database.types";
+
+/** Read a recipe's `image_paths` inside an RLS-scoped tx (Neon path). */
+async function readImagePaths(tx: Tx, recipeId: string): Promise<string[]> {
+  const rows = (await tx.execute(
+    dsql`select image_paths from public.recipes where id = ${recipeId}`,
+  )) as unknown as Array<{ image_paths: string[] | null }>;
+  if (rows.length === 0) throw new Error("Recipe not found");
+  return rows[0]?.image_paths ?? [];
+}
 
 export type RecipeListItem = Pick<
   Tables<"recipes">,
@@ -203,6 +214,35 @@ export const recipeService = {
     return count ?? 0;
   },
 
+  /**
+   * Bulk-publish recipes currently in `needs_review` → `published`. Scoped by
+   * the `status = 'needs_review'` guard so already-published/failed rows are
+   * never reverted. Returns the ids actually flipped (RLS + the status guard
+   * can make this shorter than `recipeIds`). Dual-dispatch: Neon vs Supabase.
+   */
+  async bulkPublish(args: { recipeIds: string[] }): Promise<string[]> {
+    if (args.recipeIds.length === 0) return [];
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx) => {
+        const rows = await tx
+          .update(recipes)
+          .set({ status: "published" })
+          .where(and(inArray(recipes.id, args.recipeIds), eq(recipes.status, "needs_review")))
+          .returning({ id: recipes.id });
+        return rows.map((r) => r.id);
+      });
+    }
+    const supabase = await createSupabaseServerClient();
+    const { error, data } = await supabase
+      .from("recipes")
+      .update({ status: "published" })
+      .eq("status", "needs_review")
+      .in("id", args.recipeIds)
+      .select("id");
+    if (error) throw error;
+    return data?.map((r) => r.id) ?? [];
+  },
+
   /** How many planner entries reference this recipe? Used to gate the delete UI. */
   async countPlannerEntries(recipeId: string): Promise<number> {
     if (env.DATABASE_URL) {
@@ -270,6 +310,14 @@ export const recipeService = {
    * `setCoverImage` to promote a different image.
    */
   async attachImage(args: { recipeId: string; path: string }) {
+    if (env.DATABASE_URL) {
+      await runInUserTx(async (tx) => {
+        const existing = await readImagePaths(tx, args.recipeId);
+        const next = Array.from(new Set([...existing, args.path]));
+        await tx.update(recipes).set({ imagePaths: next }).where(eq(recipes.id, args.recipeId));
+      });
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { data: existing, error: fetchErr } = await supabase
       .from("recipes")
@@ -288,6 +336,14 @@ export const recipeService = {
 
   /** Promote an existing image to position 0 (the visible cover). */
   async setCoverImage(args: { recipeId: string; path: string }) {
+    if (env.DATABASE_URL) {
+      await runInUserTx(async (tx) => {
+        const existing = await readImagePaths(tx, args.recipeId);
+        const next = [args.path, ...existing.filter((p) => p !== args.path)];
+        await tx.update(recipes).set({ imagePaths: next }).where(eq(recipes.id, args.recipeId));
+      });
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { data: existing, error: fetchErr } = await supabase
       .from("recipes")
@@ -306,6 +362,17 @@ export const recipeService = {
   },
 
   async removeImage(args: { recipeId: string; path: string }) {
+    if (env.DATABASE_URL) {
+      await runInUserTx(async (tx) => {
+        const existing = await readImagePaths(tx, args.recipeId);
+        const next = existing.filter((p) => p !== args.path);
+        await tx.update(recipes).set({ imagePaths: next }).where(eq(recipes.id, args.recipeId));
+      });
+      // Storage delete goes through the seam so it lands on Azure Blob when
+      // STORAGE_PROVIDER=azure, Supabase Storage otherwise.
+      await ingestionStorage.remove({ bucket: "recipe-images", paths: [args.path] });
+      return;
+    }
     const supabase = await createSupabaseServerClient();
     const { data: existing, error: fetchErr } = await supabase
       .from("recipes")

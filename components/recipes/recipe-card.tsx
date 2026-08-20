@@ -96,7 +96,11 @@ export function RecipeCard({
           ) : null}
           <div className="line-clamp-2 font-medium leading-snug">{recipe.title}</div>
           {recipe.description ? (
-            <div className="hidden sm:block line-clamp-2 text-sm text-muted-foreground">{recipe.description}</div>
+            <div className="hidden sm:block line-clamp-2 text-sm text-muted-foreground">
+              {recipe.description.length > 120
+                ? `${recipe.description.slice(0, 120).trimEnd()}…`
+                : recipe.description}
+            </div>
           ) : null}
           <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {totalMin > 0 ? (

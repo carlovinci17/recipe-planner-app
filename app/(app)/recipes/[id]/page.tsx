@@ -162,6 +162,43 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
         </section>
       </div>
 
+      {(() => {
+        const n = (recipe.nutrition ?? {}) as Record<string, number | null>;
+        const fields: { key: string; label: string; unit: string }[] = [
+          { key: "calories", label: "Calories", unit: "kcal" },
+          { key: "protein_g", label: "Protein", unit: "g" },
+          { key: "carbs_g", label: "Carbs", unit: "g" },
+          { key: "fat_g", label: "Fat", unit: "g" },
+          { key: "fiber_g", label: "Fiber", unit: "g" },
+          { key: "sugar_g", label: "Sugar", unit: "g" },
+          { key: "sodium_mg", label: "Sodium", unit: "mg" },
+        ];
+        const present = fields.filter((f) => typeof n[f.key] === "number" && n[f.key] !== null);
+        if (present.length === 0) return null;
+        return (
+          <>
+            <Separator />
+            <section>
+              <h2 className="mb-3 font-display text-lg font-semibold">
+                Nutrition{" "}
+                <span className="text-sm font-normal text-muted-foreground">(per serving)</span>
+              </h2>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {present.map((f) => (
+                  <div key={f.key} className="rounded-lg border bg-card p-3">
+                    <div className="text-xs text-muted-foreground">{f.label}</div>
+                    <div className="font-display text-lg font-semibold">
+                      {n[f.key]}
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">{f.unit}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </>
+        );
+      })()}
+
       {recipe.notes ? (
         <>
           <Separator />

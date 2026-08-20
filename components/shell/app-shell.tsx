@@ -57,6 +57,16 @@ export function AppShell({
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Active-nav resolution: pick the single most-specific matching href so a
+  // nested route (e.g. /recipes/import) highlights only its own item, not the
+  // parent (/recipes) whose prefix it also matches.
+  const navHrefs = [...NAV.map((n) => n.href), "/settings"];
+  const activeHref =
+    navHrefs
+      .filter((h) => pathname === h || pathname.startsWith(`${h}/`))
+      .sort((a, b) => b.length - a.length)[0] ?? null;
+  const isActive = (href: string) => href === activeHref;
+
   async function logout() {
     // Signs out the ACTIVE session (Auth.js under Entra) + redirects to /login.
     await signOutAction();
@@ -85,7 +95,7 @@ export function AppShell({
           <nav className="flex flex-col gap-1 p-3">
             {NAV.map((item) => {
               const Icon = item.icon;
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const active = isActive(item.href);
               return (
                 <Link
                   key={item.href}
@@ -108,7 +118,7 @@ export function AppShell({
               onClick={() => setMenuOpen(false)}
               className={cn(
                 "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors",
-                pathname.startsWith("/settings")
+                isActive("/settings")
                   ? "bg-accent text-accent-foreground font-medium"
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
               )}
@@ -147,7 +157,12 @@ export function AppShell({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="rounded-full">
+            <button className="flex items-center gap-2 rounded-full">
+              {user.displayName ? (
+                <span className="hidden max-w-[12rem] truncate text-sm font-medium sm:inline">
+                  {user.displayName}
+                </span>
+              ) : null}
               <Avatar className="h-8 w-8">
                 {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt={user.displayName} /> : null}
                 <AvatarFallback>{initials}</AvatarFallback>
@@ -175,7 +190,7 @@ export function AppShell({
           <nav className="flex flex-col gap-1">
             {NAV.map((item) => {
               const Icon = item.icon;
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const active = isActive(item.href);
               return (
                 <Link
                   key={item.href}
@@ -211,7 +226,7 @@ export function AppShell({
       <nav className="fixed bottom-0 left-0 right-0 z-30 flex h-20 border-t bg-background md:hidden">
         {NAV.filter((n) => !n.primary).map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const active = isActive(item.href);
           return (
             <Link
               key={item.href}

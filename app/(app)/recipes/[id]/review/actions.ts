@@ -16,6 +16,18 @@ const ReviewPayload = z.object({
   sourceName: z.string().max(100).nullable(),
   sourceUrl: z.string().url().max(2000).nullable(),
   tags: z.array(z.string().min(1).max(50)).max(30).default([]),
+  nutrition: z
+    .object({
+      calories: z.number().nonnegative().nullable(),
+      protein_g: z.number().nonnegative().nullable(),
+      carbs_g: z.number().nonnegative().nullable(),
+      fat_g: z.number().nonnegative().nullable(),
+      fiber_g: z.number().nonnegative().nullable(),
+      sugar_g: z.number().nonnegative().nullable(),
+      sodium_mg: z.number().nonnegative().nullable(),
+    })
+    .partial()
+    .default({}),
   ingredients: z
     .array(
       z.object({
@@ -53,6 +65,7 @@ export async function saveReviewAction(input: z.infer<typeof ReviewPayload>) {
     source_name: parsed.data.sourceName,
     source_url: parsed.data.sourceUrl,
     tags: parsed.data.tags,
+    nutrition: parsed.data.nutrition,
     status: "published",
   });
   await recipeService.replaceIngredients(parsed.data.recipeId, parsed.data.ingredients);

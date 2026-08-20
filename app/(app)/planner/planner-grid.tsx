@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
+import { useDebouncedRouterRefresh } from "@/lib/realtime/use-debounced-refresh";
 import { ChefHat, ChevronLeft, ChevronRight, Plus, ShoppingBasket, Trash2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
@@ -297,9 +298,10 @@ export function PlannerGrid({
 
   // Azure realtime (ADR-0009): events carry ids only, so on a planner change we
   // refetch (router.refresh re-runs the server component) instead of applying a
-  // row delta. Trade-off vs the Supabase path: a server round-trip per change.
+  // row delta. Debounced so a copy/move burst collapses into one round-trip.
+  const debouncedRefresh = useDebouncedRouterRefresh();
   useHouseholdRealtime((e) => {
-    if (e.type === "planner.changed") router.refresh();
+    if (e.type === "planner.changed") debouncedRefresh();
   });
   useEffect(() => {
     // Sync the refreshed server data into local state (azure path only).
@@ -621,13 +623,13 @@ export function PlannerGrid({
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 pt-2">
-            <Button variant="outline" className="h-16 flex-col gap-1" onClick={confirmCopy}>
-              <span className="text-lg">📋</span>
+            <Button variant="outline" className="h-auto flex-col gap-1.5 px-4 py-4" onClick={confirmCopy}>
+              <span className="text-lg leading-none">📋</span>
               <span className="font-medium">Copy</span>
               <span className="text-[10px] text-muted-foreground">Keep original</span>
             </Button>
-            <Button className="h-16 flex-col gap-1" onClick={confirmMove}>
-              <span className="text-lg">✂️</span>
+            <Button className="h-auto flex-col gap-1.5 px-4 py-4" onClick={confirmMove}>
+              <span className="text-lg leading-none">✂️</span>
               <span className="font-medium">Move</span>
               <span className="text-[10px] opacity-70">Remove original</span>
             </Button>

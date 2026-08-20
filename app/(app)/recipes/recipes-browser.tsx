@@ -43,6 +43,7 @@ const DIET_TYPES = [
 ];
 
 const TIME_OPTIONS = [10, 20, 30, 60] as const;
+const RATING_OPTIONS = [3, 4, 4.5] as const;
 
 type ChipRemoval = {
   kind: "meal" | "diet" | "cuisine" | "source" | "fav";
@@ -108,6 +109,10 @@ export function RecipesBrowser({
   });
   const [sources, setSources] = useState<string[]>(() => sp("sources")?.split(",").filter(Boolean) ?? []);
   const [favOnly, setFavOnly] = useState(() => sp("fav") === "1");
+  const [minRating, setMinRating] = useState<number | null>(() => {
+    const n = Number(sp("minRating"));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  });
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [query, setQuery] = useState(initialQuery);
   const deferredQuery = useDeferredValue(query);
@@ -121,6 +126,7 @@ export function RecipesBrowser({
     sources?: string[];
     fav?: boolean;
     review?: boolean;
+    minRating?: number | null;
   }) {
     const params = new URLSearchParams(window.location.search);
     const set = (k: string, v: string | null | undefined) => {
@@ -133,6 +139,7 @@ export function RecipesBrowser({
     if ("sources" in patch) set("sources", patch.sources?.join(",") || null);
     if ("fav" in patch) set("fav", patch.fav ? "1" : null);
     if ("review" in patch) set("review", patch.review ? "1" : null);
+    if ("minRating" in patch) set("minRating", patch.minRating ? String(patch.minRating) : null);
     window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
   }
 
@@ -190,9 +197,14 @@ export function RecipesBrowser({
         const recipeSource = getRecipeSourceName(r);
         if (!recipeSource || !sources.includes(recipeSource)) return false;
       }
+      if (minRating) {
+        const agg = ratingAggregates[r.id];
+        // Unrated recipes are excluded from a rating filter (same rule as time).
+        if (!agg || agg.count === 0 || agg.avg < minRating) return false;
+      }
       return true;
     });
-  }, [recipes, deferredQuery, reviewOnly, favOnly, meal, diets, cuisines, maxTime, sources]);
+  }, [recipes, deferredQuery, reviewOnly, favOnly, meal, diets, cuisines, maxTime, sources, minRating, ratingAggregates]);
 
   function commitTextSearch(value: string) {
     // Preserve all active filter params when updating the text query.
@@ -224,7 +236,8 @@ export function RecipesBrowser({
     setSources([]);
     setFavOnly(false);
     setReviewOnly(false);
-    syncUrl({ meal: null, diets: [], cuisines: [], maxTime: null, sources: [], fav: false, review: false });
+    setMinRating(null);
+    syncUrl({ meal: null, diets: [], cuisines: [], maxTime: null, sources: [], fav: false, review: false, minRating: null });
     setQuery("");
     commitTextSearch("");
   }
@@ -252,6 +265,12 @@ export function RecipesBrowser({
       label: `≤${maxTime} min`,
       remove: () => { setMaxTime(null); syncUrl({ maxTime: null }); },
     });
+  if (minRating)
+    activeChips.push({
+      key: `rating-${minRating}`,
+      label: `${minRating}★ & up`,
+      remove: () => { setMinRating(null); syncUrl({ minRating: null }); },
+    });
   for (const s of sources)
     activeChips.push({
       key: `source-${s}`,
@@ -265,6 +284,12 @@ export function RecipesBrowser({
   const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  // Only needs_review recipes can be published, so the Publish action is shown
+  // only when at least one selected recipe is actually in review.
+  const selectedReviewCount = useMemo(
+    () => recipes.filter((r) => selectedIds.has(r.id) && r.status === "needs_review").length,
+    [recipes, selectedIds],
+  );
 
   function toggleSelectMode() {
     setSelectMode((on) => {
@@ -413,8 +438,9 @@ export function RecipesBrowser({
                 <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={(v) => { setCuisines(v); syncUrl({ cuisines: v }); }} emptyMessage={allCuisines.length === 0 ? "No cuisines yet." : "No matches."} searchPlaceholder="Search cuisines..." />
                 <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={(v) => { setSources(v); syncUrl({ sources: v }); }} emptyMessage={allSources.length === 0 ? "No sources yet." : "No matches."} searchPlaceholder="Search sources..." />
               </div>
-              <div className="mt-2">
+              <div className="mt-2 space-y-2">
                 <TimeFilter value={maxTime} onChange={(v) => { setMaxTime(v); syncUrl({ maxTime: v }); }} />
+                <RatingFilter value={minRating} onChange={(v) => { setMinRating(v); syncUrl({ minRating: v }); }} />
               </div>
             </div>
             {activeChips.length > 0 && (
@@ -466,6 +492,7 @@ export function RecipesBrowser({
           <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={(v) => { setCuisines(v); syncUrl({ cuisines: v }); }} emptyMessage={allCuisines.length === 0 ? "No cuisines yet — add tags via the recipe editor." : "No matches."} searchPlaceholder="Search cuisines..." />
           <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={(v) => { setSources(v); syncUrl({ sources: v }); }} emptyMessage={allSources.length === 0 ? "No sources yet — import a recipe from a URL to populate this." : "No matches."} searchPlaceholder="Search sources..." />
           <TimeFilter value={maxTime} onChange={(v) => { setMaxTime(v); syncUrl({ maxTime: v }); }} />
+          <RatingFilter value={minRating} onChange={(v) => { setMinRating(v); syncUrl({ minRating: v }); }} />
         </div>
         {hasAny ? (
           <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
@@ -511,16 +538,18 @@ export function RecipesBrowser({
                   <CheckSquare className="mr-1.5 h-3.5 w-3.5" />
                   {allVisibleSelected ? "Clear all" : `Select all (${visibleIds.length})`}
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={performBulkPublish}
-                  disabled={selectedIds.size === 0 || bulkPublishing || bulkDeleting}
-                >
-                  <Upload className="mr-1.5 h-3.5 w-3.5" />
-                  Publish {selectedIds.size > 0 ? `${selectedIds.size} ` : ""}selected
-                </Button>
+                {selectedReviewCount > 0 ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={performBulkPublish}
+                    disabled={bulkPublishing || bulkDeleting}
+                  >
+                    <Upload className="mr-1.5 h-3.5 w-3.5" />
+                    Publish {selectedReviewCount} selected
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"
@@ -741,6 +770,37 @@ function TimeFilter({
         {TIME_OPTIONS.map((m) => (
           <SegmentButton key={m} active={value === m} onClick={() => onChange(m)}>
             ≤{m}m
+          </SegmentButton>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Single-select minimum-rating filter: Any / 3★ / 4★ / 4.5★. Matches on the
+ * per-recipe average from `ratingAggregates`; unrated recipes are excluded when
+ * a threshold is set (same rule as the time filter).
+ */
+function RatingFilter({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (next: number | null) => void;
+}) {
+  return (
+    <div className="-mx-1 overflow-x-auto px-1">
+      <div className="inline-flex items-center rounded-lg border bg-background p-1">
+        <span className="flex items-center gap-1 px-2 text-sm font-medium text-muted-foreground">
+          <Star className="h-3.5 w-3.5" /> Rating
+        </span>
+        <SegmentButton active={value === null} onClick={() => onChange(null)}>
+          Any
+        </SegmentButton>
+        {RATING_OPTIONS.map((r) => (
+          <SegmentButton key={r} active={value === r} onClick={() => onChange(r)}>
+            {r}★+
           </SegmentButton>
         ))}
       </div>

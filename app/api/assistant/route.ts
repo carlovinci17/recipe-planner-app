@@ -39,7 +39,9 @@ export async function POST(req: Request): Promise<Response> {
     // NOTE: Langfuse tracing here is a follow-up (see instrumentation.ts + docs/TODO.md).
     const res = await app.invoke(
       { messages: [...history, { role: "user", content: message }] },
-      { recursionLimit: 20 },
+      // Bulk turns (e.g. "plan 5 dinners") need many search + propose steps under
+      // the supervisor; 20 was too low and cut multi-meal runs short.
+      { recursionLimit: 40 },
     );
     const msgs = res.messages as Array<{ name?: string; content: unknown }>;
     const { specialist, text } = pickReply(msgs);

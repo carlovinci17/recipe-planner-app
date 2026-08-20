@@ -89,7 +89,8 @@ Rules:
 - Cooking methods: from {baked, grilled, fried, roasted, slow-cooked, no-cook, instant-pot, air-fryer, sous-vide, stovetop}.
 - Occasions: from {weeknight, holiday, party, date-night, meal-prep, kid-friendly, comfort-food, healthy, treat}.
 - Difficulty: one of "easy" | "medium" | "hard".
-- Free-form tags: 5–12 useful descriptors (ingredients-as-tags are OK like "chicken", "lentils").
+- Free-form tags: 8–14 useful descriptors (ingredients-as-tags are OK like "chicken", "lentils"). Aim
+  for the richer end so recipes are discoverable, but never pad with redundant or low-value tags.
 - Be conservative — do not assert vegan/gluten-free unless ingredients clearly support it.
 - Respond with VALID JSON ONLY.`;
 

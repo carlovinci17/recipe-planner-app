@@ -2,6 +2,8 @@ import "server-only";
 import { cache } from "react";
 import { asc, eq, sql } from "drizzle-orm";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { db } from "@/lib/db";
 import { households, householdInvites, householdMembers, profiles } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { runInUserTx } from "./user-tx";
@@ -207,6 +209,37 @@ export const householdService = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  /**
+   * Public lookup of a pending invite by its (secret) token — used by the invite
+   * landing page to show who it's for and steer sign-in to the right email.
+   * Token-scoped and admin/service-role (the invitee isn't authenticated yet);
+   * the random token is the capability. Returns null if not found/expired/used.
+   */
+  async getInviteByToken(token: string): Promise<{ email: string; householdName: string } | null> {
+    if (env.DATABASE_URL) {
+      const rows = (await db.execute(
+        sql`select i.email::text as email, h.name as household_name
+              from public.household_invites i
+              join public.households h on h.id = i.household_id
+             where i.token = ${token} and i.accepted_at is null and i.expires_at > now()
+             limit 1`,
+      )) as unknown as Array<{ email: string; household_name: string }>;
+      const r = rows[0];
+      return r ? { email: r.email, householdName: r.household_name } : null;
+    }
+    const supabase = createSupabaseAdmin();
+    const { data } = await supabase
+      .from("household_invites")
+      .select("email, households(name)")
+      .eq("token", token)
+      .is("accepted_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+    if (!data) return null;
+    const name = (data.households as { name?: string } | null)?.name ?? "the household";
+    return { email: data.email as string, householdName: name };
   },
 
   async acceptInvite(token: string): Promise<string> {

@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { recipeService } from "@/lib/services/recipe-service";
 import { householdService } from "@/lib/services/household-service";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 
 const BulkDeleteSchema = z.object({
@@ -67,17 +66,10 @@ export async function bulkPublishRecipesAction(input: z.infer<typeof BulkPublish
   const parsed = BulkPublishSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Invalid input" };
   try {
-    const supabase = await createSupabaseServerClient();
-    const { error, count, data } = await supabase
-      .from("recipes")
-      .update({ status: "published" }, { count: "exact" })
-      .eq("status", "needs_review")
-      .in("id", parsed.data.recipeIds)
-      .select("id");
-    if (error) throw error;
+    const ids = await recipeService.bulkPublish({ recipeIds: parsed.data.recipeIds });
     revalidatePath("/recipes");
     revalidatePath("/recipes/import");
-    return { ok: true as const, published: count ?? 0, ids: data?.map((r) => r.id) ?? [] };
+    return { ok: true as const, published: ids.length, ids };
   } catch (err) {
     logger.error({ err }, "bulkPublishRecipesAction failed");
     return { ok: false as const, error: (err as Error).message };

@@ -43,6 +43,17 @@ type Recipe = Tables<"recipes">;
 type Ingredient = Tables<"recipe_ingredients">;
 type Instruction = Tables<"recipe_instructions">;
 
+/** Nutrition fields (per serving) — keys match the `nutrition` JSON columns. */
+const NUTRITION_FIELDS = [
+  { key: "calories", label: "Calories", unit: "kcal" },
+  { key: "protein_g", label: "Protein", unit: "g" },
+  { key: "carbs_g", label: "Carbs", unit: "g" },
+  { key: "fat_g", label: "Fat", unit: "g" },
+  { key: "fiber_g", label: "Fiber", unit: "g" },
+  { key: "sugar_g", label: "Sugar", unit: "g" },
+  { key: "sodium_mg", label: "Sodium", unit: "mg" },
+] as const;
+
 export function ReviewForm({
   recipe,
   ingredients: initialIngredients,
@@ -73,6 +84,11 @@ export function ReviewForm({
   const [prep, setPrep] = useState(recipe.prep_time_min ?? 0);
   const [cook, setCook] = useState(recipe.cook_time_min ?? 0);
   const [tags, setTags] = useState<string[]>(recipe.tags ?? []);
+  // Nutrition — extracted into the `nutrition` JSON, now visible + editable.
+  const seedNutrition = (recipe.nutrition ?? {}) as Record<string, number | null>;
+  const [nutrition, setNutrition] = useState<Record<string, number | null>>(() =>
+    Object.fromEntries(NUTRITION_FIELDS.map((f) => [f.key, seedNutrition[f.key] ?? null])),
+  );
   // Source attribution — seeded from auto-populated source_name (or the
   // legacy channel_name) and editable to anything. URL is optional and
   // separate; users can credit a cookbook with no URL or a YouTube
@@ -117,6 +133,7 @@ export function ReviewForm({
         sourceName: recipe.source_name ?? meta?.channel_name ?? "",
         sourceUrl: recipe.source_url ?? "",
         tags: recipe.tags ?? [],
+        nutrition: NUTRITION_FIELDS.map((f) => seedNutrition[f.key] ?? null),
         ingredients: initialIngredients.map((i) => ({
           raw_text: i.raw_text,
           quantity: i.quantity,
@@ -144,6 +161,7 @@ export function ReviewForm({
     sourceName,
     sourceUrl,
     tags,
+    nutrition: NUTRITION_FIELDS.map((f) => nutrition[f.key] ?? null),
     ingredients: ingredients.map((i) => ({
       raw_text: i.raw_text,
       quantity: i.quantity,
@@ -189,6 +207,7 @@ export function ReviewForm({
           sourceName: sourceName.trim() || null,
           sourceUrl: sourceUrl.trim() || null,
           tags,
+          nutrition,
           ingredients: ingredients.map((ing) => ({
             raw_text: ing.raw_text,
             section: ing.section,
@@ -238,6 +257,7 @@ export function ReviewForm({
         sourceName: sourceName.trim() || null,
         sourceUrl: sourceUrl.trim() || null,
         tags,
+        nutrition,
         ingredients: ingredients.map((ing) => ({
           raw_text: ing.raw_text,
           section: ing.section,
@@ -315,24 +335,27 @@ export function ReviewForm({
                 <Input
                   type="number"
                   inputMode="numeric"
+                  min={0}
                   value={servings || ""}
-                  onChange={(e) => setServings(Number(e.target.value) || 0)}
+                  onChange={(e) => setServings(Math.max(0, Number(e.target.value) || 0))}
                 />
               </Field>
               <Field label="Prep (min)">
                 <Input
                   type="number"
                   inputMode="numeric"
+                  min={0}
                   value={prep || ""}
-                  onChange={(e) => setPrep(Number(e.target.value) || 0)}
+                  onChange={(e) => setPrep(Math.max(0, Number(e.target.value) || 0))}
                 />
               </Field>
               <Field label="Cook (min)">
                 <Input
                   type="number"
                   inputMode="numeric"
+                  min={0}
                   value={cook || ""}
-                  onChange={(e) => setCook(Number(e.target.value) || 0)}
+                  onChange={(e) => setCook(Math.max(0, Number(e.target.value) || 0))}
                 />
               </Field>
             </div>
@@ -357,6 +380,30 @@ export function ReviewForm({
             <Field label="Tags">
               <TagEditor value={tags} onChange={setTags} placeholder="weeknight, comfort-food..." />
             </Field>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="space-y-3 pt-6">
+            <p className="text-sm font-medium">Nutrition <span className="font-normal text-muted-foreground">(per serving)</span></p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {NUTRITION_FIELDS.map((f) => (
+                <Field key={f.key} label={`${f.label} (${f.unit})`}>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    value={nutrition[f.key] ?? ""}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const v = raw === "" ? null : Math.max(0, Number(raw));
+                      setNutrition((prev) => ({ ...prev, [f.key]: Number.isNaN(v as number) ? null : v }));
+                    }}
+                    placeholder="—"
+                  />
+                </Field>
+              ))}
+            </div>
           </CardContent>
         </Card>
 

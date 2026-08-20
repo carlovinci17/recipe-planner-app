@@ -259,6 +259,7 @@ function ListRow({
         onClick={onActivate}
         className="min-w-0 flex-1 text-left"
         aria-current={isActive ? "true" : undefined}
+        title={isActive ? list.name : `Make “${list.name}” the active list`}
       >
         <div className="flex items-center gap-1.5">
           {isActive ? (

@@ -28,6 +28,17 @@ type Msg = {
   proposals?: AssistantProposal[];
 };
 
+/**
+ * Render assistant text. The agents are told to reply in plain prose, but if a
+ * model still emits `**bold**` we convert it rather than showing literal stars.
+ * Newlines are preserved by the container's `whitespace-pre-wrap`.
+ */
+function renderRichText(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    /^\*\*[^*]+\*\*$/.test(part) ? <strong key={i}>{part.slice(2, -2)}</strong> : part,
+  );
+}
+
 /** One-line human summary of a proposal for the Confirm card. */
 function describeProposal(p: AssistantProposal): string {
   return p.kind === "generate_shopping_list"
@@ -139,7 +150,7 @@ export function KitchenAssistant() {
                       m.role === "user" ? "self-end bg-primary text-primary-foreground" : "self-start bg-muted"
                     }`}
                   >
-                    {m.content}
+                    {m.role === "assistant" ? renderRichText(m.content) : m.content}
                   </div>
                   {m.proposals?.map((p, pi) => {
                     const key = `${i}-${pi}`;
