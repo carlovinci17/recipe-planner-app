@@ -1,15 +1,52 @@
 name: Build, push & deploy
 
+# main is the deploy branch: merging a pull request into it ships to production.
+# Pull requests targeting main run `verify` only — they never build or deploy.
 on:
   push:
-    branches: [version2/plan]
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch: # lets you also trigger it manually from the Actions tab
 
 env:
   IMAGE: ghcr.io/carlovinci17/recipe-planner
 
 jobs:
+  # Gate for pull requests. Typecheck needs no env (see lib/env.ts — it is only
+  # read at runtime), and the image build is the honest signal that the app
+  # actually compiles, so it runs here too with push disabled.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_REALTIME_PROVIDER=${{ vars.NEXT_PUBLIC_REALTIME_PROVIDER }}
+            NEXT_PUBLIC_STORAGE_PROVIDER=${{ vars.NEXT_PUBLIC_STORAGE_PROVIDER }}
+
   build:
+    # Pull requests stop at `verify` — only a merge into main ships.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -42,6 +79,7 @@ jobs:
 
   deploy:
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       id-token: write # lets the job request an OIDC token for Azure
