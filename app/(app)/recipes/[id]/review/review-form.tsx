@@ -34,6 +34,7 @@ import { deleteRecipeAction } from "../actions";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
 import { RecipeImageUploader } from "@/components/recipes/recipe-image-uploader";
 import { TagEditor } from "@/components/recipes/tag-editor";
+import { ImproveWithAI } from "@/components/recipes/improve-with-ai";
 import { DeleteRecipeButton } from "../delete-recipe-button";
 import { useUnsavedChangesGuard } from "@/lib/recipes/use-unsaved-changes-guard";
 import { CoverPicker } from "./cover-picker";
@@ -42,6 +43,11 @@ import { clearRecipeCoverAction } from "../actions";
 type Recipe = Tables<"recipes">;
 type Ingredient = Tables<"recipe_ingredients">;
 type Instruction = Tables<"recipe_instructions">;
+type Difficulty = "easy" | "medium" | "hard" | null;
+
+/** Mirrors the recipe browser's meal filter so a tagged recipe is findable. */
+const MEAL_TYPE_OPTIONS = ["breakfast", "lunch", "dinner", "snack", "dessert"] as const;
+const DIFFICULTY_OPTIONS = ["easy", "medium", "hard"] as const;
 
 /** Nutrition fields (per serving) — keys match the `nutrition` JSON columns. */
 const NUTRITION_FIELDS = [
@@ -84,6 +90,20 @@ export function ReviewForm({
   const [prep, setPrep] = useState(recipe.prep_time_min ?? 0);
   const [cook, setCook] = useState(recipe.cook_time_min ?? 0);
   const [tags, setTags] = useState<string[]>(recipe.tags ?? []);
+  // Taxonomy. Until now these were only ever written by the AI tagger during
+  // import, so a hand-typed recipe had empty meal_types and was invisible to
+  // the planner's meal-type filters. Editable here, and fillable in one click
+  // via "Improve with AI".
+  const [mealTypes, setMealTypes] = useState<string[]>(recipe.meal_types ?? []);
+  const [difficulty, setDifficulty] = useState<Difficulty>(
+    (recipe.difficulty as Difficulty) ?? null,
+  );
+  // Not surfaced as editors (the AI is far better at these than a text box),
+  // but carried through so an accepted suggestion survives Save.
+  const [cuisines, setCuisines] = useState<string[]>(recipe.cuisines ?? []);
+  const [dietTypes, setDietTypes] = useState<string[]>(recipe.diet_types ?? []);
+  const [cookingMethods, setCookingMethods] = useState<string[]>(recipe.cooking_methods ?? []);
+  const [occasions, setOccasions] = useState<string[]>(recipe.occasions ?? []);
   // Nutrition — extracted into the `nutrition` JSON, now visible + editable.
   const seedNutrition = (recipe.nutrition ?? {}) as Record<string, number | null>;
   const [nutrition, setNutrition] = useState<Record<string, number | null>>(() =>
@@ -133,6 +153,12 @@ export function ReviewForm({
         sourceName: recipe.source_name ?? meta?.channel_name ?? "",
         sourceUrl: recipe.source_url ?? "",
         tags: recipe.tags ?? [],
+        mealTypes: recipe.meal_types ?? [],
+        difficulty: recipe.difficulty ?? null,
+        cuisines: recipe.cuisines ?? [],
+        dietTypes: recipe.diet_types ?? [],
+        cookingMethods: recipe.cooking_methods ?? [],
+        occasions: recipe.occasions ?? [],
         nutrition: NUTRITION_FIELDS.map((f) => seedNutrition[f.key] ?? null),
         ingredients: initialIngredients.map((i) => ({
           raw_text: i.raw_text,
@@ -161,6 +187,12 @@ export function ReviewForm({
     sourceName,
     sourceUrl,
     tags,
+    mealTypes,
+    difficulty,
+    cuisines,
+    dietTypes,
+    cookingMethods,
+    occasions,
     nutrition: NUTRITION_FIELDS.map((f) => nutrition[f.key] ?? null),
     ingredients: ingredients.map((i) => ({
       raw_text: i.raw_text,
@@ -187,6 +219,57 @@ export function ReviewForm({
     recipe.source_kind === "manual" && recipe.title === "Untitled recipe";
   const guard = useUnsavedChangesGuard({ when: isDirty || isFreshManual });
 
+  // Both save paths (Save, and save-then-navigate from the unsaved-changes
+  // dialog) send the identical payload — build it once so the two can't drift.
+  function buildSavePayload() {
+    return {
+      recipeId: recipe.id,
+      title: title.trim(),
+      description: description.trim() || null,
+      servings: servings || null,
+      prepTimeMin: prep || null,
+      cookTimeMin: cook || null,
+      sourceName: sourceName.trim() || null,
+      sourceUrl: sourceUrl.trim() || null,
+      tags,
+      mealTypes,
+      cuisines,
+      dietTypes,
+      cookingMethods,
+      occasions,
+      difficulty,
+      nutrition,
+      ingredients: ingredients.map((ing) => ({
+        raw_text: ing.raw_text,
+        section: ing.section,
+        quantity: ing.quantity,
+        unit: ing.unit,
+        ingredient: ing.ingredient,
+        notes: ing.notes,
+        optional: ing.optional,
+      })),
+      instructions: instructions.map((step) => ({
+        text: step.text,
+        section: step.section,
+        duration_min: step.duration_min,
+      })),
+    };
+  }
+
+  /** The live draft sent to "Improve with AI" — plain strings, not row shapes. */
+  function buildImproveDraft() {
+    return {
+      recipeId: recipe.id,
+      title: title.trim(),
+      description: description.trim() || null,
+      servings: servings || null,
+      prepTimeMin: prep || null,
+      cookTimeMin: cook || null,
+      ingredients: ingredients.map((i) => i.raw_text).filter(Boolean),
+      instructions: instructions.map((s) => s.text).filter(Boolean),
+    };
+  }
+
   // Save the current form state, then run a follow-up callback (used by the
   // unsaved-changes dialog to navigate after a successful save).
   async function saveAndThen(after?: () => void) {
@@ -197,32 +280,7 @@ export function ReviewForm({
           resolve(false);
           return;
         }
-        const result = await saveReviewAction({
-          recipeId: recipe.id,
-          title: title.trim(),
-          description: description.trim() || null,
-          servings: servings || null,
-          prepTimeMin: prep || null,
-          cookTimeMin: cook || null,
-          sourceName: sourceName.trim() || null,
-          sourceUrl: sourceUrl.trim() || null,
-          tags,
-          nutrition,
-          ingredients: ingredients.map((ing) => ({
-            raw_text: ing.raw_text,
-            section: ing.section,
-            quantity: ing.quantity,
-            unit: ing.unit,
-            ingredient: ing.ingredient,
-            notes: ing.notes,
-            optional: ing.optional,
-          })),
-          instructions: instructions.map((step) => ({
-            text: step.text,
-            section: step.section,
-            duration_min: step.duration_min,
-          })),
-        });
+        const result = await saveReviewAction(buildSavePayload());
         if (!result.ok) {
           toast.error(result.error ?? "Save failed");
           resolve(false);
@@ -247,32 +305,7 @@ export function ReviewForm({
 
   function save() {
     start(async () => {
-      const result = await saveReviewAction({
-        recipeId: recipe.id,
-        title: title.trim(),
-        description: description.trim() || null,
-        servings: servings || null,
-        prepTimeMin: prep || null,
-        cookTimeMin: cook || null,
-        sourceName: sourceName.trim() || null,
-        sourceUrl: sourceUrl.trim() || null,
-        tags,
-        nutrition,
-        ingredients: ingredients.map((ing) => ({
-          raw_text: ing.raw_text,
-          section: ing.section,
-          quantity: ing.quantity,
-          unit: ing.unit,
-          ingredient: ing.ingredient,
-          notes: ing.notes,
-          optional: ing.optional,
-        })),
-        instructions: instructions.map((step) => ({
-          text: step.text,
-          section: step.section,
-          duration_min: step.duration_min,
-        })),
-      });
+      const result = await saveReviewAction(buildSavePayload());
       if (result.ok) {
         toast.success("Recipe saved");
         router.push(`/recipes/${recipe.id}`);
@@ -380,6 +413,88 @@ export function ReviewForm({
             <Field label="Tags">
               <TagEditor value={tags} onChange={setTags} placeholder="weeknight, comfort-food..." />
             </Field>
+
+            <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+              <Field label="Meal type">
+                <div className="flex flex-wrap gap-1.5">
+                  {MEAL_TYPE_OPTIONS.map((m) => {
+                    const on = mealTypes.includes(m);
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() =>
+                          setMealTypes((prev) =>
+                            on ? prev.filter((v) => v !== m) : [...prev, m],
+                          )
+                        }
+                        className={`rounded-full border px-3 py-1 text-sm capitalize transition-colors ${
+                          on
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "bg-background hover:bg-accent"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
+              <Field label="Difficulty">
+                <div className="flex flex-wrap gap-1.5">
+                  {DIFFICULTY_OPTIONS.map((d) => {
+                    const on = difficulty === d;
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setDifficulty(on ? null : d)}
+                        className={`rounded-full border px-3 py-1 text-sm capitalize transition-colors ${
+                          on
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "bg-background hover:bg-accent"
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
+            </div>
+
+            {mealTypes.length === 0 && (
+              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Without a meal type this recipe won&apos;t show up in the planner&apos;s
+                breakfast/lunch/dinner filters. Pick one, or let AI suggest it.
+              </p>
+            )}
+
+            <Separator />
+
+            <ImproveWithAI
+              getDraft={buildImproveDraft}
+              onApply={(s) => {
+                // Taxonomy is replaced wholesale — it's the AI's job. Tags are
+                // merged so anything the user typed by hand survives.
+                setMealTypes(s.mealTypes);
+                setCuisines(s.cuisines);
+                setDietTypes(s.dietTypes);
+                setCookingMethods(s.cookingMethods);
+                setOccasions(s.occasions);
+                if (s.difficulty) setDifficulty(s.difficulty);
+                setTags((prev) => Array.from(new Set([...prev, ...s.tags])));
+                // Plain fields: the action only ever returns these for fields
+                // left blank, so this can't clobber the user's own words.
+                if (s.description) setDescription(s.description);
+                if (s.servings) setServings(s.servings);
+                if (s.prepTimeMin) setPrep(s.prepTimeMin);
+                if (s.cookTimeMin) setCook(s.cookTimeMin);
+              }}
+            />
           </CardContent>
         </Card>
 

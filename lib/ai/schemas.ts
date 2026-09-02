@@ -126,6 +126,38 @@ export const RecipeTagsSchema = z.object({
 export type RecipeTags = z.infer<typeof RecipeTagsSchema>;
 
 // =====================================================================
+// "Improve with AI" (manual recipe entry)
+// =====================================================================
+// Powers the review/edit form's Improve button. Same taxonomy as tagging,
+// plus the handful of plain fields a hand-typed recipe usually leaves blank.
+//
+// Every field is a *suggestion* the user accepts or rejects — nothing here is
+// written straight to the DB. The plain fields are nullable so the model can
+// say "no opinion" rather than inventing a number, and the action layer only
+// offers them for fields the user actually left empty.
+
+/** The meal types the recipe browser filters on (recipes-browser.tsx). */
+export const MEAL_TYPE_VALUES = ["breakfast", "lunch", "dinner", "snack", "dessert"] as const;
+
+export const RecipeImprovementSchema = z.object({
+  /** At least one — a recipe with no meal type is invisible to the planner filters. */
+  meal_types: z.array(z.enum(MEAL_TYPE_VALUES)).min(1).max(3),
+  cuisines: z.array(z.string()).max(2).default([]),
+  diet_types: z.array(z.string()).max(8).default([]),
+  cooking_methods: z.array(z.string()).max(5).default([]),
+  occasions: z.array(z.string()).max(5).default([]),
+  difficulty: z.enum(["easy", "medium", "hard"]).nullable().default(null),
+  tags: z.array(z.string()).max(15).default([]),
+  /** One or two sentences. Only offered when the user left the description blank. */
+  description: z.string().max(400).nullable().default(null),
+  servings: z.number().int().min(1).max(50).nullable().default(null),
+  prep_time_min: z.number().int().min(0).max(1440).nullable().default(null),
+  cook_time_min: z.number().int().min(0).max(1440).nullable().default(null),
+});
+
+export type RecipeImprovement = z.infer<typeof RecipeImprovementSchema>;
+
+// =====================================================================
 // Ingredient normalization (used by shopping-list aggregation)
 // =====================================================================
 

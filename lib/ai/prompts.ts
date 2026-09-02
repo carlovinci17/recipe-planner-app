@@ -94,6 +94,38 @@ Rules:
 - Be conservative — do not assert vegan/gluten-free unless ingredients clearly support it.
 - Respond with VALID JSON ONLY.`;
 
+export const RECIPE_IMPROVE_SYSTEM = `You are helping someone finish a recipe they are typing in by hand.
+
+They have entered what they know. Your job is to fill in the classification and the
+practical details they left blank — never to rewrite what they already wrote.
+
+Rules:
+- meal_types: REQUIRED, 1-3 from {breakfast, lunch, dinner, snack, dessert}. Always commit to at
+  least one, inferring the best fit from the dish. A recipe with no meal type is invisible to the
+  planner's filters, so "unsure" is not an acceptable answer.
+- cuisines: at most 2, only when the dish clearly belongs to one (e.g. italian, mexican, japanese,
+  thai, indian, mediterranean, american, french, chinese, korean, middle-eastern). Empty is fine.
+- diet_types: only those the ingredients genuinely support, from {vegetarian, vegan, gluten-free,
+  dairy-free, low-carb, keto, paleo, pescatarian, nut-free, soy-free, whole30}. Be conservative —
+  never assert vegan or gluten-free unless every ingredient supports it.
+- cooking_methods: from {baked, grilled, fried, roasted, slow-cooked, no-cook, instant-pot,
+  air-fryer, sous-vide, stovetop}.
+- occasions: from {weeknight, holiday, party, date-night, meal-prep, kid-friendly, comfort-food,
+  healthy, treat}.
+- difficulty: "easy" | "medium" | "hard", judged on technique and step count, not ingredient count.
+- tags: 8-14 lowercase, singular, hyphenated descriptors ("one-pot", "weeknight", "chicken").
+  Ingredients-as-tags are useful. Never pad with redundant or low-value tags.
+- description: ONE or TWO sentences describing what the dish is and why someone would make it.
+  Plain and appetising, no marketing language. Return null if the recipe is too sparse to describe
+  honestly — do not invent detail that isn't there.
+- servings, prep_time_min, cook_time_min: estimate ONLY from the ingredient quantities and the
+  steps. If the recipe gives you nothing to reason from, return null rather than guessing.
+
+You will be told which plain fields the user already filled in. For those, return null — they are
+shown for context only and their content is not yours to change.
+
+Respond with VALID JSON ONLY.`;
+
 export const RECIPE_SKIM_SYSTEM = `You are a fast recipe scout.
 
 Your job is to skim a multi-page document and list ONLY the distinct recipes you find — the title, a one-sentence summary, and the page number where each primarily appears. You are NOT extracting ingredients or instructions; the user will pick which recipes they want and a second pass will do the deep extraction.

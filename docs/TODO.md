@@ -30,6 +30,11 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
         Drive — no up-front preview available, so a numeric range input (optionally read page count first).
       - Worth a short grill/design pass; own feature, not cutover-critical.
 - [ ] **Every recipe must get ≥1 meal-type** (breakfast / lunch / dinner / snack) — noticed 2026-08-19
+      **Partly done (2026-09-02):** the *manual* path is covered — the review/edit form now has a
+      meal-type editor, warns when it's empty, and "Improve with AI" (`improveRecipe`, schema requires
+      `meal_types.min(1)`) fills it in one click. **Still open:** the *import* path — `RECIPE_TAGGING_SYSTEM`
+      / `applyRecipeTags` can still land `meal_types: []`. Apply the same "always commit to one" wording
+      from `RECIPE_IMPROVE_SYSTEM`, and/or backfill existing empties.
       when a URL import ("Crispy Parmesan Crusted Chicken") landed with `meal_types: []`. The tagger
       (`RECIPE_TAGGING_SYSTEM` prompt + `tagRecipe` → `applyRecipeTags`) leaves it empty when the model
       doesn't commit. Fix at the prompt (require at least one of the four, inferring the best fit) and/or

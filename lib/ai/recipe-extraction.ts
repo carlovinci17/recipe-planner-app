@@ -7,6 +7,8 @@ import {
   type RecipeSkimResult,
   RecipeTagsSchema,
   type RecipeTags,
+  RecipeImprovementSchema,
+  type RecipeImprovement,
 } from "./schemas";
 import {
   RECIPE_EXTRACTION_SCHEMA_HINT,
@@ -14,6 +16,7 @@ import {
   RECIPE_SKIM_SCHEMA_HINT,
   RECIPE_SKIM_SYSTEM,
   RECIPE_TAGGING_SYSTEM,
+  RECIPE_IMPROVE_SYSTEM,
 } from "./prompts";
 import { env } from "@/lib/env";
 import type { AIChatMessage, StructuredCallResult } from "./types";
@@ -174,6 +177,45 @@ export async function tagRecipe(recipe: {
           description: recipe.description ?? null,
           ingredients: recipe.ingredients.slice(0, 60),
           instructions: (recipe.instructions ?? []).slice(0, 30),
+        }),
+      },
+    ],
+  });
+}
+
+/**
+ * "Improve with AI" on the manual entry / review form. Classifies a hand-typed
+ * recipe (meal types, tags, cuisine, diet, difficulty) and estimates the plain
+ * fields the user left blank.
+ *
+ * Reads the *draft in the form*, not the saved row — the user is usually still
+ * mid-entry. `filledFields` names the plain fields they already completed so the
+ * model returns null for those instead of second-guessing their wording.
+ */
+export async function improveRecipe(recipe: {
+  title: string;
+  description?: string | null;
+  ingredients: string[];
+  instructions?: string[];
+  filledFields: string[];
+}): Promise<StructuredCallResult<RecipeImprovement>> {
+  return ai.callStructured({
+    schema: RecipeImprovementSchema,
+    schemaName: "recipe_improvement",
+    // Same tier as tagging: this is classification plus light estimation, not
+    // reasoning. Haiku rejects `effort`/`thinking`, so neither is passed.
+    model: env.ANTHROPIC_MODEL_FAST,
+    maxOutputTokens: 900,
+    messages: [
+      { role: "system", content: RECIPE_IMPROVE_SYSTEM },
+      {
+        role: "user",
+        content: JSON.stringify({
+          title: recipe.title,
+          description: recipe.description ?? null,
+          ingredients: recipe.ingredients.slice(0, 60),
+          instructions: (recipe.instructions ?? []).slice(0, 30),
+          already_filled_by_user: recipe.filledFields,
         }),
       },
     ],
