@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { recipeService } from "@/lib/services/recipe-service";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { ingestionService } from "@/lib/services/ingestion-service";
 import { logger } from "@/lib/logger";
 
 const ReviewPayload = z.object({
@@ -76,12 +76,7 @@ export async function saveReviewAction(input: z.infer<typeof ReviewPayload>) {
   // saved this recipe. Best-effort: not all recipes have a job (manual
   // entries don't), and a missing row isn't an error.
   try {
-    const supabase = await createSupabaseServerClient();
-    await supabase
-      .from("ingestion_jobs")
-      .update({ status: "published" })
-      .eq("recipe_id", parsed.data.recipeId)
-      .eq("status", "needs_review");
+    await ingestionService.markJobPublishedForRecipe(parsed.data.recipeId);
   } catch (err) {
     logger.warn({ err }, "failed to bump ingestion_job status to published");
   }

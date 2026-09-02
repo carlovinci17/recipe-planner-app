@@ -262,6 +262,44 @@ export const recipeService = {
     return count ?? 0;
   },
 
+  /**
+   * Published recipes in the same household sharing this title (case-insensitive
+   * exact match) — the duplicate warning on the review screen. Excludes the
+   * recipe being reviewed.
+   */
+  async findPublishedDuplicates(args: {
+    householdId: string;
+    title: string;
+    excludeRecipeId: string;
+    limit?: number;
+  }): Promise<Array<{ id: string; title: string }>> {
+    const limit = args.limit ?? 3;
+    if (env.DATABASE_URL) {
+      return runInUserTx(async (tx) => {
+        const rows = (await tx.execute(
+          dsql`select id, title from public.recipes
+               where household_id = ${args.householdId}
+                 and status = 'published'
+                 and id <> ${args.excludeRecipeId}
+                 and lower(title) = lower(${args.title})
+               limit ${limit}`,
+        )) as unknown as Array<{ id: string; title: string }>;
+        return rows;
+      });
+    }
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("recipes")
+      .select("id, title")
+      .eq("household_id", args.householdId)
+      .eq("status", "published")
+      .neq("id", args.excludeRecipeId)
+      .ilike("title", args.title)
+      .limit(limit);
+    if (error) throw error;
+    return data ?? [];
+  },
+
   async update(recipeId: string, patch: UpdateTables<"recipes">) {
     if (env.DATABASE_URL) {
       // patch keys are snake_case (DB columns); Drizzle `set` wants the schema's

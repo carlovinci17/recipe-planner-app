@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { integrationService } from "@/lib/services/integration-service";
 import { getActiveHousehold } from "@/lib/services/active-household";
 import { DriveFolderManager } from "./drive-folder-manager";
 import { DriveAccountActions } from "./drive-account-actions";
@@ -19,20 +19,11 @@ export default async function IntegrationsPage({
 }) {
   const { error: oauthError, connected } = await searchParams;
   const household = await getActiveHousehold();
-  const supabase = await createSupabaseServerClient();
 
-  const { data: account } = await supabase
-    .from("integration_accounts")
-    .select("*")
-    .eq("household_id", household.id)
-    .eq("provider", "google_drive")
-    .maybeSingle();
-
-  const { data: folders } = await supabase
-    .from("drive_watched_folders")
-    .select("*")
-    .eq("household_id", household.id)
-    .order("created_at", { ascending: false });
+  const [account, folders] = await Promise.all([
+    integrationService.getDriveAccount(household.id),
+    integrationService.listWatchedFolders(household.id),
+  ]);
 
   return (
     <div className="container max-w-2xl space-y-6 py-6">

@@ -6,7 +6,6 @@ import { recipeService } from "@/lib/services/recipe-service";
 import { ratingService } from "@/lib/services/rating-service";
 import { plannerService } from "@/lib/services/planner-service";
 import { ingestionStorage } from "@/lib/ingestion/storage";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import type { MealSlot } from "@/types/database.types";
 
@@ -249,13 +248,16 @@ export async function cropAndSaveCoverAction(input: z.infer<typeof CropCoverSche
       .jpeg({ quality: 82, mozjpeg: true })
       .toBuffer();
 
-    // Upload the cropped image alongside the source pages
-    const supabase = createSupabaseAdmin();
+    // Upload the cropped image alongside the source pages. Must go through the
+    // storage seam: writing straight to Supabase here while /api/images reads
+    // from Azure Blob meant the new cover saved but never rendered.
     const croppedPath = sourcePath.replace(/\/[^/]+$/, `/cover-crop-${Date.now()}.jpg`);
-    const { error: upErr } = await supabase.storage
-      .from(ingestionStorage.uploadsBucket)
-      .upload(croppedPath, cropped, { contentType: "image/jpeg", upsert: true });
-    if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+    await ingestionStorage.uploadTo({
+      bucket: ingestionStorage.uploadsBucket,
+      path: croppedPath,
+      buffer: cropped,
+      contentType: "image/jpeg",
+    });
 
     // Point the recipe's cover at the new cropped image, reset focal to center
     await recipeService.update(recipeId, {

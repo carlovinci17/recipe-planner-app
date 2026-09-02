@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { getActiveHousehold } from "@/lib/services/active-household";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { integrationService } from "@/lib/services/integration-service";
+import { logger } from "@/lib/logger";
 import { DriveFolderManager } from "@/app/(app)/settings/integrations/drive-folder-manager";
 import { ImportUrl } from "./import-url";
 import { ImportPhoto } from "./import-photo";
@@ -17,21 +18,21 @@ export const metadata = { title: "Import recipe" };
 
 export default async function ImportPage() {
   const household = await getActiveHousehold();
-  const supabase = await createSupabaseServerClient();
 
-  const [{ data: account }, { data: folders }] = await Promise.all([
-    supabase
-      .from("integration_accounts")
-      .select("*")
-      .eq("household_id", household.id)
-      .eq("provider", "google_drive")
-      .maybeSingle(),
-    supabase
-      .from("drive_watched_folders")
-      .select("*")
-      .eq("household_id", household.id)
-      .order("created_at", { ascending: false }),
-  ]);
+  // Google Drive is a secondary tab and is currently a disabled feature, so it
+  // must never be able to take the page down — uploading a file is the primary
+  // job here. A failure degrades the Drive tab to "not connected" and leaves the
+  // File / URL / Manual tabs working.
+  let account: Awaited<ReturnType<typeof integrationService.getDriveAccount>> = null;
+  let folders: Awaited<ReturnType<typeof integrationService.listWatchedFolders>> = [];
+  try {
+    [account, folders] = await Promise.all([
+      integrationService.getDriveAccount(household.id),
+      integrationService.listWatchedFolders(household.id),
+    ]);
+  } catch (err) {
+    logger.error({ err }, "import page: Drive integration lookup failed");
+  }
 
   return (
     <div className="container max-w-3xl space-y-6 py-6">

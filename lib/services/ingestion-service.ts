@@ -339,6 +339,32 @@ export const ingestionService = {
   },
 
   /**
+   * Flip the originating job to "published" once the user saves the reviewed
+   * recipe, so "Recent imports" shows "Saved" rather than "Ready for review".
+   * Best-effort and cosmetic: manual recipes have no job, and a missing row is
+   * not an error.
+   */
+  async markJobPublishedForRecipe(recipeId: string): Promise<void> {
+    if (env.DATABASE_URL) {
+      await runInUserTx(async (tx) => {
+        await tx
+          .update(ingestionJobs)
+          .set({ status: "published" })
+          .where(
+            and(eq(ingestionJobs.recipeId, recipeId), eq(ingestionJobs.status, "needs_review")),
+          );
+      });
+      return;
+    }
+    const supabase = await createSupabaseServerClient();
+    await supabase
+      .from("ingestion_jobs")
+      .update({ status: "published" })
+      .eq("recipe_id", recipeId)
+      .eq("status", "needs_review");
+  },
+
+  /**
    * User-initiated cancel of an in-flight import. Soft-cancel: marks the job
    * `failed` with `error="Cancelled by user"` only if it's still in `draft`
    * or `processing`. The guard prevents racing with a completion that

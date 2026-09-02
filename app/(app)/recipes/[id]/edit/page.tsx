@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { recipeService } from "@/lib/services/recipe-service";
 import { getRecipePermissions } from "@/lib/services/permissions";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { ingestionStore } from "@/lib/ingestion/store";
+import { logger } from "@/lib/logger";
 import { ReviewForm } from "../review/review-form";
 import { BackLink } from "@/components/ui/back-link";
 
@@ -35,13 +36,12 @@ export default async function EditRecipePage({ params }: { params: Promise<{ id:
   // and the CoverPicker renders nothing.
   let sourcePages: string[] = [];
   if (bundle.recipe.ingestion_job_id) {
-    const supabase = await createSupabaseServerClient();
-    const { data } = await supabase
-      .from("ingestion_jobs")
-      .select("page_image_paths")
-      .eq("id", bundle.recipe.ingestion_job_id)
-      .maybeSingle();
-    sourcePages = data?.page_image_paths ?? [];
+    try {
+      const job = await ingestionStore.getJob(bundle.recipe.ingestion_job_id);
+      sourcePages = job?.page_image_paths ?? [];
+    } catch (err) {
+      logger.error({ err }, "edit page: source-page lookup failed");
+    }
   }
 
   return (

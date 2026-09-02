@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { recipeService } from "@/lib/services/recipe-service";
 import { getRecipePermissions } from "@/lib/services/permissions";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { ingestionStore } from "@/lib/ingestion/store";
+import { logger } from "@/lib/logger";
 import { ReviewForm } from "./review-form";
 import { BackLink } from "@/components/ui/back-link";
 
@@ -30,29 +31,32 @@ export default async function RecipeReviewPage({ params }: { params: Promise<{ i
   // list of source pages. Surface them to the form so the CoverPicker can
   // offer them as cover-image candidates. Single-recipe / non-PDF imports
   // typically have a 1-element list (or none).
+  //
+  // This and the duplicate lookup below are both advisory, so neither may block
+  // saving a reviewed recipe — a failure degrades to "no candidates" / "no
+  // duplicates" rather than taking the page down.
   let sourcePages: string[] = [];
   if (bundle.recipe.ingestion_job_id) {
-    const supabase = await createSupabaseServerClient();
-    const { data } = await supabase
-      .from("ingestion_jobs")
-      .select("page_image_paths")
-      .eq("id", bundle.recipe.ingestion_job_id)
-      .maybeSingle();
-    sourcePages = data?.page_image_paths ?? [];
+    try {
+      const job = await ingestionStore.getJob(bundle.recipe.ingestion_job_id);
+      sourcePages = job?.page_image_paths ?? [];
+    } catch (err) {
+      logger.error({ err }, "review page: source-page lookup failed");
+    }
   }
 
-  // Check for published recipes in the same household with the same title.
-  // Uses ilike (case-insensitive exact match) — good enough to catch the
-  // common case where the same recipe is extracted from two different files.
-  const supabase = await createSupabaseServerClient();
-  const { data: duplicates } = await supabase
-    .from("recipes")
-    .select("id, title")
-    .eq("household_id", bundle.recipe.household_id)
-    .eq("status", "published")
-    .neq("id", bundle.recipe.id)
-    .ilike("title", bundle.recipe.title)
-    .limit(3);
+  // Published recipes in the same household with the same title — catches the
+  // common case where one recipe is extracted from two different files.
+  let duplicates: Array<{ id: string; title: string }> = [];
+  try {
+    duplicates = await recipeService.findPublishedDuplicates({
+      householdId: bundle.recipe.household_id,
+      title: bundle.recipe.title,
+      excludeRecipeId: bundle.recipe.id,
+    });
+  } catch (err) {
+    logger.error({ err }, "review page: duplicate lookup failed");
+  }
 
   // The /review route is shared between AI-extracted recipes (PDF/image/URL/Drive)
   // and freshly-created blank ones from /recipes/new. Different headings keep
