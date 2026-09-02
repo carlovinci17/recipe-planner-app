@@ -39,7 +39,7 @@ const NAV = [
   { href: "/recipes", label: "Recipes", icon: ChefHat },
   { href: "/planner", label: "Planner", icon: CalendarDays },
   { href: "/shopping", label: "Shopping", icon: ShoppingBasket },
-  { href: "/recipes/import", label: "Import", icon: Upload, primary: true },
+  { href: "/recipes/import", label: "Add Recipes", icon: Upload, primary: true },
 ];
 
 export function AppShell({
