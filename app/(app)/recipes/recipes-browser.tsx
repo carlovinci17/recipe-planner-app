@@ -43,7 +43,11 @@ const DIET_TYPES = [
 ];
 
 const TIME_OPTIONS = [10, 20, 30, 60] as const;
-const RATING_OPTIONS = [3, 4, 4.5] as const;
+// Whole stars only. A fractional threshold (4.5) is reachable — the filter
+// compares the household average, so two people rating 4 and 5 averages 4.5 —
+// but it means something different depending on household size, and in a
+// one-member household it just duplicates "5". Not worth the confusion.
+const RATING_OPTIONS = [3, 4] as const;
 
 type ChipRemoval = {
   kind: "meal" | "diet" | "cuisine" | "source" | "fav";

@@ -47,7 +47,6 @@ type Difficulty = "easy" | "medium" | "hard" | null;
 
 /** Mirrors the recipe browser's meal filter so a tagged recipe is findable. */
 const MEAL_TYPE_OPTIONS = ["breakfast", "lunch", "dinner", "snack", "dessert"] as const;
-const DIFFICULTY_OPTIONS = ["easy", "medium", "hard"] as const;
 
 /** Nutrition fields (per serving) — keys match the `nutrition` JSON columns. */
 const NUTRITION_FIELDS = [
@@ -95,11 +94,11 @@ export function ReviewForm({
   // the planner's meal-type filters. Editable here, and fillable in one click
   // via "Improve with AI".
   const [mealTypes, setMealTypes] = useState<string[]>(recipe.meal_types ?? []);
+  // Not surfaced as editors (the AI is far better at these than a text box),
+  // but carried through so an accepted suggestion survives Save.
   const [difficulty, setDifficulty] = useState<Difficulty>(
     (recipe.difficulty as Difficulty) ?? null,
   );
-  // Not surfaced as editors (the AI is far better at these than a text box),
-  // but carried through so an accepted suggestion survives Save.
   const [cuisines, setCuisines] = useState<string[]>(recipe.cuisines ?? []);
   const [dietTypes, setDietTypes] = useState<string[]>(recipe.diet_types ?? []);
   const [cookingMethods, setCookingMethods] = useState<string[]>(recipe.cooking_methods ?? []);
@@ -414,56 +413,30 @@ export function ReviewForm({
               <TagEditor value={tags} onChange={setTags} placeholder="weeknight, comfort-food..." />
             </Field>
 
-            <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
-              <Field label="Meal type">
-                <div className="flex flex-wrap gap-1.5">
-                  {MEAL_TYPE_OPTIONS.map((m) => {
-                    const on = mealTypes.includes(m);
-                    return (
-                      <button
-                        key={m}
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() =>
-                          setMealTypes((prev) =>
-                            on ? prev.filter((v) => v !== m) : [...prev, m],
-                          )
-                        }
-                        className={`rounded-full border px-3 py-1 text-sm capitalize transition-colors ${
-                          on
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "bg-background hover:bg-accent"
-                        }`}
-                      >
-                        {m}
-                      </button>
-                    );
-                  })}
-                </div>
-              </Field>
-              <Field label="Difficulty">
-                <div className="flex flex-wrap gap-1.5">
-                  {DIFFICULTY_OPTIONS.map((d) => {
-                    const on = difficulty === d;
-                    return (
-                      <button
-                        key={d}
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() => setDifficulty(on ? null : d)}
-                        className={`rounded-full border px-3 py-1 text-sm capitalize transition-colors ${
-                          on
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "bg-background hover:bg-accent"
-                        }`}
-                      >
-                        {d}
-                      </button>
-                    );
-                  })}
-                </div>
-              </Field>
-            </div>
+            <Field label="Meal type">
+              <div className="flex flex-wrap gap-1.5">
+                {MEAL_TYPE_OPTIONS.map((m) => {
+                  const on = mealTypes.includes(m);
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() =>
+                        setMealTypes((prev) => (on ? prev.filter((v) => v !== m) : [...prev, m]))
+                      }
+                      className={`rounded-full border px-3 py-1 text-sm capitalize transition-colors ${
+                        on
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "bg-background hover:bg-accent"
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
 
             {mealTypes.length === 0 && (
               <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
