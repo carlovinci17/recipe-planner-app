@@ -13,45 +13,61 @@
 │   • the public API of the domain                             │
 │   • each method takes a typed object, never raw form data    │
 ├──────────────────────────────────────────────────────────────┤
-│ Inngest functions (lib/inngest/functions/)                   │
-│   • durable, retried background work                         │
-│   • use the admin (service-role) client                      │
+│ Background jobs (functions/ — Azure Durable Functions)       │
+│   • durable orchestration; calls back into                   │
+│     app/api/internal/ingestion/* with a shared secret        │
 ├──────────────────────────────────────────────────────────────┤
 │ AI provider (lib/ai/)                                        │
 │   ai.callStructured<T>({ schema, messages })                 │
-│   • single seam over OpenAI today, more later                │
+│   • one seam; Azure AI Foundry in prod, Anthropic behind a   │
+│     flag. Call sites never change.                           │
 ├──────────────────────────────────────────────────────────────┤
-│ Supabase clients (lib/supabase/)                             │
-│   client (browser) · server (request) · admin (service-role) │
+│ Data access (lib/db/ — Drizzle over Neon Postgres)           │
+│   withUserContext(userId, fn) → RLS-scoped transaction       │
+│   (lib/supabase/ survives only as a dual-dispatch fallback)  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-**Rule of thumb**: a route should never call Supabase directly except via a
+**Rule of thumb**: a route should never reach the database directly except via a
 service. The service is the unit of testing.
 
 ## Trust boundaries
 
-- Browser → server actions: cookies + Supabase Auth + Zod validation. Always
-  re-check household membership for the operation.
-- Server actions → DB: RLS enforces household scoping. Zero trust in the input.
-- Inngest functions → DB: service-role; trusted; *but* still scope queries by
-  household-id explicitly so a bad event payload can't leak data.
-- Webhook → Inngest: HMAC-style header secret; payload validated with Zod.
+- Browser → server actions: session cookie (Auth.js / Entra External ID) + Zod
+  validation. Always re-check household membership for the operation.
+- Server actions → DB: RLS enforces household scoping via `withUserContext`.
+  Zero trust in the input.
+- Durable Functions → app: the orchestrator calls `app/api/internal/ingestion/*`
+  with `INGESTION_INTERNAL_SECRET`. These run with elevated access, so still
+  scope every query by household-id explicitly — a bad payload must not leak
+  across households.
+- Browser → images: `/api/images` re-checks household membership against the
+  blob path prefix before streaming (Azure Blob has no path-based authz).
 
 ## Why server actions over a REST API
 
 Server actions colocate validation with the route, are typed end-to-end, and
 let us call services directly without serializing to JSON. They're the right
 default for first-party UI in App Router; we can still add `app/api/*` routes
-for things needed by external consumers (the Inngest serve handler, OAuth
-callbacks, the n8n webhook all live there).
+for things needed by external consumers (the Durable Functions callbacks, the
+image proxy, the Web PubSub negotiate endpoint and OAuth callbacks all live
+there).
 
-## Why Inngest over Vercel Cron / Trigger.dev / etc.
+## Why Durable Functions for the pipeline
 
-- Durable steps with replay (each `step.run` is checkpointed)
-- First-class fan-out (`step.sendEvent`)
-- Concurrency keys for per-household serialization
-- Local dev parity — same SDK, same UI
+Ingestion ran on Inngest until Module 6, then moved to Azure Durable Functions
+as part of the wider Azure migration (see
+[ADR-0007](adr/0007-background-jobs.md)). What the pipeline needs either way:
 
-The pipeline could be expressed as raw queues, but having checkpoints across
-PDF rasterization + vision + DB writes saves real money on retries.
+- Durable, replayable steps — a crash mid-extraction must not re-burn tokens
+- A human-in-the-loop pause (`waitForExternalEvent`) while the user picks
+  recipes from the skim results
+- Timers for scheduled sweeps
+
+Architecture B was chosen: the orchestrator stays thin and the actual work
+remains in the Next.js app behind `app/api/internal/ingestion/*`, so there is
+one implementation of the pipeline rather than two.
+
+> Historical note: `lib/inngest/` is still in the tree as a dual-dispatch
+> fallback and is deleted at decommission — see
+> [decommission-checklist.md](decommission-checklist.md).

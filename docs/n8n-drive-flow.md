@@ -1,5 +1,10 @@
 # n8n: Google Drive → Recipe Planner
 
+> **RETIRED (2026-09-04).** Google Drive import is **disabled** — the prod OAuth client was
+> deleted, and the Drive subsystem was deliberately not ported to Durable Functions at the
+> Module 11 cutover. n8n itself is pending deletion. Kept as reference for whenever Drive
+> import is re-enabled; nothing here reflects a running system. See `docs/TODO.md`.
+
 A reference n8n flow that watches a Drive folder and pushes new files into the
 Recipe Planner ingestion pipeline. The Inngest cron poller is a fallback when
 this flow isn't configured.

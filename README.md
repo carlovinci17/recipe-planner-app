@@ -1,7 +1,7 @@
 > ⚠️ **In Development** — this project is under active development and not yet stable.
 > Expect breaking changes, incomplete features, and rough edges.
 
-# Recipe Planner
+# Recipe Planner (BiteBuddy)
 
 AI-native household recipe planning. Drop messy PDFs, screenshots, scans, or URLs in — get clean,
 structured recipes, a shared weekly planner, and an automatic shopping list.
@@ -12,51 +12,64 @@ Built for households, not feeds.
 
 ## Architecture overview
 
-```
-┌─────────────┐    ┌─────────────────────────┐    ┌──────────────┐
-│   Browser   │ ──>│ Next.js (Vercel)        │ ──>│  Supabase    │
-│   (PWA)     │<── │ • App Router            │<── │ • Postgres   │
-└─────────────┘    │ • Server Actions        │    │ • Auth       │
-                   │ • Realtime client       │    │ • Storage    │
-                   └────────────┬────────────┘    │ • Realtime   │
-                                │                 └──────┬───────┘
-                                │                        │
-                          (events)                       │
-                                ▼                        │
-                   ┌─────────────────────────┐           │
-                   │ Inngest                 │ ──────────┘ (service role)
-                   │ • PDF → images          │
-                   │ • Vision extraction     │
-                   │ • Validation/normalize  │
-                   │ • AI tagging            │
-                   │ • Drive cron poller     │
-                   └────────────┬────────────┘
-                                │
-                                ▼
-                   ┌─────────────────────────┐
-                   │ Anthropic               │
-                   │ • Opus 4.7 (vision +    │
-                   │   adaptive thinking)    │
-                   │ • Haiku 4.5 (tagging)   │
-                   └─────────────────────────┘
+Originally built on Supabase + Vercel + Inngest, the app was migrated onto Azure and Neon
+(Modules 1–11). Everything below describes the **current** stack.
 
-External: n8n flows POST to /api/webhooks/drive for low-latency Drive triggers
 ```
+┌─────────────┐    ┌──────────────────────────┐    ┌──────────────────────┐
+│   Browser   │ ──>│ Next.js 15               │ ──>│ Neon Postgres        │
+│   (PWA)     │<── │ Azure Container Apps     │<── │ • Drizzle ORM        │
+└─────────────┘    │ • App Router             │    │ • RLS + pgvector     │
+                   │ • Server Actions         │    └──────────────────────┘
+                   └────────────┬─────────────┘
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        ▼                       ▼                       ▼
+┌────────────────┐   ┌────────────────────┐   ┌────────────────────┐
+│ Entra          │   │ Azure Blob         │   │ Azure Web PubSub   │
+│ External ID    │   │ • private, keyless │   │ • live planner /   │
+│ (Auth.js)      │   │ • via /api/images  │   │   shopping/import  │
+└────────────────┘   └────────────────────┘   └────────────────────┘
+                                │
+                          (HTTP + secret)
+                                ▼
+                   ┌──────────────────────────┐
+                   │ Azure Durable Functions  │
+                   │ • orchestrates ingestion │
+                   │ • rasterize → skim →     │
+                   │   extract → persist      │
+                   └────────────┬─────────────┘
+                                ▼
+                   ┌──────────────────────────┐
+                   │ Azure AI Foundry         │
+                   │ • gpt-4o-mini (vision +  │
+                   │   text + embeddings)     │
+                   └──────────────────────────┘
+```
+
+Auth, storage, realtime, AI and background jobs each sit behind a **provider flag**, so the old
+and new stacks can run side by side. Production runs the Azure value for all five.
 
 ### Tech stack
 
-| Layer       | Choice                                                |
-|-------------|-------------------------------------------------------|
-| Frontend    | Next.js 15 (App Router) · React 19 · TypeScript       |
-| Styling     | TailwindCSS · shadcn/ui · Radix primitives            |
-| Auth        | Supabase Auth (email + Google OAuth)                  |
-| DB          | PostgreSQL (Supabase) · pgvector reserved             |
-| Storage     | Supabase Storage (private buckets, RLS)               |
-| Realtime    | Supabase Realtime (planner, shopping, ingestion)      |
-| Background  | Inngest (durable, retries, fan-out)                   |
-| AI          | Anthropic Claude Opus 4.7 (vision + structured output), Haiku 4.5 (tagging) |
-| Automation  | n8n (Drive triggers) · Inngest cron (fallback)        |
-| Hosting     | Vercel (web + serverless) · Inngest Cloud             |
+| Layer         | Choice                                                                    |
+|---------------|---------------------------------------------------------------------------|
+| Frontend      | Next.js 15 (App Router) · React 19 · TypeScript                           |
+| Styling       | TailwindCSS · shadcn/ui · Radix primitives                                |
+| Auth          | Microsoft Entra External ID via Auth.js (`AUTH_PROVIDER=entra`)           |
+| DB            | Neon Postgres · Drizzle ORM · pgvector (HNSW index live)                  |
+| Storage       | Azure Blob Storage, keyless via managed identity (`STORAGE_PROVIDER`)     |
+| Realtime      | Azure Web PubSub (`REALTIME_PROVIDER`)                                    |
+| Background    | Azure Durable Functions (`JOBS_PROVIDER=durable`)                         |
+| AI            | Azure AI Foundry — gpt-4o-mini (`AI_PROVIDER=foundry`)                    |
+| Agents        | LangGraph supervisor · Langfuse tracing (dev scripts only, see below)     |
+| Observability | Azure Application Insights (OpenTelemetry)                               |
+| Hosting       | Azure Container Apps · image built + deployed by GitHub Actions           |
+
+**Still present in the codebase, not in the production path:** the Anthropic provider
+(`lib/ai/anthropic-provider.ts`, reachable by unsetting `AI_PROVIDER`), and the Supabase and
+Inngest code paths, which remain as dual-dispatch fallbacks pending
+[`docs/decommission-checklist.md`](docs/decommission-checklist.md).
 
 ---
 
@@ -64,60 +77,32 @@ External: n8n flows POST to /api/webhooks/drive for low-latency Drive triggers
 
 ```
 app/
-  (auth)/login,signup     ← email + Google OAuth
+  (auth)/login,signup     ← Entra sign-in
   (app)/                  ← protected app shell (sidebar + bottom nav)
-    dashboard/
     recipes/              ← list, [id], [id]/review, [id]/edit, import, new
-    planner/              ← realtime weekly grid
+    planner/              ← realtime weekly grid (drag-and-drop)
     shopping/             ← realtime checklist
     settings/             ← household, integrations, account
   api/
-    inngest/              ← Inngest serve handler
-    integrations/google/  ← OAuth start + callback
-    webhooks/drive/       ← n8n receiver
-  auth/callback/          ← Supabase OAuth callback
+    images/[...path]/     ← authorized image proxy (Azure Blob)
+    internal/ingestion/   ← endpoints the Durable orchestrator calls back into
+    realtime/negotiate/   ← Web PubSub client token
+    storage/upload/       ← server-relayed upload (Blob is keyless)
   invites/[token]/        ← household invite acceptance
   onboarding/             ← first-time household creation
 
-components/
-  ui/                     ← shadcn primitives
-  recipes/                ← RecipeCard, useSignedImage
-  shell/                  ← AppShell
+functions/                ← Azure Durable Functions app (ingestion orchestration)
 
 lib/
-  ai/
-    index.ts              ← AIProvider abstraction (wired to Anthropic)
-    anthropic-provider.ts ← Anthropic impl: messages.parse + caching + adaptive thinking
-    openai-provider.ts    ← OpenAI impl (legacy, not wired — reference only)
-    schemas.ts            ← Zod schemas (extraction, tagging, normalization)
-    prompts.ts            ← versioned prompts
-    recipe-extraction.ts  ← extractRecipeFromImages / fromText / tagRecipe
-  ingestion/
-    pdf-to-images.ts      ← rasterize PDF pages via pdfjs + sharp
-    normalize.ts          ← quantity/unit normalization
-    persist-recipe.ts     ← write draft recipe + ingredients/instructions
-    storage.ts            ← bucket helpers (download, sign, upload)
-  inngest/
-    client.ts             ← typed event catalog
-    functions/            ← processUpload, processUrl, tagRecipe, drive-*
-  integrations/
-    google-drive.ts       ← OAuth + Drive API client
-  services/               ← recipe, household, planner, shopping, ingestion
-  supabase/
-    client.ts             ← browser client (memoized)
-    server.ts             ← request-bound server client
-    admin.ts              ← service-role client (RLS bypass)
-    middleware.ts         ← session refresh + route gating
+  agents/                 ← LangGraph supervisor: coordinator + finder/planner/shopping
+  ai/                     ← ai.callStructured seam · schemas · versioned prompts
+  db/                     ← Drizzle schema + client (withUserContext sets RLS role)
+  ingestion/              ← rasterize · normalize · persist · storage seam
+  realtime/               ← Web PubSub publish + subscribe hooks
+  services/               ← recipe, household, planner, shopping, ingestion, integration
+  supabase/               ← legacy clients, still referenced by dual-dispatch paths
 
-supabase/
-  config.toml             ← Supabase CLI config
-  migrations/
-    20260101000000_init_schema.sql    ← tables, indexes, RLS
-    20260101000100_storage.sql        ← buckets + storage policies
-    20260101000200_rpc.sql            ← RPC functions
-
-types/
-  database.types.ts       ← regenerated by `pnpm db:types`
+types/database.types.ts   ← HAND-AUTHORED. Do not run `db:types`; see CLAUDE.md
 ```
 
 ---
@@ -126,293 +111,178 @@ types/
 
 ### Prerequisites
 
-- Node ≥ 20.10
-- Docker (for `supabase start`)
-- [Supabase CLI](https://supabase.com/docs/guides/cli)
-- [Inngest CLI](https://www.inngest.com/docs/dev-server) (or use `npx inngest-cli@latest dev`)
-- An Anthropic API key
+- **Node ≥ 20.10** (repo uses 24.15.0 — `nvm use 24.15.0`). On Node 18, `next build` exits 0
+  without compiling.
+- An Azure login (`az login`) — Blob, Web PubSub and Foundry are all keyless
+- [Azurite](https://github.com/Azure/Azurite) — Durable Functions stores orchestration state
+  in Azure Storage
+- [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local) (`func`)
 
 ### 1. Install
 
 ```bash
-pnpm install      # or npm / yarn / bun
+npm install          # this repo uses npm — there is no pnpm lockfile
 cp .env.example .env.local
 ```
 
-### 2. Boot Supabase locally
+### 2. Run the stack
+
+Four processes:
 
 ```bash
-supabase start
+az login                                  # keyless access to Blob / Web PubSub / Foundry
+azurite --silent --location /tmp/azurite  # Durable Functions task hub
+cd functions && npm start                 # Functions host on :7071
+npm run dev                               # Next.js on :3000
 ```
 
-This brings up Postgres, Auth, Storage, and Realtime on local ports. Copy the printed
-`anon`, `service_role`, and `URL` values into `.env.local`. Then apply migrations:
+Confirm the functions host prints `ingestionStart` and `ingestionUrlStart` before importing —
+a "fetch failed" on import usually means it isn't up.
 
-```bash
-supabase db reset                  # applies migrations + seed
-pnpm db:types                      # regenerates types/database.types.ts
+### 3. Point `.env.local` at the new stack
+
+```
+DATABASE_URL=<neon pooled connection string>
+AUTH_PROVIDER=entra
+STORAGE_PROVIDER=azure          NEXT_PUBLIC_STORAGE_PROVIDER=azure
+REALTIME_PROVIDER=azure         NEXT_PUBLIC_REALTIME_PROVIDER=azure
+AI_PROVIDER=foundry
+JOBS_PROVIDER=durable
+FUNCTIONS_BASE_URL=http://localhost:7071
 ```
 
-### 3. Run the Inngest dev server
-
-In a second terminal:
-
-```bash
-npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
-```
-
-The dev server discovers your functions, gives you a UI at <http://localhost:8288>,
-and dispatches events to the running Next.js app.
-
-### 4. Run Next.js
-
-```bash
-pnpm dev
-```
-
-Visit <http://localhost:3000>. Sign up with email or Google, create a household, then
-import a recipe from the **Recipes → Import** page.
-
-### 5. (Optional) Google OAuth + Drive
-
-Set up an OAuth Web Client in Google Cloud Console:
-
-- Authorized redirect URIs:
-  - `http://localhost:54321/auth/v1/callback` (Supabase Auth)
-  - `http://localhost:3000/api/integrations/google/callback` (Drive sync)
-
-Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env.local`.
+The `NEXT_PUBLIC_*` twins are read by client components and are **inlined at build time** — set
+them as build args, not just runtime env.
 
 ---
 
 ## The ingestion pipeline (the core moat)
 
-> NEVER rely on plain OCR. We rasterize then ask a vision model.
+> NEVER rely on plain OCR. We rasterize, then ask a vision model.
 
 ```
-USER UPLOAD                                        n8n / cron
-     │                                                  │
-     ▼                                                  ▼
-┌──────────────────────┐                    ingestion/drive.file.detected
-│ /recipes/import      │                                │
-│ • createUploadJob    │                                ▼
-│ • signed PUT to      │                  ┌──────────────────────────┐
-│   Supabase Storage   │                  │ processDriveFile         │
-│ • completeUpload     │                  │ • download from Drive    │
-└──────────┬───────────┘                  │ • upload to bucket       │
-           │                              │ • create ingestion job   │
-           ▼                              └──────────┬───────────────┘
-ingestion/file.uploaded ◄────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ processUpload (Inngest)                                          │
-│   step: load-job                                                 │
-│   step: mark-processing  → emit event: ai_processing_started     │
-│   step: download-original                                        │
-│   step: rasterize        (PDF → page PNGs via pdfjs + sharp)     │
-│   step: save-page-paths                                          │
-│   step: vision-extract   (signed URLs → Claude Opus 4.7 vision,  │
-│                          adaptive thinking, schema-enforced JSON)│
-│   step: emit-extraction-completed                                │
-│   step: normalize        (quantities/units/etc.)                 │
-│   step: emit-validation-completed                                │
-│   step: persist-recipe   (status='needs_review')                 │
-│   step.sendEvent: ingestion/recipe.tagging.requested             │
-└──────────────────────────────────────────┬───────────────────────┘
-                                           ▼
-                            ┌────────────────────────────┐
-                            │ tagRecipeFn                │
-                            │ • cuisines, meal_types,    │
-                            │   diet_types, methods, ... │
-                            │ • smaller cheaper model    │
-                            └────────────────────────────┘
-                                           ▼
-                            User reviews at /recipes/:id/review
-                            → saves → status='published'
+File upload (photo / PDF)          URL import
+        │                              │
+        ▼                              ▼
+  POST /api/storage/upload      startUrlIngestion
+        │                              │
+        ▼                              ▼
+┌────────────────────────────────────────────────────┐
+│ Durable Functions orchestrator                     │
+│   prepare        → rasterize PDF pages (pdfjs+sharp)│
+│   skim           → cheap pass: which recipes exist? │
+│   ⏸ waitForExternalEvent — user picks in the UI     │
+│   extractChunk   → vision extraction, chunked       │
+│   persistRecipe  → status='needs_review'            │
+│   finalizeJob    → tokens + estimated cost on job   │
+└────────────────────────┬───────────────────────────┘
+                         ▼
+        User reviews at /recipes/:id/review
+        → saves → status='published'
 ```
 
 Properties:
 
-- **Durable** — every step persisted by Inngest; resumes after deploys/crashes.
-- **Idempotent** — safe to retry; storage uploads use stable paths.
-- **Validated** — every model response goes through Zod with corrective retries.
-- **Observable** — `ingestion_events` rows form an audit log per job.
-- **Cost-aware** — token usage and estimated cents stored on every job.
-- **Failure-tolerant** — `is_recipe=false` or low confidence terminates without
-  throwing into the user's face; the job is marked failed with a reason.
+- **Durable** — orchestration state survives restarts; steps replay safely.
+- **Human-in-the-loop** — the skim pause lets you pick recipes before paying for extraction.
+- **Observable** — `ingestion_events` rows form a per-job audit log, surfaced in the UI's
+  import "More info" panel.
+- **Cost-aware** — prompt/completion tokens and estimated cents stored on every job.
+
+`recipe_status`: `draft → processing → needs_review → published`, plus terminal `failed`.
+
+---
+
+## Kitchen Assistant (agentic)
+
+A LangGraph **supervisor graph**: a coordinator routes each turn to one specialist —
+`finder`, `planner`, or `shopping` — over the household's real data. Actions follow
+**propose → confirm → execute**: the `propose_*` tools only return a proposal, and the app
+performs the write after the user confirms. See
+[ADR-0010](docs/adr/0010-agentic-orchestration.md).
+
+Semantic search is live: recipes are embedded (`text-embedding-3-small`) with an HNSW index
+on `recipes.embedding`.
+
+> **Note:** Langfuse is wired into the developer scripts in `scripts/` only — the
+> `/api/assistant` route is not yet traced (see `instrumentation.ts` and `docs/TODO.md`).
+> Production tracing is Application Insights.
 
 ---
 
 ## Database
 
-- Strict RLS on every table; access via `is_household_member()` /
-  `is_household_owner()` security-definer helpers (avoids policy recursion).
-- Storage policies derive household-id from object path prefix.
-- Trigram + GIN indexes for fast fuzzy and array filters.
-- `recipes.search_tsv` is auto-maintained for full-text search.
-- `recipes.embedding vector(1536)` reserved — no IVFFlat/HNSW index until we
-  actually ship semantic search, to keep writes cheap.
+- RLS on every table (16/16), via `is_household_member()` / `is_household_owner()`
+  security-definer helpers.
+- `withUserContext` sets `role authenticated` + the `auth.uid()` GUC shim so Supabase-era
+  policies keep working on Neon (see `scripts/neon-prelude.sql`, `scripts/neon-roles.sql`).
+- Trigram + GIN indexes for fuzzy and array filters; `recipes.search_tsv` for full-text.
+- `recipes.embedding vector(1536)` **with** an HNSW index — semantic search has shipped.
 
-### Running migrations against a hosted Supabase project
-
-```bash
-supabase link --project-ref YOUR_REF
-supabase db push          # deploys all migrations in supabase/migrations/
-```
-
-### Generating types
-
-```bash
-pnpm db:types
-```
-
-Always commit the regenerated `types/database.types.ts` after schema changes.
-
----
-
-## AI service layer
-
-`lib/ai/index.ts` exposes `ai` — an `AIProvider` with a single method,
-`callStructured<TSchema>({ schema, messages, ... })`. Active impl is
-`anthropic-provider.ts` (Claude Opus 4.7 / Haiku 4.5). The provider handles:
-
-1. **Server-side schema enforcement** via `messages.parse()` + `output_config.format`
-   (Zod schema is converted with `zodOutputFormat`) — no manual JSON-mode + retry loop
-2. **Prompt caching** on the system prompt (kicks in automatically once the prefix
-   crosses the 4K-token threshold; harmless below it)
-3. **Adaptive thinking** + **effort levels** for extraction (`thinking: true,
-   effort: "medium"`) — applied conditionally based on model capability
-4. Token + cost accounting (input / output / cache-read / cache-write)
-
-Model configuration is **env-driven**: `ANTHROPIC_MODEL_VISION` /
-`ANTHROPIC_MODEL_TEXT` (default `claude-opus-4-7`) and `ANTHROPIC_MODEL_FAST`
-(default `claude-haiku-4-5`). Sampling parameters (`temperature`/`top_p`) are
-not used — Opus 4.7 rejects them; effort levels replace them.
-
-To swap providers (e.g., back to OpenAI, or to a future Gemini impl):
-
-1. The OpenAI provider already exists at `lib/ai/openai-provider.ts` (legacy, not wired)
-2. Wire it in `lib/ai/index.ts`
-
-No call sites change.
-
----
-
-## Realtime
-
-Tables enabled in the `supabase_realtime` publication:
-
-- `planner_entries` — live planner updates
-- `shopping_lists`, `shopping_list_items` — live checklist
-- `recipes`, `ingestion_jobs`, `ingestion_events` — live import status
-
-Clients subscribe on a channel scoped to `household_id` (see `app/(app)/planner/planner-grid.tsx`
-and `app/(app)/recipes/import/active-jobs.tsx`).
-
----
-
-## Google Drive integration
-
-Two ingestion paths, your choice:
-
-1. **n8n flow (preferred for low latency)**
-   - Trigger: Google Drive — On New File in folder
-   - HTTP node: POST `${APP_URL}/api/webhooks/drive`
-     - Headers: `x-webhook-secret: ${N8N_WEBHOOK_SECRET}`
-     - Body: `{ householdId, accountId, driveFileId, mimeType, fileName }`
-   - The webhook re-emits as `ingestion/drive.file.detected`.
-
-2. **Inngest cron poller** (always-on fallback)
-   - `lib/inngest/functions/drive-poller.ts` runs every 10 minutes.
-   - Uses Drive Changes API tokens stored on `drive_watched_folders.page_token`.
-
-Both paths converge in `processDriveFile`, which downloads the file, uploads it
-into our bucket, and emits the standard `ingestion/file.uploaded` event — the
-same pipeline as user uploads.
+> `types/database.types.ts` is **hand-authored**. Running `npm run db:types` overwrites it and
+> deletes custom exports used by ~19 importers. See [CLAUDE.md](CLAUDE.md).
 
 ---
 
 ## Deployment
 
-### Vercel
+Push to `main` → GitHub Actions builds the image, pushes to `ghcr.io`, and deploys to Azure
+Container Apps. Pull requests run a `verify` job (typecheck + image build) and never deploy.
 
-1. Import the repo. Set Build Command to `next build`, output to default.
-2. Set env vars (Production + Preview):
-   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL_VISION`, `ANTHROPIC_MODEL_TEXT`, `ANTHROPIC_MODEL_FAST`
-   - `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`
-   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
-   - `N8N_WEBHOOK_SECRET`
-   - `NEXT_PUBLIC_APP_URL`
-3. The route `app/api/inngest/route.ts` declares `runtime = "nodejs"` and
-   `maxDuration = 300` so PDF rasterization works inside Vercel functions.
+Azure authentication is passwordless via **OpenID Connect federation** — the
+`id-github-deploy` managed identity holds a federated credential whose subject is
+`repo:<owner>/<repo>:ref:refs/heads/main`. **Renaming the deploy branch requires adding a
+matching credential**, or the deploy step fails with `AADSTS700213`.
 
-### Inngest Cloud
-
-1. Create an Inngest app, copy the **Event Key** and **Signing Key** into Vercel envs.
-2. Register your deployed URL: `https://your-app.vercel.app/api/inngest`.
-3. Inngest will discover the registered functions and start dispatching.
-
-### Supabase
-
-```bash
-supabase link --project-ref YOUR_REF
-supabase db push
-```
-
-In the Supabase dashboard:
-
-- **Auth → URL config**: add your production URL to redirect allowlist.
-- **Auth → Google provider**: enable, paste client id/secret.
-- **Storage**: confirm `recipe-uploads` and `recipe-images` buckets are private.
-
-### n8n (optional)
-
-Self-host or n8n.cloud. Configure as described above.
+Secrets live in Azure Key Vault, referenced by the Container App via managed identity.
+See [`.env.prod.example`](.env.prod.example) for the full production variable set.
 
 ---
 
 ## Security checklist
 
-- [x] RLS on every table; storage objects gated by household-id path prefix
-- [x] `SUPABASE_SERVICE_ROLE_KEY` only used inside Inngest functions and admin
-      contexts (`lib/supabase/admin.ts` is `import "server-only"`)
+- [x] RLS on every table; blob paths gated by household-id prefix, re-checked in `/api/images`
 - [x] Server actions validate every input with Zod before touching services
-- [x] OAuth state parameter verified on Google callback
-- [x] Webhook receiver requires `x-webhook-secret` header
+- [x] Keyless Azure access via managed identity — no storage or service keys in env
+- [x] Authorization checked in the action *and* at the row level (defence in depth)
 - [x] Pino logger redacts `password`, `token`, `access_token`, `refresh_token`
-- [x] User uploads go through signed PUT URLs, not server-relayed bytes
 - [x] All env vars validated at boot via Zod (`lib/env.ts`)
-- [x] `serverExternalPackages: ["pdfjs-dist", "sharp", "pino"]` keeps native deps
-      out of the edge bundle
+- [x] `serverExternalPackages` keeps native deps (pdfjs, sharp, pino, canvas) out of the bundle
 
 ---
 
 ## Scripts
 
-| Command            | Purpose                                |
-|--------------------|----------------------------------------|
-| `pnpm dev`         | Dev server (Turbopack)                 |
-| `pnpm build`       | Production build                       |
-| `pnpm typecheck`   | `tsc --noEmit`                         |
-| `pnpm db:reset`    | Reset local Supabase DB + apply seed   |
-| `pnpm db:push`     | Push migrations to linked project      |
-| `pnpm db:diff`     | Generate migration from schema diff    |
-| `pnpm db:types`    | Regenerate Database types              |
-| `pnpm inngest:dev` | Local Inngest dev server               |
+| Command             | Purpose                                            |
+|---------------------|----------------------------------------------------|
+| `npm run dev`       | Dev server (Turbopack)                             |
+| `npm run build`     | Production build                                   |
+| `npm run typecheck` | `tsc --noEmit` — the fastest correctness gate       |
+| `npm run test`      | Vitest unit tests                                  |
+| `npm run test:golden` | Golden-set model evaluation (`RUN_GOLDEN=1`)     |
+| `npm run test:e2e`  | Playwright                                         |
+| `npm run db:push`   | ⚠️ Supabase CLI — legacy, pending decommission      |
+| `npm run db:types`  | ⚠️ **Do not run** — clobbers hand-authored types    |
 
 ---
 
-## What's intentionally NOT in Phase 1
+## What's intentionally NOT built
 
-- **Vector search.** Column exists; index does not. Wire up when content scale demands it.
-- **Native mobile apps.** PWA only. The shell uses bottom nav on mobile, sidebar on desktop.
+- **Native mobile apps.** PWA only — bottom nav on mobile, sidebar on desktop.
 - **Public/social feeds.** This is a household tool.
-- **Drag-and-drop planner.** Click-to-add is friction-light enough; DnD is a follow-up.
 - **Per-recipe permissions.** Household-level only.
-- **Real-time presence indicators.** Realtime sync is enough for MVP.
+- **Presence indicators.** Realtime sync is enough.
+- **Google Drive import.** Built, then disabled — the OAuth client was deleted and the
+  subsystem was not ported to Durable Functions. See `docs/TODO.md`.
 
-These are deliberate scope cuts, not omissions. The data model and pipeline are
-designed so each can be added without rewrites.
+Deliberate scope cuts, not omissions.
+
+---
+
+## Further reading
+
+- [CLAUDE.md](CLAUDE.md) — working conventions, gotchas, layering rules
+- [docs/adr/](docs/adr/) — 12 Architecture Decision Records
+- [docs/learning/](docs/learning/) — 63 lesson write-ups from the Azure migration
+- [docs/TODO.md](docs/TODO.md) — open items
+- [docs/decommission-checklist.md](docs/decommission-checklist.md) — what's left to remove

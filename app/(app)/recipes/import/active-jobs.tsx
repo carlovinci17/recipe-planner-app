@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
 import { loadActiveJobsAction } from "./actions";
 import type { ActiveJobRecipe } from "@/lib/services/ingestion-service";
+import { ImportFailureDetails } from "./import-failure-details";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -185,6 +186,8 @@ type Derived = {
   jobs: Job[];
   recipesByJob: Record<string, JobRecipe[]>;
   latestEvents: Record<string, IngestionEventKind>;
+  /** Full event list per job, newest first — drives the failure "More info" timeline. */
+  eventsByJob: Record<string, Event[]>;
   extractionCounts: Record<string, { found: number; kept: number }>;
   persistFailures: Record<string, { titles: string[]; reasons: string[] }>;
   progressMeta: Record<string, ProgressMeta>;
@@ -222,11 +225,13 @@ function assembleBundle(bundle: { jobs: Job[]; events: Event[]; recipes: ActiveJ
   }
 
   const latestEvents: Record<string, IngestionEventKind> = {};
+  const eventsByJob: Record<string, Event[]> = {};
   const extractionCounts: Record<string, { found: number; kept: number }> = {};
   const persistFailures: Record<string, { titles: string[]; reasons: string[] }> = {};
   const progressMeta: Record<string, ProgressMeta> = {};
   for (const ev of events) {
     if (!latestEvents[ev.job_id]) latestEvents[ev.job_id] = ev.kind;
+    (eventsByJob[ev.job_id] ??= []).push(ev);
     if (ev.kind === "ai_processing_started") {
       const p = ev.payload as { chunk?: number; total_chunks?: number } | null;
       if (p?.chunk && p.total_chunks) {
@@ -265,7 +270,15 @@ function assembleBundle(bundle: { jobs: Job[]; events: Event[]; recipes: ActiveJ
     }
   }
 
-  return { jobs, recipesByJob, latestEvents, extractionCounts, persistFailures, progressMeta };
+  return {
+    jobs,
+    recipesByJob,
+    latestEvents,
+    eventsByJob,
+    extractionCounts,
+    persistFailures,
+    progressMeta,
+  };
 }
 
 export function ActiveJobs({ householdId }: { householdId: string }) {
@@ -278,6 +291,9 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
   const [totalLoaded, setTotalLoaded] = useState(0);
   // Map of job_id -> the most recent event kind (drives the progress bar).
   const [latestEvents, setLatestEvents] = useState<Record<string, IngestionEventKind>>({});
+  // Map of job_id -> that job's full event list (newest first). Only read by the
+  // failure "More info" panel, but kept in step with latestEvents everywhere.
+  const [eventsByJob, setEventsByJob] = useState<Record<string, Event[]>>({});
   // Map of job_id -> all recipes attached via recipes.ingestion_job_id. A
   // multi-recipe import (cookbook PDF, listicle URL) yields multiple entries
   // here; a typical single-recipe import yields one.
@@ -333,6 +349,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
       if (more) setVisibleCount(PAGE_SIZE);
       setRecipesByJob(d.recipesByJob);
       setLatestEvents(d.latestEvents);
+      setEventsByJob(d.eventsByJob);
       setExtractionCounts(d.extractionCounts);
       setPersistFailures(d.persistFailures);
       setProgressMeta(d.progressMeta);
@@ -419,6 +436,10 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
         (payload) => {
           const ev = payload.new as Event;
           setLatestEvents((prev) => ({ ...prev, [ev.job_id]: ev.kind }));
+          setEventsByJob((prev) => ({
+            ...prev,
+            [ev.job_id]: [ev, ...(prev[ev.job_id] ?? [])],
+          }));
           if (ev.kind === "extraction_completed") {
             const p = ev.payload as { recipes_found?: number; recipes_kept?: number } | null;
             if (p && typeof p.recipes_found === "number") {
@@ -576,6 +597,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
     setTotalLoaded(d.jobs.length);
     setRecipesByJob(d.recipesByJob);
     setLatestEvents(d.latestEvents);
+    setEventsByJob(d.eventsByJob);
     setExtractionCounts(d.extractionCounts);
     setPersistFailures(d.persistFailures);
     setProgressMeta(d.progressMeta);
@@ -604,6 +626,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
       loadedCountRef.current += more.length;
       setRecipesByJob((prev) => ({ ...prev, ...d.recipesByJob }));
       setLatestEvents((prev) => ({ ...prev, ...d.latestEvents }));
+      setEventsByJob((prev) => ({ ...prev, ...d.eventsByJob }));
       setExtractionCounts((prev) => ({ ...prev, ...d.extractionCounts }));
       setPersistFailures((prev) => ({ ...prev, ...d.persistFailures }));
       setProgressMeta((prev) => ({ ...prev, ...d.progressMeta }));
@@ -627,6 +650,11 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
         );
         setJobs((prev) => prev.filter((j) => j.status !== "failed"));
         setLatestEvents((prev) => {
+          const next = { ...prev };
+          for (const id of removedIds) delete next[id];
+          return next;
+        });
+        setEventsByJob((prev) => {
           const next = { ...prev };
           for (const id of removedIds) delete next[id];
           return next;
@@ -663,6 +691,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
       // Same realtime caveat as clearFailed — wipe local state directly.
       setJobs([]);
       setLatestEvents({});
+      setEventsByJob({});
       setRecipesByJob({});
       setExtractionCounts({});
       setConfirmClearAllOpen(false);
@@ -808,6 +837,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
             key={j.id}
             job={j}
             latestEvent={latestEvents[j.id]}
+            events={eventsByJob[j.id]}
             recipes={recipesByJob[j.id] ?? []}
             extractionCount={extractionCounts[j.id]}
             failures={persistFailures[j.id]}
@@ -938,6 +968,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
 function JobRow({
   job,
   latestEvent,
+  events,
   recipes,
   extractionCount,
   failures,
@@ -952,6 +983,8 @@ function JobRow({
 }: {
   job: Job;
   latestEvent?: IngestionEventKind;
+  /** This job's full event list, newest first. Feeds the failure details panel. */
+  events?: Event[];
   recipes: JobRecipe[];
   extractionCount?: { found: number; kept: number };
   failures?: { titles: string[]; reasons: string[] };
@@ -1060,12 +1093,17 @@ function JobRow({
                 </span>
               ) : null}
               {job.error ? (
-                <span className="text-destructive" title={job.error}>
+                <span className="text-destructive">
                   {" — "}
                   {job.error}
                 </span>
               ) : null}
             </div>
+            {/* Failed, or finished with some recipes unsaved — offer the detail
+                panel rather than a truncated message and a hover tooltip. */}
+            {job.status === "failed" || failedCount > 0 ? (
+              <ImportFailureDetails job={job} events={events} failures={failures} />
+            ) : null}
           </div>
         </div>
         {/* Right-side action: review/open for single-recipe jobs; cancel for

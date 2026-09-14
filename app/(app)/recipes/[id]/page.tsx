@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { Clock, Edit, Star, Users } from "lucide-react";
+import { Beef, Candy, Clock, Droplet, Edit, Flame, Grip, Leaf, Star, Users, Wheat } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -164,14 +164,16 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
 
       {(() => {
         const n = (recipe.nutrition ?? {}) as Record<string, number | null>;
-        const fields: { key: string; label: string; unit: string }[] = [
-          { key: "calories", label: "Calories", unit: "kcal" },
-          { key: "protein_g", label: "Protein", unit: "g" },
-          { key: "carbs_g", label: "Carbs", unit: "g" },
-          { key: "fat_g", label: "Fat", unit: "g" },
-          { key: "fiber_g", label: "Fiber", unit: "g" },
-          { key: "sugar_g", label: "Sugar", unit: "g" },
-          { key: "sodium_mg", label: "Sodium", unit: "mg" },
+        // Icon per nutrient so the row is scannable at a glance rather than a
+        // wall of numbers. Sodium uses Grip — the dot grid reads as salt grains.
+        const fields = [
+          { key: "calories", label: "Calories", unit: "kcal", Icon: Flame },
+          { key: "protein_g", label: "Protein", unit: "g", Icon: Beef },
+          { key: "carbs_g", label: "Carbs", unit: "g", Icon: Wheat },
+          { key: "fat_g", label: "Fat", unit: "g", Icon: Droplet },
+          { key: "fiber_g", label: "Fiber", unit: "g", Icon: Leaf },
+          { key: "sugar_g", label: "Sugar", unit: "g", Icon: Candy },
+          { key: "sodium_mg", label: "Sodium", unit: "mg", Icon: Grip },
         ];
         const present = fields.filter((f) => typeof n[f.key] === "number" && n[f.key] !== null);
         if (present.length === 0) return null;
@@ -183,9 +185,15 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
                 Nutrition{" "}
                 <span className="text-sm font-normal text-muted-foreground">(per serving)</span>
               </h2>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {/* Five across on desktop, stepping down on narrow screens so the
+                  tiles never squash below a readable width. */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                 {present.map((f) => (
-                  <div key={f.key} className="rounded-lg border bg-card p-3">
+                  <div
+                    key={f.key}
+                    className="flex flex-col items-center rounded-lg border bg-card p-3 text-center"
+                  >
+                    <f.Icon className="mb-1 h-4 w-4 text-muted-foreground" aria-hidden />
                     <div className="text-xs text-muted-foreground">{f.label}</div>
                     <div className="font-display text-lg font-semibold">
                       {n[f.key]}
