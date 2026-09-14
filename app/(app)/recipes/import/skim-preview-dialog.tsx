@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
 import { commitSkimSelectionAction } from "./actions";
+import { resolveBookPages, bookPageForImage } from "@/lib/ingestion/page-mapping";
 
 type SkimRecipe = {
   title: string;
@@ -106,6 +107,14 @@ export function SkimPreviewDialog({
 
   const total = recipes.length;
   const count = selected.size;
+
+  // Real book page behind each rasterized image. Without this the picker
+  // labels a recipe on book page 14 as "page 2", because the model counts the
+  // images it was shown rather than the pages of the document.
+  const bookPages = useMemo(
+    () => resolveBookPages(sourcePages.length, sourcePageNumbers),
+    [sourcePages.length, sourcePageNumbers],
+  );
 
   const grouped = useMemo(() => {
     // Sort by source_page_index so a multi-recipe document scans top-to-bottom.
@@ -208,10 +217,7 @@ export function SkimPreviewDialog({
                 ? sourcePages[r.source_page_index - 1] ?? null
                 : null;
             // Translate the model's image position into the real book page.
-            const bookPage =
-              r.source_page_index && r.source_page_index >= 1
-                ? sourcePageNumbers?.[r.source_page_index - 1] ?? r.source_page_index
-                : null;
+            const bookPage = bookPageForImage(r.source_page_index, bookPages);
             return (
               <li
                 key={i}

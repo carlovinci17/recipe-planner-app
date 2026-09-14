@@ -31,8 +31,16 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
         because `source_page_index` counts the images the model saw, not the book's pages.
       - **Neighbour expansion now respects real adjacency** in `apply-selection`: with "5-8, 13-15"
         the image after page 8 is page 13, and the old ±1 rule pulled it in.
-      - Covered by `tests/unit/page-range.test.ts` (17) and `tests/unit/pdf-page-selection.test.ts`
-        (7, against a real fixture PDF — proves we render the named pages, not page 1 repeated).
+      - Covered by `tests/unit/page-range.test.ts` (17), `tests/unit/pdf-page-selection.test.ts`
+        (7, against a real fixture PDF — proves we render the named pages, not page 1 repeated)
+        and `tests/unit/page-mapping.test.ts` (16 — the image→book-page translation and the
+        real-adjacency rule, both of which fail *silently* when wrong).
+      - **NOT yet verified end-to-end.** No real import has been run with a page selection: the
+        `prepare` branch, the orchestrator change and the UI have never executed. Run the local
+        pipeline (`cd functions && npm start` + `npm run dev`, `.env.local` already points
+        `FUNCTIONS_BASE_URL` at :7071) with a multi-page PDF and check three things — only the
+        picked pages rasterize, the skim picker shows real book page numbers, and a page number
+        past the end of the document fails with a readable message instead of hanging.
       - **Still open:** the Google Drive half, deliberately left out — Drive import can't run at all
         today (see below), so it could not be tested. Also still numeric-only: client-side page
         thumbnails would need pdfjs in the browser bundle (it is `serverExternalPackages` today).
