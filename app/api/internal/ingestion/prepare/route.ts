@@ -78,10 +78,6 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Every requested page was out of range. Returning a non-2xx here would
-      // throw inside the activity and leave the job stuck in `processing` with
-      // no explanation, so hand the orchestrator a message instead — it turns
-      // an empty page list into a proper `failed` with this text.
       // A partial miss (say pages 5 and 400 of a 312-page book) imports what
       // exists rather than failing the lot, but must not do so silently.
       if (selection.length > 0 && images.length > 0 && images.length < selection.length) {
@@ -91,6 +87,10 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Every requested page was out of range. Returning a non-2xx here would
+      // throw inside the activity and leave the job stuck in `processing` with
+      // no explanation, so hand the orchestrator a message instead — it turns
+      // an empty page list into a proper `failed` carrying this text.
       if (selection.length > 0 && images.length === 0) {
         const asked = selection[0];
         return Response.json({
