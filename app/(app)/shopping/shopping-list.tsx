@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
 import { useDebouncedRouterRefresh } from "@/lib/realtime/use-debounced-refresh";
 import { Check, CheckSquare, Copy, Plus, Trash2 } from "lucide-react";
@@ -262,7 +261,6 @@ export function ShoppingList({
   /** Map of recipe id → title for items that came from a recipe. */
   sourceRecipeTitles?: Record<string, string>;
 }) {
-  const router = useRouter();
   const [items, setItems] = useState<Item[]>(initialItems);
   const [newName, setNewName] = useState("");
   const [, start] = useTransition();
@@ -603,16 +601,6 @@ export function ShoppingList({
 }
 
 /**
- * Format a quantity+unit string. Returns empty string if no quantity.
- * Examples: "2 cups", "3", "1.5 lb"
- */
-function formatQty(quantity: number | null | undefined, unit: string | null | undefined): string {
-  if (!quantity || quantity <= 0) return "";
-  const q = Number.isInteger(quantity) ? String(quantity) : String(quantity);
-  return unit ? `${q} ${unit}` : q;
-}
-
-/**
  * Format a quantity+unit combination. Returns empty string if no quantity.
  */
 function formatQtyUnit(qty: number, unit: string): string {
@@ -632,30 +620,6 @@ function formatQtyUnit(qty: number, unit: string): string {
  *   Protein
  *   - Chicken breast (500g)
  */
-/**
- * Merge duplicates in a list of items and return formatted "Ingredient (qty)" strings.
- * Used for per-category copy.
- */
-function mergeAndFormatItems(items: Item[]): string[] {
-  const merged = new Map<string, { name: string; units: Map<string, number> }>();
-  for (const item of items) {
-    const name = (item.ingredient ?? "").trim();
-    if (!name) continue;
-    const key = name.toLowerCase();
-    if (!merged.has(key)) merged.set(key, { name, units: new Map() });
-    const entry = merged.get(key)!;
-    const unit = (item.unit ?? "").trim().toLowerCase() || "__none__";
-    entry.units.set(unit, (entry.units.get(unit) ?? 0) + (item.quantity ?? 0));
-  }
-  return Array.from(merged.values()).map(({ name, units }) => {
-    const qtyParts: string[] = [];
-    for (const [unit, total] of units) {
-      if (total > 0) qtyParts.push(formatQtyUnit(total, unit));
-    }
-    return qtyParts.length > 0 ? `${name} (${qtyParts.join(", ")})` : name;
-  });
-}
-
 function mergeAndGroupForCopy(items: Item[]): string {
   // Step 1: merge duplicates globally (by ingredient name, case-insensitive).
   // Keep the "best" category — prefer anything over "other".

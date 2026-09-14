@@ -257,7 +257,6 @@ describe.skipIf(!RUN)("golden set: Foundry vs Claude extraction", () => {
     }
 
     for (const doc of docs) {
-      // eslint-disable-next-line no-console
       console.log(`\n▶ ${doc.name} (${doc.pages.length} page${doc.pages.length === 1 ? "" : "s"})`);
 
       // Claude + Foundry are different services with independent limits — run them
@@ -298,18 +297,14 @@ describe.skipIf(!RUN)("golden set: Foundry vs Claude extraction", () => {
       await persist(); // incremental — survives a timeout
 
       if (!foundry.ok) {
-        // eslint-disable-next-line no-console
         console.warn(`  ⚠️ Foundry failed on ${doc.name}: ${foundry.error}`);
       }
       if (!claude.ok && hasClaude) {
-        // eslint-disable-next-line no-console
         console.warn(`  ⚠️ Claude failed on ${doc.name}: ${claude.error}`);
       }
     }
 
-    // eslint-disable-next-line no-console
     console.log(`\n📄 Report written to ${REPORT_PATH}`);
-    // eslint-disable-next-line no-console
     console.log(
       `Cost — Claude ${claudeCost.toFixed(2)}¢ vs Foundry ${foundryCost.toFixed(2)}¢ over ${docs.length} docs.`,
     );

@@ -31,6 +31,12 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Errors fail the build; warnings still print but don't block. Add
+      # `--max-warnings 0` to the lint script if you want to hold the count
+      # at the zero it starts at.
+      - name: Lint
+        run: npm run lint
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Build image (no push)

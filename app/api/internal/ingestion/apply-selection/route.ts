@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
 import { ingestionStore } from "@/lib/ingestion/store";
-import { normalizeTitle } from "@/lib/ingestion/pipeline-helpers";
 
 export const runtime = "nodejs";
 

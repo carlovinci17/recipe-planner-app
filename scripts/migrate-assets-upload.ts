@@ -66,7 +66,6 @@ async function main(): Promise<void> {
   let uploaded = 0;
   let origBytes = 0;
   let optBytes = 0;
-  let nulled = 0;
   const missing: string[] = [];
 
   for (const w of work) {
@@ -75,7 +74,6 @@ async function main(): Promise<void> {
       missing.push(`${w.bucket}/${w.path}`);
       if (w.recipeId && APPLY) {
         await sql`update recipes set cover_image_path = null where id = ${w.recipeId} and cover_image_path = ${w.path}`;
-        nulled += 1;
       }
       continue;
     }

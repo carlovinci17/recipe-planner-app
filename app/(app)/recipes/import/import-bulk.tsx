@@ -11,11 +11,6 @@ import type { DriveSearchResult, DriveSearchMatch } from "./actions";
 
 type Step = "paste" | "review" | "queued";
 
-type Selection = {
-  query: string;
-  file: DriveSearchMatch;
-};
-
 function mimeLabel(mimeType: string): string {
   if (mimeType === "application/pdf") return "PDF";
   if (mimeType === "application/vnd.google-apps.document") return "Google Doc";

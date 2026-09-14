@@ -32,7 +32,7 @@ export default async function LandingPage() {
       <section className="container grid gap-12 py-16 md:grid-cols-2 md:py-24">
         <div className="flex flex-col justify-center gap-6">
           <h1 className="font-display text-4xl font-semibold leading-tight md:text-5xl">
-            Your household's kitchen, finally organized.
+            Your household&apos;s kitchen, finally organized.
           </h1>
           <p className="max-w-prose text-lg text-muted-foreground">
             Drop in messy PDFs, screenshots, or links — get clean recipes, a shared weekly planner, and an
@@ -56,10 +56,10 @@ export default async function LandingPage() {
             Build a shared weekly meal plan with your household. Everyone stays on the same page.
           </FeatureCard>
           <FeatureCard icon={Sparkles} title="AI Chef">
-            Get personalised recipe suggestions based on what's in your kitchen and your household's tastes.
+            Get personalised recipe suggestions based on what&apos;s in your kitchen and your household&apos;s tastes.
           </FeatureCard>
           <FeatureCard icon={ShoppingCart} title="Auto shopping list">
-            Generate a smart, deduplicated grocery list from the week's meals automatically.
+            Generate a smart, deduplicated grocery list from the week&apos;s meals automatically.
           </FeatureCard>
         </div>
       </section>

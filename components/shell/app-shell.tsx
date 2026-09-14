@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   CalendarDays,
   ChefHat,
-  ChevronsUpDown,
   LogOut,
   Menu,
   Settings,
@@ -31,7 +30,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { switchHouseholdAction, signOutAction } from "./actions";
+import { signOutAction } from "./actions";
 
 type HouseholdSummary = { id: string; name: string; role: "owner" | "member" };
 
@@ -44,17 +43,19 @@ const NAV = [
 
 export function AppShell({
   user,
-  activeHousehold,
-  households,
   children,
 }: {
   user: { email: string; displayName: string; avatarUrl: string | null };
+  /**
+   * Supplied by the layout and kept on the contract, but nothing renders them
+   * yet — the household switcher UI was never built (see docs/TODO.md). The
+   * server action `switchHouseholdAction` is still there waiting for it.
+   */
   activeHousehold: HouseholdSummary;
   households: HouseholdSummary[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Active-nav resolution: pick the single most-specific matching href so a
@@ -70,11 +71,6 @@ export function AppShell({
   async function logout() {
     // Signs out the ACTIVE session (Auth.js under Entra) + redirects to /login.
     await signOutAction();
-  }
-
-  async function switchHousehold(id: string) {
-    await switchHouseholdAction(id);
-    router.refresh();
   }
 
   const initials = (user.displayName || user.email || "?")

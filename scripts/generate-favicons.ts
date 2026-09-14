@@ -3,7 +3,6 @@
  * Run: npx tsx scripts/generate-favicons.ts
  */
 import sharp from "sharp";
-import * as fs from "fs";
 import * as path from "path";
 
 const SRC = path.join(process.cwd(), "public", "app-icon.png");

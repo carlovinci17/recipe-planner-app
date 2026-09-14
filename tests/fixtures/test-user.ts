@@ -16,7 +16,6 @@ const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SERVICE_ROLE) {
   // Don't crash the whole import — let the failing fixture explain the cause.
-  // eslint-disable-next-line no-console
   console.warn(
     "[test-user fixture] Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY in env. " +
       "Tests that use the testUser fixture will fail.",
@@ -70,6 +69,9 @@ export const test = base.extend<Fixtures, { _adminGuard: void }>({
     });
     if (error || !data.user) throw error ?? new Error("Failed to create test user");
 
+    // Playwright's fixture callback, not React's `use()` — same name, and the
+    // rule matches on the name alone.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     await use({ id: data.user.id, email, password });
 
     // Best-effort cleanup. Errors swallowed because cleanup script also runs.

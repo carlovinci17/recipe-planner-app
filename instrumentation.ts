@@ -11,6 +11,9 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.APPLICATIONINSIGHTS_CONNECTION_STRING) {
     const { useAzureMonitor } = await import("@azure/monitor-opentelemetry");
+    // Azure Monitor's initialiser, not a React hook — the rule matches on the
+    // "use" prefix alone and this file never renders anything.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     useAzureMonitor();
   }
   // NOTE: Langfuse tracing of the /api/assistant route is a follow-up (docs/TODO.md).
