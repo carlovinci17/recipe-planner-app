@@ -387,6 +387,7 @@ export type Database = {
           storage_path: string | null;
           storage_bucket: string | null;
           page_image_paths: string[];
+          page_numbers: number[] | null;
           status: RecipeStatus;
           error: string | null;
           ai_model: string | null;
@@ -413,6 +414,7 @@ export type Database = {
           storage_path?: string | null;
           storage_bucket?: string | null;
           page_image_paths?: string[];
+          page_numbers?: number[] | null;
           status?: RecipeStatus;
           error?: string | null;
           ai_model?: string | null;
@@ -439,6 +441,7 @@ export type Database = {
           storage_path?: string | null;
           storage_bucket?: string | null;
           page_image_paths?: string[];
+          page_numbers?: number[] | null;
           status?: RecipeStatus;
           error?: string | null;
           ai_model?: string | null;

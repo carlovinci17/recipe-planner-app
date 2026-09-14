@@ -20,9 +20,25 @@ export async function pdfBufferToPageImages(args: {
   buffer: ArrayBuffer | Uint8Array;
   /** Target DPI when rasterizing. 200 is a reasonable balance. */
   dpi?: number;
-  /** Hard cap to prevent runaway PDFs. */
+  /** Hard cap to prevent runaway PDFs. Ignored when `pageNumbers` is given. */
   maxPages?: number;
-  /** Called after each page is rendered. pageNum is 1-based. */
+  /**
+   * Explicit 1-based pages to render, e.g. [2,5,6,7,8]. When given, ONLY these
+   * pages are rasterized — the expensive part of a big cookbook import is
+   * rendering pages nobody asked for, so we skip them rather than render and
+   * discard. Out-of-range entries are dropped silently; the caller validates
+   * against the real page count and reports that properly.
+   */
+  pageNumbers?: number[];
+  /**
+   * Called once, before rendering starts, with the pages actually chosen and
+   * the document's real page count. The caller needs both — to record which
+   * book page each image came from, and to tell the user when they asked for
+   * a page the document doesn't have. A callback rather than a return value
+   * so the existing `Buffer[]` signature keeps working everywhere else.
+   */
+  onSelection?: (info: { selected: number[]; documentPages: number }) => void;
+  /** Called after each page is rendered. pageNum is the 1-based source page. */
   onPageRendered?: (pageNum: number, totalPages: number) => void | Promise<void>;
 }): Promise<Buffer[]> {
   const dpi = args.dpi ?? 200;
@@ -49,11 +65,22 @@ export async function pdfBufferToPageImages(args: {
   });
   const doc = await loadingTask.promise;
 
-  const totalPages = Math.min(doc.numPages, maxPages);
+  // Either an explicit selection, or the leading run up to the cap.
+  const selected =
+    args.pageNumbers && args.pageNumbers.length > 0
+      ? Array.from(new Set(args.pageNumbers))
+          .filter((n) => Number.isInteger(n) && n >= 1 && n <= doc.numPages)
+          .sort((a, b) => a - b)
+      : Array.from({ length: Math.min(doc.numPages, maxPages) }, (_, i) => i + 1);
+
+  args.onSelection?.({ selected, documentPages: doc.numPages });
+
+  const totalPages = selected.length;
   const images: Buffer[] = [];
   const scale = dpi / 72; // pdfjs default is 72 DPI
 
-  for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+  for (let i = 0; i < selected.length; i++) {
+    const pageNum = selected[i]!;
     const page = await doc.getPage(pageNum);
     const viewport = page.getViewport({ scale });
 

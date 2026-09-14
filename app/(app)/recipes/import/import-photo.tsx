@@ -12,6 +12,9 @@ import {
   createPhotoJobAction,
   completePhotoUploadAction,
 } from "./actions";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { parsePageRange, formatPageRange } from "@/lib/ingestion/page-range";
 import { STORAGE_IS_AZURE, uploadViaServer } from "@/components/recipes/upload-via-server";
 
 interface PhotoEntry {
@@ -19,12 +22,15 @@ interface PhotoEntry {
   preview: string; // object URL for images; "" for a PDF (no <img> preview)
 }
 
-const isPdfFile = (f: File) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+const isPdfFile = (f: File) =>
+  f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
 
 export function ImportPhoto({ householdId }: { householdId: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
+  // Raw text of the page-range box, e.g. "2, 5-8, 13-15". Empty = whole PDF.
+  const [pageRange, setPageRange] = useState("");
 
   const addFiles = useCallback((files: File[]) => {
     if (files.length === 0) return;
@@ -71,10 +77,21 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
   function reset() {
     photos.forEach((p) => p.preview && URL.revokeObjectURL(p.preview));
     setPhotos([]);
+    setPageRange("");
   }
+
+  // Parsed live so a typo shows up before the upload, not after the tokens are
+  // spent. The server re-parses and re-validates — this is feedback, not a gate.
+  const parsedRange = parsePageRange(pageRange);
+  const selectedPages = parsedRange.ok ? parsedRange.pages : [];
+  const rangeError = parsedRange.ok ? null : parsedRange.error;
 
   async function submit() {
     if (photos.length === 0) return;
+    if (hasPdf && rangeError) {
+      toast.error(rangeError);
+      return;
+    }
     start(async () => {
       try {
         // PDF → single-file path: upload the raw PDF; `prepare` rasterizes it
@@ -98,9 +115,17 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
             });
             if (!res.ok) throw new Error(`Upload failed (${res.status})`);
           }
-          const complete = await completePhotoUploadAction({ jobId: job.jobId, storagePath: job.path });
+          const complete = await completePhotoUploadAction({
+            jobId: job.jobId,
+            storagePath: job.path,
+            ...(selectedPages.length > 0 ? { pageNumbers: selectedPages } : {}),
+          });
           if (!complete.ok) throw new Error(complete.error);
-          toast.success("PDF uploaded — AI is scanning it for recipes now");
+          toast.success(
+            selectedPages.length > 0
+              ? `PDF uploaded — scanning ${selectedPages.length} selected page${selectedPages.length === 1 ? "" : "s"} now`
+              : "PDF uploaded — AI is scanning it for recipes now",
+          );
           reset();
           router.refresh();
           return;
@@ -178,8 +203,8 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
               {isDragActive ? "Drop your file here" : "Upload photos or a PDF"}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Choose one or more photos (each is treated as one page — great for cookbook
-              spreads), or drop a single PDF and we&apos;ll scan every page.
+              Choose one or more photos (each is treated as one page — great for cookbook spreads),
+              or drop a single PDF and we&apos;ll scan every page.
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               JPG, PNG, WebP, HEIC, PDF · up to 20 MB each · max 20 photos
@@ -201,18 +226,27 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
                 {isPdfFile(p.file) ? (
                   <div className="flex h-full w-full flex-col items-center justify-center gap-1 p-1 text-muted-foreground">
                     <FileText className="h-6 w-6" />
-                    <span className="line-clamp-2 text-center text-[9px] leading-tight">{p.file.name}</span>
+                    <span className="line-clamp-2 text-center text-[9px] leading-tight">
+                      {p.file.name}
+                    </span>
                   </div>
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.preview} alt={`Page ${i + 1}`} className="h-full w-full object-cover" />
+                  <img
+                    src={p.preview}
+                    alt={`Page ${i + 1}`}
+                    className="h-full w-full object-cover"
+                  />
                 )}
                 <span className="absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 text-[10px] text-white">
                   {isPdfFile(p.file) ? "PDF" : i + 1}
                 </span>
                 <button
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); removePhoto(i); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removePhoto(i);
+                  }}
                   disabled={pending}
                   className="absolute right-0.5 top-0.5 hidden rounded-full bg-black/60 p-0.5 text-white hover:bg-black/80 group-hover:flex"
                   aria-label={`Remove photo ${i + 1}`}
@@ -226,7 +260,10 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
             {photos.length < 20 && !hasPdf && (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); open(); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  open();
+                }}
                 disabled={pending}
                 className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-muted text-muted-foreground transition-colors hover:border-primary hover:text-primary"
               >
@@ -236,9 +273,40 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
             )}
           </div>
 
+          {hasPdf && (
+            <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
+              <Label htmlFor="page-range" className="text-sm font-medium">
+                Pages to import{" "}
+                <span className="font-normal text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="page-range"
+                inputMode="numeric"
+                placeholder="e.g. 2, 5-8, 13-15, 50-55"
+                value={pageRange}
+                onChange={(e) => setPageRange(e.target.value)}
+                disabled={pending}
+                aria-invalid={rangeError ? true : undefined}
+                aria-describedby="page-range-hint"
+              />
+              <p
+                id="page-range-hint"
+                className={`text-xs ${rangeError ? "text-destructive" : "text-muted-foreground"}`}
+              >
+                {rangeError
+                  ? rangeError
+                  : selectedPages.length > 0
+                    ? `${selectedPages.length} page${selectedPages.length === 1 ? "" : "s"} selected — ${formatPageRange(selectedPages)}. Only these are scanned, so a recipe running past the last page you picked will be cut short.`
+                    : "Leave blank to scan the whole document. Picking pages from a big cookbook is much faster and cheaper."}
+              </p>
+            </div>
+          )}
+
           <p className="text-sm text-muted-foreground">
             {hasPdf
-              ? "PDF — AI will scan every page and extract the recipes it finds."
+              ? selectedPages.length > 0
+                ? `PDF — AI will scan the ${selectedPages.length} page${selectedPages.length === 1 ? "" : "s"} you picked and extract the recipes it finds.`
+                : "PDF — AI will scan every page and extract the recipes it finds."
               : photos.length === 1
                 ? "1 photo — AI will extract any recipes it finds."
                 : `${photos.length} photos — AI will scan all pages and extract every recipe found.`}
@@ -248,7 +316,11 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
             <Button variant="outline" onClick={reset} disabled={pending} className="flex-1">
               Clear all
             </Button>
-            <Button onClick={submit} disabled={pending} className="flex-1">
+            <Button
+              onClick={submit}
+              disabled={pending || (hasPdf && rangeError !== null)}
+              className="flex-1"
+            >
               {pending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

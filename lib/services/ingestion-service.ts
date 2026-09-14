@@ -134,7 +134,16 @@ export const ingestionService = {
    * Mark upload complete and emit the ingestion event.
    * The browser calls this after the storage PUT succeeds.
    */
-  async completeUpload(args: { jobId: string; storagePath: string }) {
+  async completeUpload(args: {
+    jobId: string;
+    storagePath: string;
+    /**
+     * Explicit 1-based pages to import from a PDF ("2, 5-8, 13-15"). Empty or
+     * absent means the whole document. Passed straight to the pipeline, which
+     * rasterizes only these pages.
+     */
+    pageNumbers?: number[];
+  }) {
     if (env.DATABASE_URL) {
       const job = await runInUserTx(async (tx) => {
         const [j] = await tx
@@ -157,6 +166,7 @@ export const ingestionService = {
         jobId: args.jobId,
         householdId: job.householdId,
         sourceKind: job.sourceKind,
+        ...(args.pageNumbers?.length ? { pageNumbers: args.pageNumbers } : {}),
       });
       return;
     }
@@ -184,6 +194,7 @@ export const ingestionService = {
       jobId: args.jobId,
       householdId: job.household_id,
       sourceKind: job.source_kind,
+      ...(args.pageNumbers?.length ? { pageNumbers: args.pageNumbers } : {}),
     });
   },
 

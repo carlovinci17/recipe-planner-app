@@ -916,6 +916,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
             jobId={skimDialogJobId ?? ""}
             recipes={activeJob ? readSkimState(activeJob).recipes : []}
             sourcePages={activeJob?.page_image_paths ?? []}
+            sourcePageNumbers={activeJob?.page_numbers ?? null}
             defaultSourceName={defaultName}
             defaultSourceUrl={defaultUrl}
             open={skimDialogJobId !== null}

@@ -10,6 +10,12 @@ type StartInput = {
   useOpus?: boolean;
   maxPages?: number;
   startPage?: number;
+  /**
+   * Explicit 1-based pages the user picked in the import UI ("2, 5-8, 13-15").
+   * When set, `prepare` rasterizes only these, so everything below already
+   * operates on the narrowed document and must NOT slice again.
+   */
+  pageNumbers?: number[];
 };
 
 // ── Chunking (pure, deterministic — safe in the orchestrator). Mirrors the
@@ -48,16 +54,30 @@ const ingestionOrchestrator: OrchestrationHandler = function* (context: Orchestr
   const jobId = input.jobId;
 
   // 1. Load + mark processing + rasterize.
-  const prepared = (yield context.df.callActivity("prepare", input)) as { pageImagePaths: string[] };
+  const prepared = (yield context.df.callActivity("prepare", input)) as {
+    pageImagePaths: string[];
+    error?: string;
+  };
   const pages = prepared.pageImagePaths ?? [];
   if (pages.length === 0) {
-    yield context.df.callActivity("markFailed", { jobId, error: "No page images produced", reason: "no_pages" });
+    // `prepare` supplies a specific message for a user-fixable mistake, such as
+    // asking for page 400 of a 312-page book. Fall back to the generic one.
+    yield context.df.callActivity("markFailed", {
+      jobId,
+      error: prepared.error ?? "No page images produced",
+      reason: prepared.error ? "bad_page_selection" : "no_pages",
+    });
     return { jobId, recipesFound: 0 };
   }
 
-  const startOffset = Math.max(0, (input.startPage ?? 1) - 1);
+  // With an explicit page selection, `prepare` already rendered exactly the
+  // wanted pages — slicing again here would cut into the user's choice.
+  const hasSelection = (input.pageNumbers?.length ?? 0) > 0;
+  const startOffset = hasSelection ? 0 : Math.max(0, (input.startPage ?? 1) - 1);
   let pagesToExtract = startOffset > 0 ? pages.slice(startOffset) : pages;
-  if (input.bulkMode && input.maxPages) pagesToExtract = pagesToExtract.slice(0, input.maxPages);
+  if (!hasSelection && input.bulkMode && input.maxPages) {
+    pagesToExtract = pagesToExtract.slice(0, input.maxPages);
+  }
 
   // 6.3: interactive skim — for multi-recipe docs (>= 3 pages, non-bulk), skim the
   // titles, then PAUSE for the user to pick which to deep-extract. Durable Functions

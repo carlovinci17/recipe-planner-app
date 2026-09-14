@@ -11,6 +11,7 @@ import { raiseIngestionEvent } from "@/lib/ingestion/start-job";
 import { driveClient } from "@/lib/integrations/google-drive";
 import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logger";
+import { MAX_SELECTED_PAGES } from "@/lib/ingestion/page-range";
 
 // ── Fuzzy name matching helpers ───────────────────────────────────────────────
 
@@ -634,15 +635,31 @@ export async function completeMultiPhotoUploadAction(input: z.infer<typeof Compl
 const CompletePhotoUploadSchema = z.object({
   jobId: z.string().uuid(),
   storagePath: z.string().min(1),
+  // Explicit 1-based PDF pages to import, already parsed from the user's
+  // "2, 5-8, 13-15". Absent or empty means the whole document. Re-checked
+  // here rather than trusted: the browser parsed it, but the browser is not
+  // the gate.
+  pageNumbers: z
+    .array(z.number().int().min(1))
+    .max(MAX_SELECTED_PAGES)
+    .optional(),
 });
 
 export async function completePhotoUploadAction(input: z.infer<typeof CompletePhotoUploadSchema>) {
   const parsed = CompletePhotoUploadSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Invalid input" };
   try {
+    // Authorize against the job's household. Row-Level Security (RLS) would
+    // also stop a cross-household write, but every sibling action checks
+    // explicitly too — defence in depth, per the project conventions.
+    const job = await ingestionStore.getJob(parsed.data.jobId);
+    if (!job) return { ok: false as const, error: "Job not found" };
+    await assertMembership(job.household_id);
+
     await ingestionService.completeUpload({
       jobId: parsed.data.jobId,
       storagePath: parsed.data.storagePath,
+      pageNumbers: parsed.data.pageNumbers,
     });
     return { ok: true as const };
   } catch (err) {

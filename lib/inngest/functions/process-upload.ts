@@ -77,8 +77,14 @@ export const processUpload = inngest.createFunction(
     const bulkMode = event.data.bulkMode === true;
     const useOpus = event.data.useOpus === true;
     const bulkMaxPages = event.data.maxPages; // undefined = no cap
+    // Explicit pages the user picked in the import UI ("2, 5-8, 13-15"). When
+    // set we rasterize only these, so the slicing below must not run again.
+    const selection = (event.data.pageNumbers ?? []).filter(
+      (n) => Number.isInteger(n) && n >= 1,
+    );
+    const hasSelection = selection.length > 0;
     // startPage is 1-based; convert to 0-based slice offset
-    const startOffset = Math.max(0, (event.data.startPage ?? 1) - 1);
+    const startOffset = hasSelection ? 0 : Math.max(0, (event.data.startPage ?? 1) - 1);
     // Rendering cap: must cover startOffset + extraction range so pages beyond
     // the default 25 are available. Bulk with no extraction cap → no render cap.
     const renderMaxPages = bulkMode
@@ -101,7 +107,11 @@ export const processUpload = inngest.createFunction(
         job.source_kind === "pdf" || job.storage_path!.toLowerCase().endsWith(".pdf");
 
       if (isPdf) {
-        const images = await pdfBufferToPageImages({ buffer: originalBuffer, maxPages: renderMaxPages });
+        const images = await pdfBufferToPageImages({
+          buffer: originalBuffer,
+          maxPages: renderMaxPages,
+          pageNumbers: hasSelection ? selection : undefined,
+        });
         const paths: string[] = [];
         for (let i = 0; i < images.length; i++) {
           const path = await ingestionStorage.uploadDerivedImage({
@@ -149,10 +159,24 @@ export const processUpload = inngest.createFunction(
       }
     });
 
+    // Real book page behind each rendered image, so the skim picker can label
+    // the true page rather than the image's position.
+    //
+    // Derived, not captured from the rasterize step: Inngest memoizes a step's
+    // return value and skips its callback on replay, so anything a callback
+    // assigns to an outer variable is empty the second time through. This is
+    // safe because `selection` is sorted ascending and the rasterizer only
+    // drops entries past the end of the document — the pages it kept are
+    // always a prefix.
+    const renderedPages = hasSelection ? selection.slice(0, pageImagePaths.length) : null;
+
     await step.run("save-page-paths", async () => {
       await supabase
         .from("ingestion_jobs")
-        .update({ page_image_paths: pageImagePaths })
+        .update({
+          page_image_paths: pageImagePaths,
+          ...(renderedPages ? { page_numbers: renderedPages } : {}),
+        })
         .eq("id", jobId);
     });
 
@@ -179,7 +203,7 @@ export const processUpload = inngest.createFunction(
         `startPage (${event.data.startPage}) exceeds this PDF's page count (${pageImagePaths.length} pages)`,
       );
     }
-    let pagesToExtract = bulkMode && bulkMaxPages
+    let pagesToExtract = !hasSelection && bulkMode && bulkMaxPages
       ? pagesFromStart.slice(0, bulkMaxPages)
       : pagesFromStart;
     // null when no skim ran (short docs go direct to deep extract).

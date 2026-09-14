@@ -315,6 +315,9 @@ export const ingestionJobs = pgTable("ingestion_jobs", {
 	storagePath: text("storage_path"),
 	storageBucket: text("storage_bucket"),
 	pageImagePaths: text("page_image_paths").array().default(sql`'{}'`).notNull(),
+	// Real 1-based source PDF page for each page_image_paths entry (same order,
+	// same length). NULL when the whole document was rasterized.
+	pageNumbers: integer("page_numbers").array(),
 	status: recipeStatus().default('draft').notNull(),
 	error: text(),
 	aiModel: text("ai_model"),

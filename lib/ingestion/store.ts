@@ -62,6 +62,7 @@ export type IngestionJobPatch = Partial<
     | "cost_cents"
     | "skim_results"
     | "page_image_paths"
+    | "page_numbers"
     | "storage_path"
     | "updated_at"
   >
@@ -105,6 +106,7 @@ export const ingestionStore = {
       if (p.cost_cents !== undefined) set.costCents = p.cost_cents;
       if (p.skim_results !== undefined) set.skimResults = p.skim_results;
       if (p.page_image_paths !== undefined) set.pageImagePaths = p.page_image_paths;
+      if (p.page_numbers !== undefined) set.pageNumbers = p.page_numbers;
       if (p.storage_path !== undefined) set.storagePath = p.storage_path;
       if (p.updated_at !== undefined) set.updatedAt = p.updated_at;
       await db.update(ingestionJobs).set(set).where(eq(ingestionJobs.id, jobId));

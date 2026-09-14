@@ -12,6 +12,8 @@ type FileUploadedData = {
   useOpus?: boolean;
   maxPages?: number;
   startPage?: number;
+  /** Explicit 1-based pages the user picked ("2, 5-8, 13-15"). */
+  pageNumbers?: number[];
   allowedTitles?: string[];
 };
 

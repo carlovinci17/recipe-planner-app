@@ -16,6 +16,8 @@ type Events = {
       bulkMode?: boolean;
       /** Max pages to extract in bulk mode (default 25). */
       maxPages?: number;
+      /** Explicit 1-based pages the user picked ("2, 5-8, 13-15"). */
+      pageNumbers?: number[];
       /** 1-based page number to start extraction from (skip earlier pages). */
       startPage?: number;
       /** Force Opus instead of the bulk model for files Sonnet struggles with. */

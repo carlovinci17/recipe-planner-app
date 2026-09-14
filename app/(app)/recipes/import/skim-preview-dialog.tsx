@@ -41,6 +41,7 @@ export function SkimPreviewDialog({
   jobId,
   recipes,
   sourcePages,
+  sourcePageNumbers,
   defaultSourceName,
   defaultSourceUrl,
   open,
@@ -54,6 +55,14 @@ export function SkimPreviewDialog({
    * next to each skim row so the user can see what they're agreeing to.
    */
   sourcePages: string[];
+  /**
+   * Real 1-based source PDF page behind each entry of `sourcePages`, when the
+   * user narrowed the import up front ("2, 5-8, 13-15"). Without it the dialog
+   * would label a recipe on book page 14 as "page 2", because the model counts
+   * the images it was shown, not the pages of the book. Null when the whole
+   * document was rasterized, where the two are the same thing.
+   */
+  sourcePageNumbers?: number[] | null;
   /**
    * AI/derivation-suggested source for the whole batch. The user can edit
    * before committing; whatever they leave in the fields is applied to
@@ -198,6 +207,11 @@ export function SkimPreviewDialog({
               r.source_page_index && r.source_page_index >= 1
                 ? sourcePages[r.source_page_index - 1] ?? null
                 : null;
+            // Translate the model's image position into the real book page.
+            const bookPage =
+              r.source_page_index && r.source_page_index >= 1
+                ? sourcePageNumbers?.[r.source_page_index - 1] ?? r.source_page_index
+                : null;
             return (
               <li
                 key={i}
@@ -219,9 +233,9 @@ export function SkimPreviewDialog({
                 >
                   <div className="flex items-baseline gap-2">
                     <span className="truncate font-medium">{r.title}</span>
-                    {r.source_page_index ? (
+                    {bookPage ? (
                       <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                        page {r.source_page_index}
+                        page {bookPage}
                       </span>
                     ) : null}
                   </div>

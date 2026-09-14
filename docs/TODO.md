@@ -15,20 +15,27 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       tenant → BiteBuddy; Company Branding (favicon, banner logo, bg `#FCFAF7`, upload the CSS). All in
       the **External ID "Recipe Planner" tenant**, not the home tenant. See ADR-0012. Nothing in code
       depends on this. *(Post-logout redirect URI is already registered — done 2026-08-20.)*
-- [ ] **Up-front page/range selection for PDF import** (File tab + Google Drive) — requested 2026-08-19.
-      Before extraction starts, let the user pick a page range (e.g. "pages 12–28") and/or specific
-      pages, so a large multi-recipe PDF only rasterizes + vision-processes the chosen pages (saves
-      time + tokens; not every recipe in a cookbook needs importing).
-      - **Backend already supports it:** `prepare` + `startFileIngestion` accept `startPage` + `maxPages`
-        (used by bulk today). Extend to an explicit page set if we want non-contiguous pages, or keep
-        it to start+count for v1. The vision loop then only sees the selected pages.
-      - **Distinct from the existing skim picker** (which selects *recipes* by title *after* rasterizing
-        everything). This is a *coarse, pre-rasterize* filter; the two compose (pick pages → then skim
-        the recipes within them).
-      - **UI design:** File PDF — a page-range control (start + count, or "pages A–B"); ideally client-side
-        page thumbnails (pdfjs in the browser) to pick visually, but a numeric range is a fine v1. Google
-        Drive — no up-front preview available, so a numeric range input (optionally read page count first).
-      - Worth a short grill/design pass; own feature, not cutover-critical.
+- [x] **Up-front page/range selection for PDF import** — DONE for the **File tab** (2026-09-14).
+      The File tab now has an optional "Pages to import" box accepting the print-dialog form —
+      `2, 5-8, 13-15, 50-55` — parsed live (`lib/ingestion/page-range.ts`), capped at 100 pages,
+      re-validated server-side. `prepare` rasterizes **only** those pages, so the pages nobody
+      asked for are never rendered: the saving is time as well as tokens.
+      - **The TODO's "backend already supports it" was wrong.** `startPage`/`maxPages` were plumbed
+        but inert: `maxPages` was gated on `bulkMode` (never set by the app), the skim step
+        discarded the slice, `prepare` used `startPage` only to raise the render *cap* (still
+        starting at page 1), and the only caller — `scripts/bulk-import.ts` — is itself broken
+        post-cutover (talks to Inngest + the deleted Supabase project). All fixed or bypassed.
+      - **New column** `ingestion_jobs.page_numbers integer[]` (migration
+        `20260914120000_ingestion_jobs_page_numbers.sql`) — the real book page behind each
+        rasterized image. Without it the skim picker labels a recipe on page 14 as "page 2",
+        because `source_page_index` counts the images the model saw, not the book's pages.
+      - **Neighbour expansion now respects real adjacency** in `apply-selection`: with "5-8, 13-15"
+        the image after page 8 is page 13, and the old ±1 rule pulled it in.
+      - Covered by `tests/unit/page-range.test.ts` (17) and `tests/unit/pdf-page-selection.test.ts`
+        (7, against a real fixture PDF — proves we render the named pages, not page 1 repeated).
+      - **Still open:** the Google Drive half, deliberately left out — Drive import can't run at all
+        today (see below), so it could not be tested. Also still numeric-only: client-side page
+        thumbnails would need pdfjs in the browser bundle (it is `serverExternalPackages` today).
 - [ ] **Every recipe must get ≥1 meal-type** (breakfast / lunch / dinner / snack) — noticed 2026-08-19
       when a URL import ("Crispy Parmesan Crusted Chicken") landed with `meal_types: []`. The tagger
       (`RECIPE_TAGGING_SYSTEM` prompt + `tagRecipe` → `applyRecipeTags`) leaves it empty when the model
