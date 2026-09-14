@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "db:reset": "supabase db reset",
-    "db:push": "supabase db push",
+    "db:push": "echo '\\n  db:push is dead — it targeted the Supabase project, deleted at the Module 11 cutover.\\n  Apply a migration to Neon instead:\\n\\n    npm run db:migrate supabase/migrations/<file>.sql\\n' && exit 1",
     "db:diff": "supabase db diff -f new_migration",
     "db:types": "supabase gen types typescript --local > types/database.types.ts",
     "inngest:dev": "inngest-cli@latest dev",
@@ -23,7 +23,8 @@
     "test:seed": "tsx tests/scripts/seed-test-user.ts",
     "test:cleanup": "tsx tests/scripts/cleanup-test-user.ts",
     "seed:recipes": "tsx scripts/seed-recipes.ts",
-    "bulk:import": "tsx scripts/bulk-import.ts"
+    "bulk:import": "tsx scripts/bulk-import.ts",
+    "db:migrate": "tsx scripts/neon-apply-sql.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",

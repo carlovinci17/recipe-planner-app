@@ -160,6 +160,20 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       *errors* fail the build today, so warnings can creep back in unnoticed. Adding
       `--max-warnings 0` to the `lint` script locks in the clean slate.
 
+### Found 2026-09-14 (deploy papercuts)
+- [ ] **The Azure Functions app is not deployed by CI** — `.github/workflows/build.yml` builds and
+      deploys only the container app, so any change to `functions/src/**` (the Durable orchestrator)
+      needs a manual `cd functions && npm run build && func azure functionapp publish
+      func-recipe-jobs`. Easy to forget, and the symptom is an orchestrator running old code against
+      new app endpoints. Adding a job needs two things decided: the `id-github-deploy` identity must
+      have rights on `func-recipe-jobs`, and the job should only fire when `functions/**` actually
+      changed (a `paths:` filter) so every UI commit doesn't republish it.
+- [ ] **Three `db:*` scripts still shell out to the deleted Supabase project** — `db:reset`,
+      `db:diff` and `db:types`. `db:push` was retired on 2026-09-14 (it now prints why and exits 1)
+      and `db:migrate` added in its place, but the other three were left alone as out of scope.
+      `db:types` is the dangerous one: it clobbers the hand-authored `types/database.types.ts` and
+      breaks ~19 importers. Decide whether to delete all three or guard them the same way.
+
 ## Post-project deliverables
 - [ ] **Monthly cost overview** — after cutover, produce a clear guide to *where to find the monthly
       cost* of the whole app: Azure Cost Management (per resource group / service — Container Apps,

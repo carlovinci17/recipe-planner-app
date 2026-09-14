@@ -25,10 +25,16 @@ npm run typecheck      # tsc --noEmit  ← fastest correctness gate
 npm run lint           # next lint
 npm run format         # prettier --write .
 
-npm run db:reset       # Reset local Supabase DB, replay migrations + seed
-npm run db:push        # Push migrations to the linked hosted project
-npm run db:diff        # Generate a migration from schema drift
-npm run db:types       # ⚠️ CLOBBERS types/database.types.ts — see Database note below
+npm run db:migrate <file.sql>   # Apply one .sql file to Neon (no psql needed)
+
+# The `supabase`-backed db:* scripts below all target the hosted Supabase
+# project, which was DELETED at the Module 11 cutover. db:push now prints that
+# and exits 1; the other three still shell out to the CLI and will fail or,
+# worse, act on a stale local instance. Use db:migrate instead.
+npm run db:reset       # ☠️ dead — reset local Supabase DB, replay migrations + seed
+npm run db:push        # ☠️ dead — replaced by db:migrate
+npm run db:diff        # ☠️ dead — generate a migration from schema drift
+npm run db:types       # ☠️ dead AND destructive — CLOBBERS types/database.types.ts
 
 npm run inngest:dev    # Local Inngest dev server (UI at :8288)
 npm run test:e2e       # Playwright, headless
