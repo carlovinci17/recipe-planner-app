@@ -19,7 +19,7 @@ git push → build job: build image → ghcr.io
 | Piece | Value | Why |
 |---|---|---|
 | Deploy identity | `id-github-deploy` (user-assigned) | Separate from the app's Key Vault identity — least privilege |
-| Federated credential | subject `repo:carlovinci17/recipe-planner-app:ref:refs/heads/version2/plan` | The passwordless trust: only *this repo+branch* can assume the identity |
+| Federated credential | `gh-main` — subject `repo:carlovinci17/recipe-planner-app:ref:refs/heads/main` | The passwordless trust: only *this repo+branch* can assume the identity. (Originally `gh-version2-plan`; retired once CI moved to `main`.) |
 | RBAC | **Contributor** scoped to `rg-recipe-planner` | Just enough to update the app; nothing outside the RG |
 | Repo Variables | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | Non-secret IDs the workflow logs in with |
 | Workflow | `deploy` job (`needs: build`, `id-token: write`) → `azure/login@v2` → `az containerapp update` | The deploy step |

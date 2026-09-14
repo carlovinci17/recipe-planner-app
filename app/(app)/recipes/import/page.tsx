@@ -14,7 +14,7 @@ import { DriveIndexManager } from "./drive-index-manager";
 import { ActiveJobs } from "./active-jobs";
 import { BackLink } from "@/components/ui/back-link";
 
-export const metadata = { title: "Import recipe" };
+export const metadata = { title: "Add Recipes" };
 
 export default async function ImportPage() {
   const household = await getActiveHousehold();
@@ -38,7 +38,7 @@ export default async function ImportPage() {
     <div className="container max-w-3xl space-y-6 py-6">
       <BackLink href="/recipes" label="Recipes" />
       <div>
-        <h1 className="font-display text-2xl font-semibold">Import a recipe</h1>
+        <h1 className="font-display text-2xl font-semibold">Add Recipes</h1>
         <p className="text-sm text-muted-foreground">
           Add a new recipe manually, paste a URL, or pull from Google Drive.
         </p>

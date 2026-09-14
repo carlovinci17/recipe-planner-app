@@ -206,12 +206,15 @@ resource deployRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 
 // GitHub OIDC federated credential on the deploy identity (2.5)
+// CI deploys from `main` — the old `gh-version2-plan` credential is gone.
+// The subject must match the deploying branch exactly or the deploy step
+// fails with AADSTS700213.
 resource deployFic 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = {
   parent: deployIdentity
-  name: 'gh-version2-plan'
+  name: 'gh-main'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:carlovinci17/recipe-planner-app:ref:refs/heads/version2/plan'
+    subject: 'repo:carlovinci17/recipe-planner-app:ref:refs/heads/main'
     audiences: [ 'api://AzureADTokenExchange' ]
   }
 }

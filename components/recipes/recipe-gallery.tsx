@@ -167,7 +167,10 @@ function GalleryHero({
         />
       ) : null}
       {showExpandHint ? (
-        <div className="absolute right-3 top-3 rounded-full bg-black/50 p-2 text-white opacity-0 transition-opacity group-hover:opacity-100">
+        // Bottom-right, not top-right: the top-right corner belongs to
+        // `heroOverlay` (the source pill), and a touch device that latches
+        // :hover left this dark circle sitting behind the pill.
+        <div className="absolute bottom-3 right-3 rounded-full bg-black/50 p-2 text-white opacity-0 transition-opacity group-hover:opacity-100">
           <Maximize2 className="h-4 w-4" />
         </div>
       ) : null}

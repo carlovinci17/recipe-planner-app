@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
 import { useDebouncedRouterRefresh } from "@/lib/realtime/use-debounced-refresh";
-import { ChefHat, ChevronLeft, ChevronRight, Plus, ShoppingBasket, Trash2 } from "lucide-react";
+import { ArrowRight, ChefHat, ChevronLeft, ChevronRight, Copy, Heart, Plus, ShoppingBasket, Trash2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,19 +19,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { MealSlot, Tables } from "@/types/database.types";
 import type { RecipeListItem } from "@/lib/services/recipe-service";
 import { coverObjectPositionStyle, resolveCoverImage } from "@/lib/recipes/cover-image";
+import { formatMinutes } from "@/lib/utils";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
 import {
   DndContext,
@@ -382,6 +375,15 @@ export function PlannerGrid({
   // the server vs client and trigger a hydration mismatch. Initialise on
   // first dialog open instead (see openShoppingDialog below).
   const [listStart, setListStart] = useState<string>("");
+  // Same reason, for highlighting today's column: resolve it after mount so the
+  // server-rendered markup and the first client render agree. Null until then,
+  // so nothing is highlighted for one frame rather than the wrong day.
+  // en-CA formats as YYYY-MM-DD in *local* time, matching `dates` — unlike
+  // toISOString(), which is UTC and lands on the wrong day for UTC+10/11.
+  const [todayIso, setTodayIso] = useState<string | null>(null);
+  useEffect(() => {
+    setTodayIso(new Date().toLocaleDateString("en-CA"));
+  }, []);
   const [listDays, setListDays] = useState<number>(7);
 
   async function generateShopping() {
@@ -486,10 +488,21 @@ export function PlannerGrid({
                 <div key={d} className="grid grid-cols-[3rem_repeat(4,1fr)] gap-1">
                   {/* Day label */}
                   <div className="flex flex-col items-center justify-start pt-1.5">
-                    <span className="text-[10px] font-medium uppercase leading-tight text-muted-foreground">
+                    <span
+                      className={`text-[10px] font-medium uppercase leading-tight ${
+                        d === todayIso ? "text-primary" : "text-muted-foreground"
+                      }`}
+                    >
                       {format(parseISO(d), "EEE")}
                     </span>
-                    <span className="font-display text-sm font-semibold leading-tight">
+                    <span
+                      className={
+                        d === todayIso
+                          ? "flex h-6 w-6 items-center justify-center rounded-full bg-primary font-display text-sm font-semibold leading-none text-primary-foreground"
+                          : "font-display text-sm font-semibold leading-tight"
+                      }
+                      aria-current={d === todayIso ? "date" : undefined}
+                    >
                       {format(parseISO(d), "d")}
                     </span>
                     {showMacrosRow && dayMacros?.hasAny ? (
@@ -536,9 +549,19 @@ export function PlannerGrid({
           <div className="grid min-w-[640px] grid-cols-[72px_repeat(7,1fr)] gap-1.5">
             <div />
             {dates.map((d) => (
-              <div key={d} className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <div
+                key={d}
+                className={`rounded-md px-2 text-xs font-medium uppercase tracking-wide ${
+                  d === todayIso ? "bg-primary/10 text-primary" : "text-muted-foreground"
+                }`}
+                aria-current={d === todayIso ? "date" : undefined}
+              >
                 <div>{format(parseISO(d), "EEE")}</div>
-                <div className="font-display text-base font-semibold text-foreground">
+                <div
+                  className={`font-display text-base font-semibold ${
+                    d === todayIso ? "text-primary" : "text-foreground"
+                  }`}
+                >
                   {format(parseISO(d), "d")}
                 </div>
               </div>
@@ -624,12 +647,12 @@ export function PlannerGrid({
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 pt-2">
             <Button variant="outline" className="h-auto flex-col gap-1.5 px-4 py-4" onClick={confirmCopy}>
-              <span className="text-lg leading-none">📋</span>
+              <Copy className="h-5 w-5" aria-hidden />
               <span className="font-medium">Copy</span>
               <span className="text-[10px] text-muted-foreground">Keep original</span>
             </Button>
             <Button className="h-auto flex-col gap-1.5 px-4 py-4" onClick={confirmMove}>
-              <span className="text-lg leading-none">✂️</span>
+              <ArrowRight className="h-5 w-5" aria-hidden />
               <span className="font-medium">Move</span>
               <span className="text-[10px] opacity-70">Remove original</span>
             </Button>
@@ -647,7 +670,12 @@ export function PlannerGrid({
                 : ""}
             </DialogDescription>
           </DialogHeader>
-          <RecipePicker recipes={recipes} onPick={handleAdd} pending={pending} />
+          <RecipePicker
+            recipes={recipes}
+            onPick={handleAdd}
+            pending={pending}
+            slot={pickerCell?.slot}
+          />
         </DialogContent>
       </Dialog>
 
@@ -782,16 +810,6 @@ function DraggableEntry({
       <PlannerEntryTile entry={entry} onRemove={onRemove} />
     </div>
   );
-}
-
-function PlannerEntry({
-  entry,
-  onRemove,
-}: {
-  entry: EntryWithRecipe;
-  onRemove: () => void;
-}) {
-  return <PlannerEntryTile entry={entry} onRemove={onRemove} />;
 }
 
 function PlannerEntryTile({
@@ -934,20 +952,92 @@ function MacroRow({
   );
 }
 
+/** One row in the picker: thumbnail, title, meta, and a + button. */
+function PickerRow({
+  recipe,
+  disabled,
+  onPick,
+}: {
+  recipe: RecipeListItem;
+  disabled: boolean;
+  onPick: () => void;
+}) {
+  const coverRef = resolveCoverImage(recipe);
+  const cover = useSignedImage(coverRef?.path ?? null, coverRef?.bucket ?? "recipe-uploads", {
+    width: 96,
+    resize: "cover",
+    quality: 70,
+  });
+  const totalMin = (recipe.prep_time_min ?? 0) + (recipe.cook_time_min ?? 0);
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onPick}
+      className="group flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-accent disabled:opacity-50"
+    >
+      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-md bg-muted">
+        {cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={cover}
+            alt=""
+            loading="lazy"
+            style={coverObjectPositionStyle(recipe)}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-lg">🍽️</div>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{recipe.title}</div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {totalMin > 0 ? <span>{formatMinutes(totalMin)}</span> : null}
+          {recipe.meal_types[0] ? <span className="capitalize">{recipe.meal_types[0]}</span> : null}
+          {recipe.is_favorite ? <Heart className="h-3 w-3 fill-current text-red-500" /> : null}
+        </div>
+      </div>
+
+      {/* Affordance only — the whole row is the button, so this must not be a
+          nested <button> (invalid HTML and a second tab stop). */}
+      <span
+        aria-hidden
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground transition-colors group-hover:border-primary group-hover:bg-primary group-hover:text-primary-foreground"
+      >
+        <Plus className="h-4 w-4" />
+      </span>
+    </button>
+  );
+}
+
 function RecipePicker({
   recipes,
   onPick,
   pending,
+  slot,
 }: {
   recipes: RecipeListItem[];
   onPick: (recipeId: string | null, customTitle: string | null) => void;
   pending: boolean;
+  /** The slot being filled — seeds the meal-type filter. */
+  slot?: MealSlot;
 }) {
   const [query, setQuery] = useState("");
   const [custom, setCustom] = useState("");
-  const filtered = recipes.filter(
-    (r) => !query || r.title.toLowerCase().includes(query.toLowerCase()),
-  );
+  // Default the filter to the slot the user clicked: opening "dinner" should
+  // show dinners first, not all 180 recipes. "all" is one click away.
+  const [mealFilter, setMealFilter] = useState<string>(slot ?? "all");
+  const [favOnly, setFavOnly] = useState(false);
+
+  const filtered = recipes.filter((r) => {
+    if (query && !r.title.toLowerCase().includes(query.toLowerCase())) return false;
+    if (favOnly && !r.is_favorite) return false;
+    if (mealFilter !== "all" && !r.meal_types.includes(mealFilter)) return false;
+    return true;
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
@@ -957,44 +1047,91 @@ function RecipePicker({
         onChange={(e) => setQuery(e.target.value)}
         className="shrink-0"
       />
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto rounded-md border">
+
+      {/* Quick-add sits directly under the search: typing a one-off like
+          "Leftovers" is a common reason for opening this dialog, and it used
+          to be buried below a long scrolling list. */}
+      <div className="flex shrink-0 gap-2">
+        <Input
+          placeholder="Or quick-add, e.g. Leftovers"
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && custom.trim() && !pending) {
+              e.preventDefault();
+              onPick(null, custom.trim());
+            }
+          }}
+        />
+        <Button
+          type="button"
+          size="icon"
+          aria-label="Quick-add this meal"
+          disabled={!custom.trim() || pending}
+          onClick={() => onPick(null, custom.trim())}
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* Filters */}
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+        {["all", ...SLOTS.map((sl) => sl.id)].map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMealFilter(m)}
+            className={`rounded-full border px-2.5 py-0.5 text-xs capitalize transition-colors ${
+              mealFilter === m
+                ? "border-primary bg-primary text-primary-foreground"
+                : "bg-background hover:bg-accent"
+            }`}
+          >
+            {m}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setFavOnly((v) => !v)}
+          aria-pressed={favOnly}
+          className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
+            favOnly
+              ? "border-primary bg-primary text-primary-foreground"
+              : "bg-background hover:bg-accent"
+          }`}
+        >
+          <Heart className={`h-3 w-3 ${favOnly ? "fill-current" : ""}`} />
+          Favourites
+        </button>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-md border p-1">
         {filtered.length === 0 ? (
-          <div className="p-4 text-sm text-muted-foreground">No recipes match.</div>
+          <div className="p-4 text-sm text-muted-foreground">
+            No recipes match.{" "}
+            {mealFilter !== "all" || favOnly ? (
+              <button
+                type="button"
+                className="font-medium text-primary underline"
+                onClick={() => {
+                  setMealFilter("all");
+                  setFavOnly(false);
+                }}
+              >
+                Clear filters
+              </button>
+            ) : null}
+          </div>
         ) : (
           filtered.map((r) => (
-            <button
+            <PickerRow
               key={r.id}
-              type="button"
+              recipe={r}
               disabled={pending}
-              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent"
-              onClick={() => onPick(r.id, null)}
-            >
-              <span className="truncate">{r.title}</span>
-              {r.meal_types[0] ? (
-                <Badge variant="outline" className="ml-2 capitalize">
-                  {r.meal_types[0]}
-                </Badge>
-              ) : null}
-            </button>
+              onPick={() => onPick(r.id, null)}
+            />
           ))
         )}
-      </div>
-      <div className="shrink-0 space-y-1.5">
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Or quick-add</div>
-        <div className="flex gap-2">
-          <Input
-            placeholder="e.g. Leftovers"
-            value={custom}
-            onChange={(e) => setCustom(e.target.value)}
-          />
-          <Button
-            type="button"
-            disabled={!custom.trim() || pending}
-            onClick={() => onPick(null, custom.trim())}
-          >
-            Add
-          </Button>
-        </div>
       </div>
     </div>
   );
