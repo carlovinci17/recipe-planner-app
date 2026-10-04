@@ -23,6 +23,10 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Pin the timezone so date assertions are deterministic. Without this,
+    // anything formatting a UTC timestamp for display passes in UTC and fails
+    // in Australia (UTC+10/11), where the local calendar day differs.
+    env: { TZ: "UTC" },
     include: ["tests/**/*.test.ts"],
     // The golden set (Lesson 7.3) is a token-spending provider comparison with its
     // own config (vitest.golden.config.mts) — never part of the normal suite.

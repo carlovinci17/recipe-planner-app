@@ -12,6 +12,7 @@ import { formatMinutes } from "@/lib/utils";
 import { FavoriteButton } from "./favorite-button";
 import { RecipeGallery } from "@/components/recipes/recipe-gallery";
 import { SourcePill } from "@/components/recipes/source-pill";
+import { RecipeDates } from "@/components/recipes/recipe-dates";
 import { DeleteRecipeButton } from "./delete-recipe-button";
 import { RecipeRatings } from "./recipe-ratings";
 import { BackLink } from "@/components/ui/back-link";
@@ -102,6 +103,8 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
         ) : null}
         <SourcePill recipe={recipe} />
       </div>
+
+      <RecipeDates createdAt={recipe.created_at} updatedAt={recipe.updated_at} />
 
       {(() => {
         // Dedupe across cuisines / meal_types / diet_types / tags — the AI
