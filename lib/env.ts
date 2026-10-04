@@ -20,9 +20,35 @@ const optional = (min?: number) =>
   );
 
 const serverSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_URL: emptyToUndefined.pipe(z.string().url()),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: emptyToUndefined.pipe(z.string().min(20)),
-  SUPABASE_SERVICE_ROLE_KEY: optional(20),
+  // ── Supabase: retired, but still type-load-bearing ──────────────────────
+  // The hosted project was DELETED at the Module 11 cutover (auth → Entra,
+  // storage → Blob, Postgres → Neon). Nothing reads these when
+  // AUTH_PROVIDER=entra: lib/supabase/middleware.ts returns before it builds a
+  // client, and createSupabaseAdmin() throws its own clear error if called.
+  //
+  // They were REQUIRED, with min(20) guarding against a truncated paste. That
+  // guard became the problem: middleware imports this module on every request,
+  // so a leftover short value in `.env.local` took the entire site down with a
+  // runtime error — for credentials to a service that no longer exists.
+  //
+  // `.catch(...)` rather than `.optional()`, deliberately. These values feed
+  // createClient<Database>(url, key), whose generic inference needs `string`.
+  // Making them `string | undefined` collapses the Database typing and
+  // produces 439 type errors across every Supabase query still in the tree.
+  // A fallback keeps the type, so a bad value degrades instead of exploding.
+  //
+  // Trade-off: on the legacy supabase auth path, blank keys now surface as
+  // supabase-js's "supabaseKey is required" at construction instead of this
+  // module's nicer message. Acceptable — that path is being deleted, and the
+  // host below is an RFC 2606 reserved name that can never resolve.
+  NEXT_PUBLIC_SUPABASE_URL: emptyToUndefined
+    .pipe(z.string().url())
+    .catch("http://supabase.invalid"),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: emptyToUndefined.pipe(z.string().min(20)).catch(""),
+  // No min(): a short leftover is not a misconfiguration any more, just a
+  // value nothing reads. The single consumer (createSupabaseAdmin) already
+  // guards on falsiness, so "" and undefined behave identically there.
+  SUPABASE_SERVICE_ROLE_KEY: optional(),
   // Drizzle direct Postgres connection. Optional for now: when unset, services
   // keep using the Supabase client (prod). When set (local/test, later Neon),
   // the ported methods query Postgres directly. See ADR-002 / Module 3.
