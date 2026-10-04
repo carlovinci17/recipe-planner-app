@@ -5,7 +5,6 @@ import { headers } from "next/headers";
 import { signOut } from "@/auth";
 import { setActiveHouseholdCookie } from "@/lib/services/active-household";
 import { householdService } from "@/lib/services/household-service";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { env } from "@/lib/env";
 
 /**
@@ -44,23 +43,17 @@ export async function switchHouseholdAction(householdId: string) {
 }
 
 /**
- * Sign out of the ACTIVE session. Dual-dispatch: under Entra the live session is
- * Auth.js (calling supabase.auth.signOut() there was a no-op — you were never
- * actually signed out, so the middleware bounced you back to /recipes). Auth.js
- * signOut clears its cookie and redirects; trustHost builds the URL from the
- * request host, so the port is preserved on localhost.
+ * Sign out of the active session.
+ *
+ * Two steps, and both matter: clearing the Auth.js cookie alone leaves the
+ * Entra (Identity Provider) session live, so single sign-on silently signs the
+ * same user straight back in. Federating the logout clears both.
  */
 export async function signOutAction() {
-  if (env.AUTH_PROVIDER === "entra") {
-    // 1. Clear the app (Auth.js) session cookie — but don't redirect yet.
-    await signOut({ redirect: false });
-    // 2. Federate the logout: send the browser to Entra's end-session endpoint so
-    //    the IdP session is cleared too (without this, SSO silently re-logs the
-    //    same user in). Lands back on the home page.
-    const url = await entraLogoutUrl();
-    redirect(url ?? "/");
-  }
-  const supabase = await createSupabaseServerClient();
-  await supabase.auth.signOut();
-  redirect("/");
+  // 1. Clear the app (Auth.js) session cookie — but don't redirect yet.
+  await signOut({ redirect: false });
+  // 2. Send the browser to Entra's end-session endpoint so the IdP session is
+  //    cleared too. Lands back on the home page.
+  const url = await entraLogoutUrl();
+  redirect(url ?? "/");
 }
