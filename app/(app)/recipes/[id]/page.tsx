@@ -1,5 +1,17 @@
 import { notFound, redirect } from "next/navigation";
-import { Beef, Candy, Clock, Droplet, Edit, Flame, Grip, Leaf, Star, Users, Wheat } from "lucide-react";
+import {
+  Beef,
+  Candy,
+  Clock,
+  Droplet,
+  Edit,
+  Flame,
+  Grip,
+  Leaf,
+  Star,
+  Users,
+  Wheat,
+} from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +20,7 @@ import { recipeService } from "@/lib/services/recipe-service";
 import { ratingService } from "@/lib/services/rating-service";
 import { getRecipePermissions } from "@/lib/services/permissions";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { formatMinutes } from "@/lib/utils";
+import { cn, formatMinutes } from "@/lib/utils";
 import { FavoriteButton } from "./favorite-button";
 import { RecipeGallery } from "@/components/recipes/recipe-gallery";
 import { SourcePill } from "@/components/recipes/source-pill";
@@ -17,6 +29,27 @@ import { DeleteRecipeButton } from "./delete-recipe-button";
 import { RecipeRatings } from "./recipe-ratings";
 import { BackLink } from "@/components/ui/back-link";
 import { AddToPlannerButton } from "./add-to-planner-button";
+
+/**
+ * One column per nutrient, so the panel is a single row whatever the recipe
+ * happens to record. Written out rather than built as `md:grid-cols-${n}`:
+ * Tailwind generates classes by scanning the source for literal strings, so an
+ * interpolated name produces no CSS at all and the grid silently collapses to
+ * one column.
+ *
+ * In this database 151 recipes carry 5 nutrients, 20 carry 4 (no carbs) and a
+ * single one carries all 7 — hence 7 being tight but present rather than
+ * wrapped onto a second row.
+ */
+const NUTRITION_COLS: Record<number, string> = {
+  1: "md:grid-cols-1",
+  2: "md:grid-cols-2",
+  3: "md:grid-cols-3",
+  4: "md:grid-cols-4",
+  5: "md:grid-cols-5",
+  6: "md:grid-cols-6",
+  7: "md:grid-cols-7",
+};
 
 export default async function RecipeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -111,12 +144,7 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
         // tagger or hand-entry can produce overlap (e.g. "mexican" in both
         // cuisines and tags), which would otherwise cause duplicate React keys.
         const labels = Array.from(
-          new Set([
-            ...recipe.cuisines,
-            ...recipe.meal_types,
-            ...recipe.diet_types,
-            ...recipe.tags,
-          ]),
+          new Set([...recipe.cuisines, ...recipe.meal_types, ...recipe.diet_types, ...recipe.tags]),
         );
         return labels.length > 0 ? (
           <div className="flex flex-wrap gap-1">
@@ -134,6 +162,19 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
         ratings={ratings}
         currentUserId={currentUser?.id ?? null}
       />
+
+      {/* Notes sit ABOVE the method: a note is usually something you need to
+          know before you start cooking ("halve the chilli", "needs an
+          overnight soak"), not an afterthought. Hidden entirely when empty. */}
+      {recipe.notes && recipe.notes.trim().length > 0 ? (
+        <>
+          <Separator />
+          <section>
+            <h2 className="mb-2 font-display text-lg font-semibold">Notes</h2>
+            <p className="whitespace-pre-wrap text-sm text-muted-foreground">{recipe.notes}</p>
+          </section>
+        </>
+      ) : null}
 
       <Separator />
 
@@ -155,7 +196,7 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
           <ol className="space-y-4 text-sm">
             {instructions.map((step, idx) => (
               <li key={step.id} className="flex gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground font-medium">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent font-medium text-accent-foreground">
                   {idx + 1}
                 </span>
                 <span className="leading-relaxed">{step.text}</span>
@@ -188,20 +229,37 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
                 Nutrition{" "}
                 <span className="text-sm font-normal text-muted-foreground">(per serving)</span>
               </h2>
-              {/* Five across on desktop, stepping down on narrow screens so the
-                  tiles never squash below a readable width. */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {/* Two presentations of the same markup.
+                  Phone / small tablet: a plain list — label left, value right,
+                  no boxes. Seven bordered tiles two-up is a wall of cards on a
+                  narrow screen, and the numbers stop lining up.
+                  md and wider: one row of tiles, one column per nutrient, so
+                  the whole panel reads at a glance. The column count follows
+                  the data (5 for almost every recipe here, 4 when carbs are
+                  missing) instead of being fixed, which is what forced a
+                  second row before. md rather than sm so a 640px tablet gets
+                  the list, not five squashed columns. */}
+              <div
+                className={cn(
+                  "flex flex-col divide-y md:grid md:gap-3 md:divide-y-0",
+                  NUTRITION_COLS[present.length] ?? "md:grid-cols-5",
+                )}
+              >
                 {present.map((f) => (
                   <div
                     key={f.key}
-                    className="flex flex-col items-center rounded-lg border bg-card p-3 text-center"
+                    className="flex items-center justify-between gap-3 py-2 md:flex-col md:items-center md:justify-center md:gap-0 md:rounded-lg md:border md:bg-card md:p-3 md:text-center"
                   >
-                    <f.Icon className="mb-1 h-4 w-4 text-muted-foreground" aria-hidden />
-                    <div className="text-xs text-muted-foreground">{f.label}</div>
-                    <div className="font-display text-lg font-semibold">
+                    <span className="flex items-center gap-2 text-xs text-muted-foreground md:flex-col md:gap-0">
+                      <f.Icon className="h-3.5 w-3.5 shrink-0 md:mb-1 md:h-4 md:w-4" aria-hidden />
+                      <span>{f.label}</span>
+                    </span>
+                    <span className="text-sm font-medium tabular-nums md:font-display md:text-lg md:font-semibold">
                       {n[f.key]}
-                      <span className="ml-1 text-xs font-normal text-muted-foreground">{f.unit}</span>
-                    </div>
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">
+                        {f.unit}
+                      </span>
+                    </span>
                   </div>
                 ))}
               </div>
@@ -209,16 +267,6 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
           </>
         );
       })()}
-
-      {recipe.notes ? (
-        <>
-          <Separator />
-          <section>
-            <h2 className="mb-2 font-display text-lg font-semibold">Notes</h2>
-            <p className="whitespace-pre-wrap text-sm text-muted-foreground">{recipe.notes}</p>
-          </section>
-        </>
-      ) : null}
     </div>
   );
 }
