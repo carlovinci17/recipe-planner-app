@@ -30,10 +30,11 @@ export type ActiveJobsBundle = {
 };
 
 /**
- * Sign (or, on keyless Azure Blob, stub) N per-photo upload slots. Shared by the
- * Neon and Supabase branches of createMultiPhotoJob so the storage behaviour is
- * identical regardless of which DB the job row landed in. Storage dispatches on
- * STORAGE_PROVIDER; the DB is a separate axis (ADR-0006 / ADR-0011 coupling).
+ * Reserve a storage path per photo for a multi-photo import.
+ *
+ * There is nothing to sign: Blob access is keyless, so the browser uploads
+ * through /api/storage/upload rather than PUTting to a pre-signed URL. The
+ * empty `uploadUrl` keeps the slot shape the client already destructures.
  */
 async function signUploadSlots(
   householdId: string,

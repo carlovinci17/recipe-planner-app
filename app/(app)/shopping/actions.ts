@@ -8,7 +8,7 @@ import { publishToHousehold } from "@/lib/realtime/publish";
 
 /**
  * Signal a shopping change over realtime (Module 8 / ADR-0009). Best-effort,
- * no-op unless REALTIME_PROVIDER=azure. `listId` is an optional hint — the
+ * a no-op when Web PubSub is unconfigured. `listId` is an optional hint — the
  * client refetches on any shopping.changed regardless.
  */
 async function notifyShopping(listId?: string) {

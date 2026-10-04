@@ -1,9 +1,7 @@
 import "server-only";
 import { eq, sql as dsql } from "drizzle-orm";
 import { ingestionEvents, ingestionJobs } from "@/lib/db/schema";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { publishToHousehold } from "@/lib/realtime/publish";
-import { env } from "@/lib/env";
 import type { IngestionEventKind, Json, Tables } from "@/types/database.types";
 
 /**
@@ -15,22 +13,11 @@ const householdCache = new Map<string, string>();
 async function jobHouseholdId(jobId: string): Promise<string | null> {
   const cached = householdCache.get(jobId);
   if (cached) return cached;
-  let hid: string | null = null;
-  if (env.DATABASE_URL) {
-    const { db } = await import("@/lib/db");
-    const rows = (await db.execute(
-      dsql`select household_id from ingestion_jobs where id = ${jobId} limit 1`,
-    )) as unknown as { household_id: string }[];
-    hid = rows[0]?.household_id ?? null;
-  } else {
-    const supabase = createSupabaseAdmin();
-    const { data } = await supabase
-      .from("ingestion_jobs")
-      .select("household_id")
-      .eq("id", jobId)
-      .maybeSingle();
-    hid = (data?.household_id as string | undefined) ?? null;
-  }
+  const { db } = await import("@/lib/db");
+  const rows = (await db.execute(
+    dsql`select household_id from ingestion_jobs where id = ${jobId} limit 1`,
+  )) as unknown as { household_id: string }[];
+  const hid = rows[0]?.household_id ?? null;
   if (hid) householdCache.set(jobId, hid);
   return hid;
 }
@@ -71,16 +58,11 @@ export type IngestionJobPatch = Partial<
 export const ingestionStore = {
   /** Read a full job row (snake_case, matching Tables<"ingestion_jobs">). */
   async getJob(jobId: string): Promise<JobRow | null> {
-    if (env.DATABASE_URL) {
-      const { db } = await import("@/lib/db");
-      const rows = (await db.execute(
-        dsql`select * from ingestion_jobs where id = ${jobId} limit 1`,
-      )) as unknown as JobRow[];
-      return rows[0] ?? null;
-    }
-    const supabase = createSupabaseAdmin();
-    const { data } = await supabase.from("ingestion_jobs").select("*").eq("id", jobId).maybeSingle();
-    return (data as JobRow | null) ?? null;
+    const { db } = await import("@/lib/db");
+    const rows = (await db.execute(
+      dsql`select * from ingestion_jobs where id = ${jobId} limit 1`,
+    )) as unknown as JobRow[];
+    return rows[0] ?? null;
   },
 
   /** Patch a job by id. Patch keys are the DB (snake_case) column names. */
@@ -92,9 +74,8 @@ export const ingestionStore = {
       typeof patch.cost_cents === "number"
         ? { ...patch, cost_cents: Math.round(patch.cost_cents) }
         : patch;
-    if (env.DATABASE_URL) {
-      const { db } = await import("@/lib/db");
-      const set: Record<string, unknown> = {};
+    const { db } = await import("@/lib/db");
+    const set: Record<string, unknown> = {};
       if (p.status !== undefined) set.status = p.status;
       if (p.error !== undefined) set.error = p.error;
       if (p.recipe_id !== undefined) set.recipeId = p.recipe_id;
@@ -110,10 +91,6 @@ export const ingestionStore = {
       if (p.storage_path !== undefined) set.storagePath = p.storage_path;
       if (p.updated_at !== undefined) set.updatedAt = p.updated_at;
       await db.update(ingestionJobs).set(set).where(eq(ingestionJobs.id, jobId));
-    } else {
-      const supabase = createSupabaseAdmin();
-      await supabase.from("ingestion_jobs").update(p).eq("id", jobId);
-    }
     // Signal the import UI on status transitions (no-op unless realtime=azure).
     if (p.status !== undefined) {
       const hid = await jobHouseholdId(jobId);
@@ -123,13 +100,8 @@ export const ingestionStore = {
 
   /** Append an ingestion event for a job. */
   async insertEvent(jobId: string, kind: IngestionEventKind, payload: Json = {}): Promise<void> {
-    if (env.DATABASE_URL) {
-      const { db } = await import("@/lib/db");
-      await db.insert(ingestionEvents).values({ jobId, kind, payload });
-    } else {
-      const supabase = createSupabaseAdmin();
-      await supabase.from("ingestion_events").insert({ job_id: jobId, kind, payload });
-    }
+    const { db } = await import("@/lib/db");
+    await db.insert(ingestionEvents).values({ jobId, kind, payload });
     // Progress signal for the import UI (no-op unless realtime=azure).
     const hid = await jobHouseholdId(jobId);
     if (hid) await publishToHousehold(hid, { type: "ingestion.event", jobId });

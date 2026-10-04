@@ -22,7 +22,7 @@ async function assertMembership(householdId: string) {
 
 /**
  * Signal a planner change over realtime (Module 8 / ADR-0009). Best-effort and a
- * no-op unless REALTIME_PROVIDER=azure. When the input carries the household id we
+ * a no-op when Web PubSub is unconfigured. When the input carries the household id we
  * use it; otherwise (move/remove operate by entry id) we resolve the active one.
  */
 async function notifyPlanner(householdId?: string) {

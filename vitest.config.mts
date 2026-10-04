@@ -18,7 +18,7 @@ export default defineConfig({
       "@": root,
       // Services start with `import "server-only"`, which throws when imported
       // outside a React Server Component. Stub it to a no-op for node tests.
-      "server-only": path.resolve(root, "tests/integration/stubs/server-only.ts"),
+      "server-only": path.resolve(root, "tests/stubs/server-only.ts"),
     },
   },
   test: {
@@ -31,8 +31,9 @@ export default defineConfig({
     // The golden set (Lesson 7.3) is a token-spending provider comparison with its
     // own config (vitest.golden.config.mts) — never part of the normal suite.
     exclude: [...configDefaults.exclude, "tests/golden/**"],
-    setupFiles: ["tests/integration/setup.ts"],
-    // These are true integration tests sharing one local DB — run serially.
+    setupFiles: ["tests/setup.ts"],
+    // Kept serial: the suites share one process-wide React shim and, if an
+    // integration suite returns, one database.
     fileParallelism: false,
     testTimeout: 20_000,
     hookTimeout: 30_000,

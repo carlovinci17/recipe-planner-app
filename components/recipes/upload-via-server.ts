@@ -1,13 +1,6 @@
 "use client";
 
 /**
- * Whether the browser should upload through our server (keyless Azure) instead
- * of a signed PUT straight to storage (Supabase). Mirrors the server's
- * STORAGE_PROVIDER via the NEXT_PUBLIC_ copy so the client can branch.
- */
-export const STORAGE_IS_AZURE = process.env.NEXT_PUBLIC_STORAGE_PROVIDER === "azure";
-
-/**
  * POST a file to the server-proxied upload route (Module 5 / ADR-0006). The
  * route authorizes (household-from-path), optionally `sharp`-caps a cover photo,
  * and writes to Blob with its Managed Identity. Returns the FINAL stored path —

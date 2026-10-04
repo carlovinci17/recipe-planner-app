@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { env } from "@/lib/env";
 import { signIn } from "@/auth";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { householdService } from "@/lib/services/household-service";
@@ -33,7 +32,6 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
 
   // Not signed in, or signed in as the wrong account → steer sign-in to the
   // invited email. Invites are email-scoped: you must sign in as invite.email.
-  const useEntra = env.AUTH_PROVIDER === "entra";
   return (
     <div className="container max-w-md py-16 text-center">
       <h1 className="font-display text-2xl font-semibold">
@@ -50,27 +48,21 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
         </p>
       ) : null}
       <div className="mt-6 flex flex-col items-center gap-2">
-        {useEntra ? (
-          <form
-            action={async () => {
-              "use server";
-              // login_hint pre-fills the invited email; prompt=login forces a
-              // fresh sign-in instead of silently reusing an existing session
-              // (which was logging the tester in as the wrong account).
-              await signIn(
-                "microsoft-entra-id",
-                { redirectTo: `/invites/${token}` },
-                { login_hint: invite.email, prompt: "login" },
-              );
-            }}
-          >
-            <Button size="lg">Sign in as {invite.email}</Button>
-          </form>
-        ) : (
-          <Button size="lg" asChild>
-            <Link href={`/login?next=/invites/${token}`}>Log in</Link>
-          </Button>
-        )}
+        <form
+          action={async () => {
+            "use server";
+            // login_hint pre-fills the invited email; prompt=login forces a
+            // fresh sign-in instead of silently reusing an existing session
+            // (which was logging the tester in as the wrong account).
+            await signIn(
+              "microsoft-entra-id",
+              { redirectTo: `/invites/${token}` },
+              { login_hint: invite.email, prompt: "login" },
+            );
+          }}
+        >
+          <Button size="lg">Sign in as {invite.email}</Button>
+        </form>
         {user && !emailMatches ? (
           <form action={signOutAction}>
             <Button type="submit" variant="ghost" size="sm" className="text-muted-foreground">

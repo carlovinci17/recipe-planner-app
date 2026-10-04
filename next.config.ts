@@ -2,15 +2,6 @@ import type { NextConfig } from "next";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { version } = require("./package.json") as { version: string };
 
-const supabaseHost = (() => {
-  try {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return null;
-    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).host;
-  } catch {
-    return null;
-  }
-})();
-
 const config: NextConfig = {
   reactStrictMode: true,
   output: "standalone",
@@ -27,15 +18,9 @@ const config: NextConfig = {
   images: {
     minimumCacheTTL: 3600,
     remotePatterns: [
-      ...(supabaseHost
-        ? [
-            {
-              protocol: "https" as const,
-              hostname: supabaseHost,
-              pathname: "/storage/v1/object/**",
-            },
-          ]
-        : []),
+      // Recipe images are NOT here: Azure Blob is keyless, so they are served
+      // by our own /api/images route rather than fetched from a remote host.
+      // These two are external avatars and placeholder photography.
       { protocol: "https", hostname: "lh3.googleusercontent.com" },
       { protocol: "https", hostname: "images.unsplash.com" },
     ],

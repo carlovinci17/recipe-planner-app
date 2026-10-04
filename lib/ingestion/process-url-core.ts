@@ -4,10 +4,8 @@ import { normalizeExtractedRecipe } from "@/lib/ingestion/normalize";
 import { persistDraftRecipe } from "@/lib/ingestion/persist-recipe";
 import { ingestionStore } from "@/lib/ingestion/store";
 import { ingestionStorage } from "@/lib/ingestion/storage";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { getSourceName } from "@/lib/recipes/source-name";
-import { fetchPageData } from "@/lib/inngest/functions/process-url";
-import { env } from "@/lib/env";
+import { fetchPageData } from "@/lib/ingestion/fetch-page-data";
 import { logger } from "@/lib/logger";
 import type { Json } from "@/types/database.types";
 
@@ -35,18 +33,10 @@ async function updateRecipes(
   patch: { sourceMetadata?: Json; imagePaths?: string[] },
 ): Promise<void> {
   if (ids.length === 0) return;
-  if (env.DATABASE_URL) {
-    const { db } = await import("@/lib/db");
-    const { inArray } = await import("drizzle-orm");
-    const { recipes } = await import("@/lib/db/schema");
-    await db.update(recipes).set(patch).where(inArray(recipes.id, ids));
-    return;
-  }
-  const supabase = createSupabaseAdmin();
-  const snake: { source_metadata?: Json; image_paths?: string[] } = {};
-  if (patch.sourceMetadata !== undefined) snake.source_metadata = patch.sourceMetadata;
-  if (patch.imagePaths !== undefined) snake.image_paths = patch.imagePaths;
-  await supabase.from("recipes").update(snake).in("id", ids);
+  const { db } = await import("@/lib/db");
+  const { inArray } = await import("drizzle-orm");
+  const { recipes } = await import("@/lib/db/schema");
+  await db.update(recipes).set(patch).where(inArray(recipes.id, ids));
 }
 
 /** Best-effort hero-image download → storage (via the seam). Never throws. */

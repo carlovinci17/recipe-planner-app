@@ -25,7 +25,7 @@ export default defineConfig({
       // Providers + the rasterizer begin with `import "server-only"`, which throws
       // outside a React Server Component. Alias it to the same no-op stub the
       // integration suite uses.
-      "server-only": path.resolve(root, "tests/integration/stubs/server-only.ts"),
+      "server-only": path.resolve(root, "tests/stubs/server-only.ts"),
     },
   },
   test: {

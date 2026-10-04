@@ -4,10 +4,10 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 
 /**
  * Run `fn` inside a Drizzle transaction scoped to the current user (ADR-002):
- * resolve the user via the identity seam (getCurrentUser — Supabase or Entra per
- * AUTH_PROVIDER), then run under withUserContext so RLS applies. `lib/db` is
- * imported dynamically so callers on the Supabase path (no DATABASE_URL) never
- * load the Drizzle client.
+ * resolve the user via the identity seam (`getCurrentUser`), then run under
+ * `withUserContext` so Row-Level Security (RLS) applies. `lib/db` is imported
+ * dynamically to keep the Drizzle client out of module scope — `next build`
+ * evaluates this file while collecting page data, with no DATABASE_URL set.
  *
  * Shared by every service that ports a method to Drizzle. `fn` also receives the
  * resolved `userId` for writes that stamp `created_by` / `invited_by` (existing

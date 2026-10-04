@@ -4,9 +4,8 @@
 #
 # Why this exists: .env.local is gitignored, so it is the one file in this repo
 # with no backup. On 2026-10-04 it was overwritten with .env.example, which
-# wiped all 20 post-cutover variables (AUTH_PROVIDER, DATABASE_URL, the Entra
-# block, ...) and left every page returning HTTP 500 - middleware fell back to
-# the Supabase auth path and tried to build a client for a deleted project.
+# wiped every post-cutover variable - DATABASE_URL, the Entra block, the
+# Functions wiring - and left the whole app returning HTTP 500.
 #
 # Everything needed is already in Azure, because that is where production
 # reads it from:
@@ -88,18 +87,12 @@ cat > "${OUT}" <<ENVFILE
 # NOT in git (gitignored, and it holds secrets). If you lose it, re-run the
 # script rather than hand-rebuilding it.
 
-# --- Provider switches: the post-cutover stack (Module 11) -------------
-# These are what was missing when the file got overwritten. Losing
-# AUTH_PROVIDER alone is enough to 500 every page: middleware falls back to
-# the Supabase auth path and builds a client for a deleted project.
-AUTH_PROVIDER=entra
-STORAGE_PROVIDER=azure
-REALTIME_PROVIDER=azure
-JOBS_PROVIDER=durable
+# --- AI provider ------------------------------------------------------
+# The only provider switch left. Foundry in production; Anthropic is still
+# used by the golden set. The auth/storage/realtime/jobs switches are gone:
+# each had exactly one working position once Supabase and Inngest were
+# removed, and a missing one silently disabled a feature.
 AI_PROVIDER=foundry
-# Client-side twins - the browser bundle cannot read the server-only names.
-NEXT_PUBLIC_STORAGE_PROVIDER=azure
-NEXT_PUBLIC_REALTIME_PROVIDER=azure
 
 # --- Neon Postgres ----------------------------------------------------
 # NEON_DATABASE_URL is the same connection under a second name: the app
@@ -143,13 +136,6 @@ ANTHROPIC_API_KEY=${ANTHROPIC_KEY}
 ANTHROPIC_MODEL_VISION=claude-opus-4-7
 ANTHROPIC_MODEL_TEXT=claude-opus-4-7
 ANTHROPIC_MODEL_FAST=claude-haiku-4-5
-
-# --- Supabase: RETIRED, project deleted -------------------------------
-# Left BLANK on purpose, not placeholder. lib/env.ts treats empty as absent;
-# a short placeholder value is what broke the dev server on 2026-10-04.
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
 
 LOG_LEVEL=debug
 ENVFILE

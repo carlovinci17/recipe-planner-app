@@ -359,7 +359,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
 
   // Azure realtime (ADR-0009): events carry ids only, so on any ingestion signal
   // we refetch the whole visible span from the server (Neon) and re-derive. No-op
-  // unless NEXT_PUBLIC_REALTIME_PROVIDER=azure. Debounced (~500ms) so a burst of
+  // Debounced (~500ms) so a burst of
   // per-chunk events during a long extraction collapses into one reload.
   const refetchAll = useCallback(async () => {
     const res = await loadActiveJobsAction({

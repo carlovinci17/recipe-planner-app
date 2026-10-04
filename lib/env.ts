@@ -1,14 +1,23 @@
 import { z } from "zod";
 
 /**
- * Env vars set to an empty string in `.env.local` are read by Node as `""`,
- * not `undefined`. Without this preprocess, an entry like `N8N_WEBHOOK_URL=`
- * fails `.url()` validation. Treat empty strings as absent.
+ * Environment contract, validated once at module load.
+ *
+ * Most things are `optional()` rather than required, and that is deliberate:
+ * `next build` imports this module while collecting page data, with none of the
+ * runtime secrets present. Requiring them here would break the Docker build.
+ * Each consumer enforces its own needs at first use instead — `lib/db` throws a
+ * clear error without DATABASE_URL, `blobStorage` without AZURE_STORAGE_ACCOUNT.
+ *
+ * The provider-switch variables (AUTH_PROVIDER, STORAGE_PROVIDER,
+ * REALTIME_PROVIDER, JOBS_PROVIDER) are gone. They existed so the Supabase and
+ * Azure stacks could run side by side through the Module 3-11 migration; with
+ * Supabase and Inngest removed, each had exactly one valid value, and a missing
+ * one silently selected a dead path. Setting them in the environment is now
+ * harmless — Zod strips unknown keys — so no deployment needs changing.
  */
-const emptyToUndefined = z.preprocess(
-  (v) => (v === "" ? undefined : v),
-  z.string(),
-);
+
+/** Empty strings in a .env file read as `""`, not undefined. Treat as absent. */
 const optionalUrl = z.preprocess(
   (v) => (v === "" ? undefined : v),
   z.string().url().optional(),
@@ -20,109 +29,63 @@ const optional = (min?: number) =>
   );
 
 const serverSchema = z.object({
-  // ── Supabase: retired, but still type-load-bearing ──────────────────────
-  // The hosted project was DELETED at the Module 11 cutover (auth → Entra,
-  // storage → Blob, Postgres → Neon). Nothing reads these when
-  // AUTH_PROVIDER=entra: lib/supabase/middleware.ts returns before it builds a
-  // client, and createSupabaseAdmin() throws its own clear error if called.
-  //
-  // They were REQUIRED, with min(20) guarding against a truncated paste. That
-  // guard became the problem: middleware imports this module on every request,
-  // so a leftover short value in `.env.local` took the entire site down with a
-  // runtime error — for credentials to a service that no longer exists.
-  //
-  // `.catch(...)` rather than `.optional()`, deliberately. These values feed
-  // createClient<Database>(url, key), whose generic inference needs `string`.
-  // Making them `string | undefined` collapses the Database typing and
-  // produces 439 type errors across every Supabase query still in the tree.
-  // A fallback keeps the type, so a bad value degrades instead of exploding.
-  //
-  // Trade-off: on the legacy supabase auth path, blank keys now surface as
-  // supabase-js's "supabaseKey is required" at construction instead of this
-  // module's nicer message. Acceptable — that path is being deleted, and the
-  // host below is an RFC 2606 reserved name that can never resolve.
-  NEXT_PUBLIC_SUPABASE_URL: emptyToUndefined
-    .pipe(z.string().url())
-    .catch("http://supabase.invalid"),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: emptyToUndefined.pipe(z.string().min(20)).catch(""),
-  // No min(): a short leftover is not a misconfiguration any more, just a
-  // value nothing reads. The single consumer (createSupabaseAdmin) already
-  // guards on falsiness, so "" and undefined behave identically there.
-  SUPABASE_SERVICE_ROLE_KEY: optional(),
-  // Drizzle direct Postgres connection. Optional for now: when unset, services
-  // keep using the Supabase client (prod). When set (local/test, later Neon),
-  // the ported methods query Postgres directly. See ADR-002 / Module 3.
+  // ── Neon Postgres (ADR-002) ──────────────────────────────────────────────
+  // The only database. `lib/db` throws if this is missing at first use.
   DATABASE_URL: optionalUrl,
-  // Auth.js (NextAuth v5) + Microsoft Entra External ID (Module 4 / ADR-0005).
-  // Optional so the app still boots on the Supabase-auth path until cutover.
-  // AUTH_PROVIDER selects the active auth stack: "entra" (dev/cutover) reads the
-  // Auth.js session; unset/"supabase" (prod + tests) keeps the old path.
-  AUTH_PROVIDER: z.preprocess(
-    (v) => (v === "" ? undefined : v),
-    z.enum(["supabase", "entra"]).optional(),
-  ),
+
+  // ── Auth.js (NextAuth v5) + Microsoft Entra External ID (ADR-0005) ───────
   AUTH_SECRET: optional(1),
   AUTH_MICROSOFT_ENTRA_ID_ID: optional(1),
   AUTH_MICROSOFT_ENTRA_ID_SECRET: optional(1),
   AUTH_MICROSOFT_ENTRA_ID_ISSUER: optionalUrl,
-  // Azure Blob Storage (Module 5 / ADR-0006). STORAGE_PROVIDER selects the stack:
-  // "azure" (dev/cutover) uses keyless Blob; unset/"supabase" (prod + tests) keeps
-  // Supabase Storage. AZURE_STORAGE_ACCOUNT is the account name (keyless — no key).
-  STORAGE_PROVIDER: z.preprocess(
-    (v) => (v === "" ? undefined : v),
-    z.enum(["supabase", "azure"]).optional(),
-  ),
+
+  // ── Azure Blob Storage (ADR-0006), keyless via managed identity ──────────
   AZURE_STORAGE_ACCOUNT: optional(1),
-  // Realtime (Module 8 / ADR-0009). REALTIME_PROVIDER selects the transport:
-  // "azure" (dev/cutover) uses Web PubSub; unset/"supabase" (prod + tests) keeps
-  // Supabase Realtime. Keyless — the negotiate server auths via Managed Identity.
-  // The client-side gate is NEXT_PUBLIC_REALTIME_PROVIDER (read directly from
-  // process.env in client code, mirroring NEXT_PUBLIC_STORAGE_PROVIDER).
-  REALTIME_PROVIDER: z.preprocess(
-    (v) => (v === "" ? undefined : v),
-    z.enum(["supabase", "azure"]).optional(),
-  ),
+
+  // ── Azure Web PubSub realtime (ADR-0009), keyless ───────────────────────
   AZURE_WEBPUBSUB_ENDPOINT: optionalUrl,
-  // Anthropic — active provider
+
+  // ── AI ──────────────────────────────────────────────────────────────────
+  // AI_PROVIDER is a real choice, not a migration leftover: Foundry is the
+  // default in production and Anthropic is still used by the golden set.
+  AI_PROVIDER: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.enum(["anthropic", "foundry"]).optional(),
+  ),
   ANTHROPIC_API_KEY: optional(10),
   ANTHROPIC_MODEL_VISION: z.string().default("claude-opus-4-7"),
   ANTHROPIC_MODEL_TEXT: z.string().default("claude-opus-4-7"),
   ANTHROPIC_MODEL_FAST: z.string().default("claude-haiku-4-5"),
-  // Cheaper model used for bulk imports — skips Opus to reduce cost ~15×.
+  /** Cheaper model for bulk imports — skips Opus to cut cost ~15x. */
   ANTHROPIC_MODEL_BULK: z.string().default("claude-sonnet-4-6"),
-  // Module 7: AI provider (anthropic | foundry). Unset → anthropic (prod today).
-  AI_PROVIDER: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["anthropic", "foundry"]).optional()),
-  // Azure AI Foundry (keyless via DefaultAzureCredential). One cheap deployment for all tiers.
+  // Azure AI Foundry, keyless via DefaultAzureCredential.
   AZURE_FOUNDRY_ENDPOINT: optionalUrl,
   AZURE_FOUNDRY_DEPLOYMENT: z.string().default("gpt-4o-mini"),
-  // OpenAI — legacy, provider file kept on disk but not wired.
+  // OpenAI — provider file kept on disk as a reference, not wired.
   OPENAI_API_KEY: optional(10),
   OPENAI_MODEL_VISION: z.string().default("gpt-5.5"),
   OPENAI_MODEL_TEXT: z.string().default("gpt-5.5"),
   OPENAI_MODEL_FAST: z.string().default("gpt-5.5-mini"),
-  INNGEST_EVENT_KEY: optional(),
-  INNGEST_SIGNING_KEY: optional(),
-  // Module 6: which background-jobs engine runs ingestion. Unset → inngest (prod today).
-  JOBS_PROVIDER: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["inngest", "durable"]).optional()),
-  // Shared secret the Durable Functions orchestrator sends to the app's internal
-  // ingestion endpoints (architecture B — thin orchestrator, work stays in the app).
+
+  // ── Azure Durable Functions ingestion (architecture B) ──────────────────
+  // The app and the Functions host authenticate to each other with a shared
+  // secret: the host is not a browser and has no session.
   INGESTION_INTERNAL_SECRET: optional(),
-  // Base URL the Durable Functions app calls back on (set in the Functions app, not here,
-  // but mirrored for the app→functions start call). Defaults to the deployed function app.
   FUNCTIONS_BASE_URL: optionalUrl,
-  GOOGLE_CLIENT_ID: optional(),
-  GOOGLE_CLIENT_SECRET: optional(),
-  GOOGLE_REDIRECT_URI: optionalUrl,
-  N8N_WEBHOOK_URL: optionalUrl,
-  N8N_WEBHOOK_SECRET: optional(),
-  NEXT_PUBLIC_APP_URL: emptyToUndefined.pipe(z.string().url()).catch("http://localhost:3000"),
+
+  // ── Google OAuth ────────────────────────────────────────────────────────
+  // Retained for the Google Drive import that is switched off: its client was
+  // deleted, and the subsystem is re-ported when Drive is re-enabled.
+
+  // ── App ─────────────────────────────────────────────────────────────────
+  NEXT_PUBLIC_APP_URL: z
+    .preprocess((v) => (v === "" ? undefined : v), z.string().url())
+    .catch("http://localhost:3000"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 });
 
 const clientSchema = serverSchema.pick({
-  NEXT_PUBLIC_SUPABASE_URL: true,
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: true,
   NEXT_PUBLIC_APP_URL: true,
 });
 
@@ -130,13 +93,7 @@ const isServer = typeof window === "undefined";
 
 export const env = (() => {
   const parsed = (isServer ? serverSchema : clientSchema).safeParse(
-    isServer
-      ? process.env
-      : {
-          NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-          NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
-        },
+    isServer ? process.env : { NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL },
   );
   if (!parsed.success) {
     const flat = parsed.error.flatten().fieldErrors;

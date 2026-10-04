@@ -15,7 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { parsePageRange, formatPageRange } from "@/lib/ingestion/page-range";
-import { STORAGE_IS_AZURE, uploadViaServer } from "@/components/recipes/upload-via-server";
+import { uploadViaServer } from "@/components/recipes/upload-via-server";
 
 interface PhotoEntry {
   file: File;
@@ -105,16 +105,7 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
             sourceKind: "pdf",
           });
           if (!job.ok) throw new Error(job.error);
-          if (STORAGE_IS_AZURE) {
-            await uploadViaServer({ container: "recipe-uploads", path: job.path, file });
-          } else {
-            const res = await fetch(job.uploadUrl, {
-              method: "PUT",
-              headers: { "Content-Type": "application/pdf" },
-              body: file,
-            });
-            if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-          }
+          await uploadViaServer({ container: "recipe-uploads", path: job.path, file });
           const complete = await completePhotoUploadAction({
             jobId: job.jobId,
             storagePath: job.path,
@@ -131,7 +122,7 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
           return;
         }
 
-        // 1. Create job + get signed upload URLs for each photo
+        // 1. Create the job and reserve a storage path per photo.
         const job = await createMultiPhotoJobAction({
           householdId,
           photos: photos.map((p) => ({
@@ -141,28 +132,20 @@ export function ImportPhoto({ householdId }: { householdId: string }) {
         });
         if (!job.ok) throw new Error(job.error);
 
-        // 2. Upload all photos in parallel. Azure: proxy through the server
-        //    (keyless, raw — the pipeline rasterizes later). Supabase: signed PUT.
+        // 2. Upload every photo in parallel through the server: Blob access is
+        //    keyless, so there is no signed URL the browser could PUT to. The
+        //    files are stored raw — the pipeline rasterizes later.
         await Promise.all(
-          job.uploadSlots.map(({ uploadUrl, path, index }) => {
-            if (STORAGE_IS_AZURE) {
-              return uploadViaServer({
-                container: "recipe-uploads",
-                path,
-                file: photos[index]!.file,
-              });
-            }
-            return fetch(uploadUrl, {
-              method: "PUT",
-              headers: { "Content-Type": photos[index]!.file.type || "image/jpeg" },
-              body: photos[index]!.file,
-            }).then((res) => {
-              if (!res.ok) throw new Error(`Upload failed for photo ${index + 1} (${res.status})`);
-            });
-          }),
+          job.uploadSlots.map(({ path, index }) =>
+            uploadViaServer({
+              container: "recipe-uploads",
+              path,
+              file: photos[index]!.file,
+            }),
+          ),
         );
 
-        // 3. Notify server: populate page_image_paths and start Inngest pipeline
+        // 3. Notify the server: populate page_image_paths and start the pipeline.
         const complete = await completeMultiPhotoUploadAction({
           jobId: job.jobId,
           householdId,

@@ -112,7 +112,10 @@ function buildChecks(f: Awaited<ReturnType<typeof resolveFixtures>>): Check[] {
     { path: "/settings", expect: [200], auth: true },
     { path: "/settings/account", expect: [200], auth: true },
     { path: "/settings/household", expect: [200], auth: true },
-    { path: "/settings/integrations", expect: [200], auth: true },
+    // /settings/integrations is deliberately gone: it was the Google Drive
+    // page, and the Drive subsystem was removed with Inngest. 404 is the
+    // correct answer, and asserting it catches an accidental re-add.
+    { path: "/settings/integrations", expect: [404], auth: true },
     { path: "/onboarding", expect: [200, 307], auth: true, note: "redirects when already onboarded" },
 
     // The auth gate itself must keep working.

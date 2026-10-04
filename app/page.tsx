@@ -1,29 +1,22 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowRight, Download, ShoppingCart, Sparkles, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { env } from "@/lib/env";
 import { startEntraAuth } from "./(auth)/auth-actions";
 
 export default async function LandingPage() {
   const user = await getCurrentUser();
   if (user) redirect("/recipes");
 
-  // Under Entra the CTAs go straight to the branded hosted sign-in page,
-  // skipping the intermediate /login page. Under the legacy (Supabase) provider
-  // the /login and /signup pages carry the real forms.
-  const useEntra = env.AUTH_PROVIDER === "entra";
-
   return (
     <main className="min-h-dvh bg-background">
       <header className="container flex items-center justify-between py-6">
         <div className="font-display text-xl font-semibold">BiteBuddy</div>
         <div className="flex items-center gap-2">
-          <AuthCta useEntra={useEntra} href="/login" variant="ghost">
+          <AuthCta variant="ghost">
             Log in
           </AuthCta>
-          <AuthCta useEntra={useEntra} href="/signup">
+          <AuthCta>
             Get started
           </AuthCta>
         </div>
@@ -39,10 +32,10 @@ export default async function LandingPage() {
             automatic shopping list.
           </p>
           <div className="flex gap-3">
-            <AuthCta useEntra={useEntra} href="/signup" size="lg">
+            <AuthCta size="lg">
               Start free <ArrowRight className="ml-1 h-4 w-4" />
             </AuthCta>
-            <AuthCta useEntra={useEntra} href="/login" size="lg" variant="outline">
+            <AuthCta size="lg" variant="outline">
               Log in
             </AuthCta>
           </div>
@@ -72,32 +65,26 @@ export default async function LandingPage() {
  * directly (straight to the branded hosted page, no /login hop); under the
  * legacy provider it links to the /login or /signup page with the real forms.
  */
+/**
+ * Landing-page call to action. Goes straight to the Entra External ID hosted
+ * sign-in page rather than via /login — that page is branded and handles both
+ * sign-in and sign-up, so the intermediate step bought nothing.
+ */
 function AuthCta({
-  useEntra,
-  href,
   children,
   variant,
   size,
 }: {
-  useEntra: boolean;
-  href: string;
   children: React.ReactNode;
   variant?: React.ComponentProps<typeof Button>["variant"];
   size?: React.ComponentProps<typeof Button>["size"];
 }) {
-  if (useEntra) {
-    return (
-      <form action={startEntraAuth}>
-        <Button type="submit" variant={variant} size={size}>
-          {children}
-        </Button>
-      </form>
-    );
-  }
   return (
-    <Button asChild variant={variant} size={size}>
-      <Link href={href}>{children}</Link>
-    </Button>
+    <form action={startEntraAuth}>
+      <Button type="submit" variant={variant} size={size}>
+        {children}
+      </Button>
+    </form>
   );
 }
 

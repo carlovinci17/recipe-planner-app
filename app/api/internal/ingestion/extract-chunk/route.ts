@@ -32,7 +32,6 @@ export async function POST(req: NextRequest) {
   const urls = await ingestionStorage.signedUrls({
     bucket: ingestionStorage.uploadsBucket,
     paths: pages,
-    expiresIn: 1800,
   });
   const result = await extractRecipeFromImages({
     imageUrls: urls,

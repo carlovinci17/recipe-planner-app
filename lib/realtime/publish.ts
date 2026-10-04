@@ -10,13 +10,13 @@ import { householdGroup, REALTIME_HUB, type RealtimeEvent } from "./events";
  *
  * KEYLESS: authenticates to Web PubSub via Managed Identity (`DefaultAzureCredential`;
  * `az login` in dev) holding "Web PubSub Service Owner" — no connection string.
- * Everything here is a no-op unless REALTIME_PROVIDER=azure, so it can be called
- * unconditionally from the write path while Supabase Realtime is still the transport.
+ * A no-op when AZURE_WEBPUBSUB_ENDPOINT is unset, so the write path can call it
+ * unconditionally — including during `next build`, which has no Azure identity.
  */
 let _client: WebPubSubServiceClient | undefined;
 
 function getServiceClient(): WebPubSubServiceClient | null {
-  if (env.REALTIME_PROVIDER !== "azure" || !env.AZURE_WEBPUBSUB_ENDPOINT) return null;
+  if (!env.AZURE_WEBPUBSUB_ENDPOINT) return null;
   if (!_client) {
     _client = new WebPubSubServiceClient(
       env.AZURE_WEBPUBSUB_ENDPOINT,

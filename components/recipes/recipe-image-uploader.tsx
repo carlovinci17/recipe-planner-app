@@ -7,7 +7,7 @@ import { Loader2, Star, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
-import { STORAGE_IS_AZURE, uploadViaServer } from "@/components/recipes/upload-via-server";
+import { uploadViaServer } from "@/components/recipes/upload-via-server";
 import {
   attachRecipeImageAction,
   removeRecipeImageAction,
@@ -46,25 +46,16 @@ export function RecipeImageUploader({ recipeId, householdId, initialPaths }: Pro
           });
           if (!sign.ok) throw new Error(sign.error);
 
-          // Azure: proxy through the server (keyless, sharp-caps to WebP → the
-          // stored path's extension changes, so use the returned path). Supabase:
-          // signed PUT straight to storage.
-          let storedPath = sign.path;
-          if (STORAGE_IS_AZURE) {
-            storedPath = await uploadViaServer({
-              container: "recipe-images",
-              path: sign.path,
-              file,
-              cap: "cover",
-            });
-          } else {
-            const putRes = await fetch(sign.uploadUrl, {
-              method: "PUT",
-              headers: { "Content-Type": file.type || "image/png" },
-              body: file,
-            });
-            if (!putRes.ok) throw new Error(`Upload failed (${putRes.status})`);
-          }
+          // Upload through the server: Blob access is keyless, so there is no
+          // signed URL to PUT to. The route sharp-caps a cover to WebP, which
+          // CHANGES the extension — always use the path it returns, not the one
+          // we sent.
+          const storedPath = await uploadViaServer({
+            container: "recipe-images",
+            path: sign.path,
+            file,
+            cap: "cover",
+          });
 
           const attach = await attachRecipeImageAction({
             recipeId,

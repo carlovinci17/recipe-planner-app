@@ -2,7 +2,8 @@ import { pgTable, foreignKey, unique, pgPolicy, uuid, text, timestamp, index, in
 import { sql } from "drizzle-orm"
 
 // NOTE: RLS is enforced in the database and owned by the SQL migrations
-// (supabase/migrations). The pgPolicy() entries below are introspected
+// (supabase/migrations — the directory name is historical; the SQL is applied
+// to Neon with `npm run db:migrate`). The pgPolicy() entries below are introspected
 // *documentation* — to be reconciled to `current_setting('app.user_id')` in ADR-002.
 
 // Postgres types drizzle-kit can't map on its own:

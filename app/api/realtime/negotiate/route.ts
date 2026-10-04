@@ -1,7 +1,6 @@
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { householdService } from "@/lib/services/household-service";
 import { getClientAccessUrl } from "@/lib/realtime/publish";
-import { env } from "@/lib/env";
 
 // Node runtime: the Web PubSub SDK + DefaultAzureCredential are Node-only.
 export const runtime = "nodejs";
@@ -13,9 +12,6 @@ export const runtime = "nodejs";
  * so a caller can only ever subscribe to households they belong to.
  */
 export async function GET(): Promise<Response> {
-  if (env.REALTIME_PROVIDER !== "azure") {
-    return new Response("Realtime provider is not Azure", { status: 404 });
-  }
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
 

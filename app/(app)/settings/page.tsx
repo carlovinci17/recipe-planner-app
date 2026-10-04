@@ -1,12 +1,11 @@
 import Link from "next/link";
-import { ChevronRight, Cog, Link as LinkIcon, Users } from "lucide-react";
+import { ChevronRight, Cog, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 export const metadata = { title: "Settings" };
 
 const SECTIONS = [
   { href: "/settings/household", icon: Users, title: "Household", desc: "Members, invites, ownership" },
-  { href: "/settings/integrations", icon: LinkIcon, title: "Integrations", desc: "Google Drive sync" },
   { href: "/settings/account", icon: Cog, title: "Account", desc: "Profile and preferences" },
 ];
 

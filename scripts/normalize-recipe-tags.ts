@@ -16,11 +16,11 @@
  *   npx tsx scripts/normalize-recipe-tags.ts --household <id># scope to one household
  *
  * Point it at PRODUCTION by putting the prod Supabase URL + service-role key in
- * .env.local (NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY). Snapshot first.
+ * .env.local (NEON_DATABASE_URL). Snapshot the database first.
  */
 
 import { config as dotenv } from "dotenv";
-import { createClient } from "@supabase/supabase-js";
+import postgres from "postgres";
 import {
   normalizeList,
   normalizeSourceName,
@@ -35,49 +35,47 @@ if (typeof globalThis.WebSocket === "undefined") {
 dotenv({ path: ".env.local" });
 dotenv({ path: ".env" });
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!SUPABASE_URL || !SERVICE_ROLE) {
-  console.error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Aborting.");
-  process.exit(1);
-}
-try {
-  new URL(SUPABASE_URL);
-} catch {
-  console.error(
-    `Invalid NEXT_PUBLIC_SUPABASE_URL: "${SUPABASE_URL}" — looks like an unfilled placeholder.\n` +
-      "Your .env already has real creds, so just run:  npx tsx scripts/normalize-recipe-tags.ts",
-  );
+const DATABASE_URL = process.env.NEON_DATABASE_URL ?? process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error("Missing NEON_DATABASE_URL (or DATABASE_URL). Aborting.");
   process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+const sql = postgres(DATABASE_URL, { ssl: "require", prepare: false });
+
+/** Host only — never print the connection string, it carries the password. */
+function dbLabel(): string {
+  try {
+    return new URL(DATABASE_URL!).host;
+  } catch {
+    return "the configured database";
+  }
+}
 
 const APPLY = process.argv.includes("--apply");
 const hhIdx = process.argv.indexOf("--household");
 const HOUSEHOLD = hhIdx >= 0 ? process.argv[hhIdx + 1] : undefined;
-const PAGE = 1000;
 
 type Row = { id: string; household_id: string; tags: string[]; cuisines: string[]; source_name: string | null };
 
 const eqArr = (a: string[], b: string[]) => JSON.stringify(a) === JSON.stringify(b);
 
 async function fetchAll(): Promise<Row[]> {
-  const rows: Row[] = [];
-  for (let from = 0; ; from += PAGE) {
-    let q = supabase.from("recipes").select("id, household_id, tags, cuisines, source_name").range(from, from + PAGE - 1);
-    if (HOUSEHOLD) q = q.eq("household_id", HOUSEHOLD);
-    const { data, error } = await q;
-    if (error) throw new Error(`Fetch failed: ${error.message}`);
-    rows.push(...((data ?? []) as Row[]));
-    if (!data || data.length < PAGE) break;
-  }
+  // One query: 181 recipes is nothing, and the Supabase client's 1000-row
+  // default page size was the only reason this paged at all.
+  const rows = HOUSEHOLD
+    ? await sql<Row[]>`
+        select id, household_id, tags, cuisines, source_name
+        from recipes where household_id = ${HOUSEHOLD}`
+    : await sql<Row[]>`
+        select id, household_id, tags, cuisines, source_name from recipes`;
   return rows;
 }
 
+
 async function main() {
   console.log(`\n🧹 Recipe metadata cleanup — ${APPLY ? "APPLY (will write)" : "DRY RUN (no writes)"}${HOUSEHOLD ? ` · household ${HOUSEHOLD}` : ""}`);
-  console.log(`   target: ${SUPABASE_URL}\n`);
+  console.log(`   target: ${dbLabel()}\n`);
 
   const rows = await fetchAll();
   console.log(`Fetched ${rows.length} recipes.\n`);
@@ -132,7 +130,7 @@ async function main() {
   const readline = await import("readline");
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   await new Promise<void>((resolve) => {
-    rl.question(`\nType YES to write ${changes.length} rows to ${SUPABASE_URL}: `, (a: string) => {
+    rl.question(`\nType YES to write ${changes.length} rows to ${dbLabel()}: `, (a: string) => {
       rl.close();
       if (a.trim() !== "YES") { console.log("Aborted."); process.exit(0); }
       resolve();
@@ -141,14 +139,20 @@ async function main() {
 
   let written = 0;
   for (const c of changes) {
-    const { error } = await supabase
-      .from("recipes")
-      .update({ tags: c.after.tags, cuisines: c.after.cuisines, source_name: c.after.source_name })
-      .eq("id", c.id);
-    if (error) console.warn(`  ⚠  ${c.id}: ${error.message}`);
-    else written++;
+    try {
+      await sql`
+        update recipes set
+          tags        = ${sql.array(c.after.tags)},
+          cuisines    = ${sql.array(c.after.cuisines)},
+          source_name = ${c.after.source_name}
+        where id = ${c.id}`;
+      written++;
+    } catch (err) {
+      console.warn(`  !  ${c.id}: ${(err as Error).message}`);
+    }
   }
-  console.log(`\n✅ Updated ${written}/${changes.length} recipes.\n`);
+  console.log(`\nUpdated ${written}/${changes.length} recipes.\n`);
+  await sql.end();
 }
 
 main().catch((err) => {

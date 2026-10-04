@@ -53,12 +53,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   const w = toDim(sp.get("w"));
   const h = toDim(sp.get("h"));
   const q = toDim(sp.get("q")) ?? 75;
+  // `fit` mirrors the caller's `resize` option. Allowlisted rather than passed
+  // through, so a crafted query can't reach an unexpected sharp mode. "cover"
+  // is the default: cards and thumbnails want a filled box, not letterboxing.
+  const fit = fitFor(sp.get("fit"));
 
   let body: Buffer = buffer;
   let contentType = typeFor(blobPath);
   if (w || h) {
     body = await sharp(buffer)
-      .resize({ width: w, height: h, fit: "cover", withoutEnlargement: true })
+      .resize({ width: w, height: h, fit, withoutEnlargement: true })
       .webp({ quality: q })
       .toBuffer();
     contentType = "image/webp";
@@ -73,6 +77,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
       "Cache-Control": "private, max-age=3600",
     },
   });
+}
+
+/** Allowlist the sharp fit modes the image options expose. */
+function fitFor(v: string | null): "cover" | "contain" | "fill" {
+  return v === "contain" || v === "fill" ? v : "cover";
 }
 
 function toDim(v: string | null): number | undefined {
