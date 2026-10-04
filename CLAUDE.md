@@ -22,71 +22,88 @@ This repo uses **npm** (`package-lock.json`), not pnpm — the README's `pnpm` e
 npm run dev            # Next dev server (Turbopack) on :3000
 npm run build          # Production build
 npm run typecheck      # tsc --noEmit  ← fastest correctness gate
-npm run lint           # next lint
+npm run lint           # eslint .      ← flat config in eslint.config.mjs
 npm run format         # prettier --write .
+npm test               # vitest run (unit suites)
 
 npm run db:migrate <file.sql>   # Apply one .sql file to Neon (no psql needed)
 
-# The `supabase`-backed db:* scripts below all target the hosted Supabase
-# project, which was DELETED at the Module 11 cutover. db:push now prints that
-# and exits 1; the other three still shell out to the CLI and will fail or,
-# worse, act on a stale local instance. Use db:migrate instead.
-npm run db:reset       # ☠️ dead — reset local Supabase DB, replay migrations + seed
-npm run db:push        # ☠️ dead — replaced by db:migrate
-npm run db:diff        # ☠️ dead — generate a migration from schema drift
-npm run db:types       # ☠️ dead AND destructive — CLOBBERS types/database.types.ts
-
-npm run inngest:dev    # Local Inngest dev server (UI at :8288)
-npm run test:e2e       # Playwright, headless
-npm run test:e2e:ui    # Playwright UI mode
-npm run test:cleanup   # Sweep leftover e2e+...@example.test users
+bash scripts/pull-local-env.sh  # Rebuild .env.local from Azure (see Env below)
+npx tsx scripts/smoke-pages.ts  # Hit every page with a real session; 0 on success
 ```
-
-Run a single spec: `npx playwright test tests/e2e/02-recipe-crud.spec.ts`
-Live ingestion specs are gated: `RUN_INGESTION_E2E=1 npm run test:e2e`
 
 **Node version gotcha:** the shell default here may be Node 18. Next 15 prints a one-line
 warning and then **exits 0 without compiling** — the build looks like it succeeded but `.next/`
-is partial. Run `source ~/.nvm/nvm.sh && nvm use 24.15.0` (anything ≥20.10) before `build`,
-`dev`, or `test:e2e`.
+is partial. Run `source ~/.nvm/nvm.sh && nvm use 24.15.0` (anything ≥20.10) before `build` or
+`dev`.
 
-**E2E env:** `playwright.config.ts` loads `.env.test` → `.env.local` → `.env`. The suite creates
-and deletes real Supabase users via the service role. Do not run it without a `.env.test`
-pointing at a throwaway project — otherwise it mutates whatever `.env` points at.
+**Full local loop — three terminals.** The ingestion pipeline runs on Azure Durable Functions,
+which keeps its orchestration state in Azure Storage; locally that means Azurite. Miss it and
+the Functions host exits with `Connection refused (127.0.0.1:10000)`.
 
-Full local loop needs three terminals: `supabase start`, `npx inngest-cli@latest dev -u
-http://localhost:3000/api/inngest`, `npm run dev`.
+```bash
+azurite --silent --location ~/.azurite          # 1. storage emulator (10000-10002)
+cd functions && npm start                       # 2. Durable Functions host on :7071
+npm run dev                                     # 3. the app on :3000
+```
+
+`INGESTION_INTERNAL_SECRET` must match between `.env.local` and
+`functions/local.settings.json`, or every ingestion step fails with 403.
+
+**Testing.** `tests/unit/` is all that runs today. The Playwright end-to-end suite and the
+service-layer integration suites were deleted with Supabase (they created test users through
+Supabase Auth) — see `docs/TODO.md` for what they covered and how to rebuild them.
+`scripts/smoke-pages.ts` is the current end-to-end check: it mints a real Auth.js session cookie
+from `AUTH_SECRET` and asserts every page renders. It is read-only by default — pass
+`SMOKE_INCLUDE_WRITES=1` to also exercise the draft-create route, which cleans up after itself.
 
 ## Architecture
 
-Next.js 15 App Router + Supabase (Postgres/Auth/Storage/Realtime) + Inngest (durable background
-jobs) + Anthropic (vision extraction & tagging). Everything is scoped to a **household**; there
-are no per-user or per-recipe permissions.
+Next.js 15 App Router on **Azure Container Apps**, with:
+
+| Concern | Service | Access |
+|---|---|---|
+| Postgres | **Neon**, via Drizzle | `DATABASE_URL`, RLS through `runInUserTx` |
+| Auth | **Microsoft Entra External ID** via Auth.js (NextAuth v5) | OpenID Connect |
+| Object storage | **Azure Blob** | keyless, managed identity |
+| Realtime | **Azure Web PubSub** | keyless, managed identity |
+| Background jobs | **Azure Durable Functions** (`functions/`) | shared secret |
+| AI | **Azure AI Foundry** (default) or Anthropic | keyless / API key |
+
+Everything is scoped to a **household**; there are no per-user or per-recipe permissions.
+
+Supabase and Inngest were both removed at the Module 11 cutover (2026-10-04). If you find a
+reference to either, it is a stale comment — the code is gone, along with the packages.
 
 ### Layering rule
 
 ```
-app/           routes, server actions  →  validation + delegation only, no business logic
-lib/services/  the domain API          →  typed object args, never raw FormData
-lib/inngest/   durable background work →  service-role client
-lib/ai/        one seam: ai.callStructured<T>({ schema, messages })
-lib/supabase/  client (browser) · server (request) · admin (service-role)
+app/            routes, server actions  →  validation + delegation only, no business logic
+lib/services/   the domain API          →  typed object args, never raw FormData
+lib/db/         Drizzle schema + client →  runInUserTx applies RLS per request
+lib/ingestion/  pipeline internals      →  called by the Durable activities
+lib/ai/         one seam: ai.callStructured<T>({ schema, messages })
+functions/      the Durable orchestrator → thin; calls back into app/api/internal/*
 ```
 
-A route should reach Supabase through a service. Server actions do sometimes call
-`createSupabaseServerClient()` directly for one-off queries, but domain logic belongs in
-`lib/services/`.
-
-### Three Supabase clients — pick deliberately
-
-- `lib/supabase/client.ts` — browser, memoized, anon key. Realtime subscriptions.
-- `lib/supabase/server.ts` — request-bound (cookies), anon key + RLS. Server components,
-  actions, route handlers.
-- `lib/supabase/admin.ts` — service role, **bypasses RLS**. Inngest functions and admin paths
-  only, and only after authorization has already been checked. Still scope every query by
-  `household_id` explicitly so a bad event payload can't leak across households.
+A route should reach the database through a service. Server actions do sometimes query directly
+for one-off reads, but domain logic belongs in `lib/services/`.
 
 Server-only modules start with `import "server-only"`.
+
+### Database access — two paths, pick deliberately
+
+- **`runInUserTx(fn)`** (`lib/services/user-tx.ts`) — the default. Resolves the caller via
+  `getCurrentUser()`, then opens a transaction with `SET LOCAL ROLE authenticated` and the
+  `app.user_id` setting, so **RLS applies exactly as it would for a logged-in user**. Use this
+  for anything acting on behalf of a person.
+- **`db` directly** (`lib/db`) — the owner connection, which **bypasses RLS**. Only for
+  background work with no user in scope (the ingestion pipeline, invoked by Durable activities
+  behind a shared secret) and for queries already filtered to the session's own id. Scope every
+  query by `household_id` explicitly, so a bad event payload cannot leak across households.
+
+`lib/db` connects lazily on first use, not at import: `next build` evaluates these modules while
+collecting page data, with no `DATABASE_URL` set.
 
 ### Server action conventions
 
@@ -102,27 +119,38 @@ React-`cache()`d, cookie-backed, redirects to `/login` or `/onboarding`. Don't r
 
 The core of the product. **Never plain OCR** — rasterize, then ask a vision model.
 
-Entry points converge on the same event: browser upload (`ingestion/file.uploaded`), URL import
-(`ingestion/url.requested`), Google Drive via n8n webhook or Inngest cron poller
-(`ingestion/drive.file.detected` → `processDriveFile` → `ingestion/file.uploaded`).
+Two entry points, both starting a **Durable Functions orchestration** whose `instanceId` is the
+job id: a browser upload (`startFileIngestion`) and a URL import (`startUrlIngestion`), both in
+`lib/ingestion/start-job.ts`.
 
-`lib/inngest/functions/process-upload.ts` is the long one: load job → rasterize PDF pages
-(pdfjs + sharp) → **skim** → `step.waitForEvent("await-skim-selection")` pauses for the user to
-pick recipes in the UI (resumed by `ingestion/file.skim.committed`) → chunked vision extraction →
-normalize → persist as `status='needs_review'` → fan out `ingestion/recipe.tagging.requested`.
-User approval at `/recipes/[id]/review` flips it to `published`.
+**Architecture B**: the orchestrator in `functions/src/functions/ingestion.ts` is deliberately
+thin — it owns control flow only. Every unit of real work is an activity that POSTs back to
+`app/api/internal/ingestion/*`, where the app's dependencies and env already work. The two
+sides authenticate with `INGESTION_INTERNAL_SECRET`, because the Functions host has no session.
+
+The file flow: `prepare` (load job, mark processing, rasterize pages with pdfjs + sharp) →
+`skim` (cheap title-only pass) → `waitForExternalEvent("skimSelection")`, where the
+orchestration **dehydrates** while the user picks recipes — no compute, no tokens, up to 24h →
+`applySelection` → chunked `extractChunk` (5 pages, 1 overlapping) → `finalizeExtraction` →
+`persistRecipe` fan-out → `finalizeJob` → `cleanup` → `tagRecipe` fan-out. User approval at
+`/recipes/[id]/review` flips the recipe to `published`.
 
 When touching it:
 
-- Every unit of work goes inside `step.run` — Inngest checkpoints and replays, so steps must be
-  idempotent (storage writes use stable paths).
-- Persist errors are caught **inside** `step.run` and returned as tagged results; letting them
-  throw out would retry the whole extraction and re-burn tokens.
-- Add new events to the typed catalog in `lib/inngest/client.ts`, and register new functions in
-  `lib/inngest/functions/index.ts` (`allInngestFunctions`) or they're never served.
-- Keep event payloads minimal — ids only; fetch the rest from the DB inside the function.
-- `ingestion_events` rows are the per-job audit log; token usage and estimated cost are stored
-  on the job.
+- **The orchestrator must stay deterministic.** It is replayed from its event history on every
+  resume, so no `Date.now()`, no `Math.random()`, no I/O outside `callActivity`. Use
+  `context.df.currentUtcDateTime`.
+- Activities must be **idempotent** — a replay can re-run one. Storage writes use stable paths.
+- Persist errors are caught *inside* the activity and returned as tagged results; letting them
+  throw would retry the whole extraction and re-burn tokens.
+- `prepare` returns `{ pageImagePaths: [], error }` for a user-fixable mistake (a page range the
+  PDF cannot satisfy) rather than a non-2xx. A non-2xx throws inside the activity and leaves the
+  job stuck in `processing` with no explanation.
+- Keep activity payloads minimal — ids only; fetch the rest from the database inside the step.
+- `ingestion_events` rows are the per-job audit log; token usage and estimated cost live on the
+  job row.
+- **`functions/` is not deployed by CI.** After changing it:
+  `cd functions && npm run build && func azure functionapp publish func-recipe-jobs`.
 
 `recipe_status`: `draft → processing → needs_review → published`, plus terminal `failed`.
 
@@ -143,42 +171,75 @@ Zod schemas live in `lib/ai/schemas.ts`, versioned prompts in `lib/ai/prompts.ts
 
 ### Database
 
-Migrations in `supabase/migrations/`, timestamp-prefixed, forward-only — add a new file, don't
-edit an applied one. **After a schema change, hand-edit `types/database.types.ts`** to match —
-that file is *hand-authored* (custom exports: `MealSlot`, `RecipeSourceKind`, `UpdateTables`, …).
-**Do NOT run `npm run db:types`** — `supabase gen types` overwrites the whole file and deletes those
-custom helpers, breaking ~19 importers. This is **transitional**: once Supabase is removed (Module 9),
-`db:types` is retired and types derive from the Drizzle schema (`lib/db/schema.ts`) as the single
-source of truth, so `database.types.ts` gets replaced entirely. Until then, hand-edit. See `docs/tech-debt.md`.
+Migrations live in `supabase/migrations/` — the directory name is historical, the target is Neon.
+Timestamp-prefixed and **forward-only**: add a new file, never edit an applied one. Apply with
+`npm run db:migrate supabase/migrations/<file>.sql`.
 
-RLS is on every table, using the `is_household_member()` / `is_household_owner()` security-definer
-helpers (avoids policy recursion). Storage policies derive the household id from the object path
-prefix, so upload paths must keep that shape. Three RPCs do multi-step writes atomically:
+**After a schema change, hand-edit `types/database.types.ts`** to match. That file is
+*hand-authored* and carries custom exports (`MealSlot`, `RecipeSourceKind`, `UpdateTables`, …)
+that a generator would delete. The `db:types` script that used to clobber it is gone.
+
+The longer-term intent is for types to derive from the Drizzle schema (`lib/db/schema.ts`) as
+the single source of truth, replacing `database.types.ts` — see `docs/tech-debt.md`. Until then
+both exist: Drizzle for queries, `Tables<"...">` for row shapes. Keep them in step.
+
+RLS is on every table, using the `is_household_member()` / `is_household_owner()`
+security-definer helpers (which avoid policy recursion). It only engages through
+`runInUserTx` — see **Database access** above. Three RPCs do multi-step writes atomically:
 `create_household_with_owner`, `accept_household_invite`,
 `generate_shopping_list_from_planner`.
+
+Blob paths keep the `<household_id>/...` prefix, because `/api/images` authorizes by parsing the
+household id out of the path and checking it against the caller's memberships. Storage has no
+policy engine of its own, so that prefix *is* the access control.
 
 `recipes.embedding vector(1536)` exists with **no index** — semantic search is deliberately not
 shipped. Search today is `search_tsv` full-text (websearch-style) plus trigram/GIN indexes.
 
 ### Realtime
 
-Tables in the `supabase_realtime` publication: `planner_entries`, `shopping_lists`,
-`shopping_list_items`, `recipes`, `recipe_ratings`, `ingestion_jobs`, `ingestion_events`.
-Clients subscribe on a channel scoped to `household_id`. When realtime already handles a
-mutation's state update, don't also optimistically write it — that produced a duplicate-copy bug
-in the planner.
+Azure Web PubSub (ADR-0009). The server publishes through `publishToHousehold()`
+(`lib/realtime/publish.ts`); the browser subscribes with `useHouseholdRealtime()`.
+
+Two properties worth knowing:
+
+- **Events carry ids only, never row data.** A client receiving one refetches (a debounced
+  `router.refresh()`). Applying an optimistic local write *and* a realtime delta counted the
+  same change twice — that was the duplicate-copy bug in the planner. So when realtime already
+  handles a mutation's state update, don't also write it optimistically.
+- **The server is the single authority on availability.** `/api/realtime/negotiate` mints a
+  keyless, short-lived access URL scoped to the caller's households (derived from the session,
+  never from client input) and answers 503 when Web PubSub is unconfigured. The client just
+  tries, and treats failure as "no live updates" — pages still work, they just need a refresh.
 
 ### Env
 
 All env vars are validated at boot by Zod in `lib/env.ts`; empty strings are coerced to
-undefined. Import `env` from there rather than reading `process.env` directly. Google OAuth
-client-secret JSONs live in `~/Secrets/google-oauth/`, never in the repo (`client_secret_*.json`
-is gitignored).
+undefined. Import `env` from there rather than reading `process.env` directly.
+
+**Almost everything is optional in the schema, on purpose.** `next build` imports these modules
+with no secrets available, so a required variable would break the Docker build. The real
+enforcement is at first use: `lib/db` throws a clear error when `DATABASE_URL` is missing, and
+`startOrchestration` throws when the Functions wiring is. Validate where the value is needed,
+not at import.
+
+There is **one** provider switch left, `AI_PROVIDER` (Foundry vs Anthropic), and it is a genuine
+choice. The others — `AUTH_PROVIDER`, `STORAGE_PROVIDER`, `REALTIME_PROVIDER`, `JOBS_PROVIDER` —
+are gone. Each had exactly one working position after the cutover, and a missing one silently
+disabled a feature or fell back to a deleted service. Don't reintroduce a provider flag for
+something with one implementation.
+
+**`.env.local` is gitignored and has no backup.** Rebuild it from Azure with
+`bash scripts/pull-local-env.sh` — plain values from the `recipe-planner` container app, secrets
+from Key Vault `kv-recipe-planner`. Four values are deliberately *not* the production ones
+(`AUTH_URL`, `NEXT_PUBLIC_APP_URL`, `FUNCTIONS_BASE_URL`, `INGESTION_INTERNAL_SECRET`), and
+`AZURE_CLIENT_ID` is deliberately unset locally — in production it names the container app's
+managed identity, which does not exist on your machine.
 
 `next.config.ts` pins `serverExternalPackages: ["pdfjs-dist", "sharp", "pino", "@napi-rs/canvas"]`
-and explicitly traces the pdfjs worker file — the Vercel bundler can't see its runtime string
-reference. `app/api/inngest/route.ts` declares `runtime = "nodejs"` and `maxDuration = 300` so
-rasterization fits in the function budget.
+and explicitly traces the pdfjs worker file — the bundler can't see its runtime string
+reference. `app/api/internal/ingestion/*` routes declare `runtime = "nodejs"` and a long
+`maxDuration` so rasterization and vision calls fit in the budget.
 
 ## Conventions
 
@@ -189,3 +250,8 @@ rasterization fits in the function budget.
   `refresh_token`.
 - Mobile matters: the shell is a PWA with bottom nav on mobile, sidebar on desktop, and the
   planner grid transposes to slot-columns × day-rows on small screens.
+- ESLint is flat config (`eslint.config.mjs`), run as `eslint .` — `next lint` is deprecated and
+  gone in Next 16. CI fails on errors; warnings print but don't block.
+- Vitest pins `TZ=UTC`. Without it, anything formatting a stored UTC timestamp passes in CI and
+  fails in Australia (UTC+10/11), where the local calendar day differs. Dates shown to the user
+  are formatted **client-side** for the same reason — the server runs in UTC.

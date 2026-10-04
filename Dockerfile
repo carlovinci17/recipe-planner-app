@@ -11,17 +11,15 @@ FROM node:24-bookworm-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
-# Client-side provider gates — inlined at build time, so they MUST be passed as
-# build args (a Container App runtime env var can't change an already-compiled
-# bundle). Set both to "azure" for the Azure cutover; unset falls back to Supabase.
-ARG NEXT_PUBLIC_REALTIME_PROVIDER
-ARG NEXT_PUBLIC_STORAGE_PROVIDER
-ENV NEXT_PUBLIC_REALTIME_PROVIDER=$NEXT_PUBLIC_REALTIME_PROVIDER
-ENV NEXT_PUBLIC_STORAGE_PROVIDER=$NEXT_PUBLIC_STORAGE_PROVIDER
+# No NEXT_PUBLIC_* build args. There used to be four — the Supabase URL and
+# anon key, plus realtime/storage provider gates — and they had to be build
+# args because Next inlines NEXT_PUBLIC_ values into the client bundle, where a
+# Container App runtime variable cannot reach them. All four are gone with
+# Supabase: storage and realtime each have one implementation, and the client
+# now asks the server (/api/realtime/negotiate) instead of reading a flag.
+#
+# If a genuine client-side value is ever needed again, it belongs here as an
+# ARG + ENV pair AND in both build-args blocks of .github/workflows/build.yml.
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
