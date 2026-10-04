@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { createClient } from "@/lib/supabase/client";
 import type { Tables } from "@/types/database.types";
 import {
   addItemAction,
@@ -247,7 +246,6 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 // Realtime transport (ADR-0009): dual-run gate. When azure, the Supabase channel
 // is skipped and the Web PubSub hook drives updates via router.refresh().
-const REALTIME_IS_AZURE = process.env.NEXT_PUBLIC_REALTIME_PROVIDER === "azure";
 
 export function ShoppingList({
   householdId,
@@ -265,32 +263,6 @@ export function ShoppingList({
   const [newName, setNewName] = useState("");
   const [, start] = useTransition();
 
-  useEffect(() => {
-    if (REALTIME_IS_AZURE) return; // azure path uses the Web PubSub hook below
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`shopping-${list.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "shopping_list_items", filter: `list_id=eq.${list.id}` },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            setItems((prev) =>
-              prev.find((i) => i.id === (payload.new as Item).id) ? prev : [...prev, payload.new as Item],
-            );
-          } else if (payload.eventType === "UPDATE") {
-            setItems((prev) => prev.map((i) => (i.id === (payload.new as Item).id ? (payload.new as Item) : i)));
-          } else if (payload.eventType === "DELETE") {
-            setItems((prev) => prev.filter((i) => i.id !== (payload.old as Item).id));
-          }
-        },
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [list.id]);
-
   // Azure realtime (ADR-0009): refetch on any shopping change (events carry ids
   // only). Debounced so a burst (e.g. select-all publishing one change, or rapid
   // toggles) collapses into a single server round-trip instead of many.
@@ -299,7 +271,7 @@ export function ShoppingList({
     if (e.type === "shopping.changed") debouncedRefresh();
   });
   useEffect(() => {
-    if (REALTIME_IS_AZURE) setItems(initialItems);
+    setItems(initialItems);
   }, [initialItems]);
 
   // ── Ingredient merging ───────────────────────────────────────────────────

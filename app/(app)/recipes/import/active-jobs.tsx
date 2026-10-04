@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { CheckCircle2, CheckCheck, Clock, Loader2, Trash2, X, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { createClient } from "@/lib/supabase/client";
 import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
 import { loadActiveJobsAction } from "./actions";
 import type { ActiveJobRecipe } from "@/lib/services/ingestion-service";
@@ -58,7 +57,6 @@ function readSkimState(job: Job): {
 
 type Job = Tables<"ingestion_jobs">;
 type Event = Tables<"ingestion_events">;
-type Recipe = Tables<"recipes">;
 
 /**
  * Recipe fields surfaced inside the JobRow. Now includes cover image
@@ -180,7 +178,6 @@ function computeLabel(kind: IngestionEventKind | undefined, meta: ProgressMeta):
 
 const PAGE_SIZE = 25;
 
-const REALTIME_IS_AZURE = process.env.NEXT_PUBLIC_REALTIME_PROVIDER === "azure";
 
 type Derived = {
   jobs: Job[];
@@ -282,7 +279,6 @@ function assembleBundle(bundle: { jobs: Job[]; events: Event[]; recipes: ActiveJ
 }
 
 export function ActiveJobs({ householdId }: { householdId: string }) {
-  const supabase = createClient();
   const [jobs, setJobs] = useState<Job[]>([]);
   // First-load flag so the box shows a spinner instead of popping in whole once
   // the initial fetch resolves (Import #2).
@@ -356,230 +352,10 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
       setLoading(false);
     })();
 
-    // Azure realtime path: the Supabase postgres_changes channels below don't
-    // apply (writes go to Neon); the Web PubSub hook drives refetches instead.
-    if (REALTIME_IS_AZURE) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const jobsChannel = supabase
-      .channel(`ingestion-${householdId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "ingestion_jobs",
-          filter: `household_id=eq.${householdId}`,
-        },
-        (payload) => {
-          setJobs((prev) => {
-            if (payload.eventType === "DELETE")
-              return prev.filter((j) => j.id !== (payload.old as Job).id);
-            const next = payload.new as Job;
-            // Fallback for legacy single-recipe jobs whose recipes don't
-            // carry ingestion_job_id (so the recipes-channel subscription
-            // never delivers them). When such a job gains a recipe_id via
-            // realtime, fetch the title once and inject it into the row.
-            if (next.recipe_id) {
-              const recipeId = next.recipe_id;
-              const jobId = next.id;
-              setRecipesByJob((current) => {
-                const existing = current[jobId];
-                if (existing && existing.some((r) => r.id === recipeId)) return current;
-                void supabase
-                  .from("recipes")
-                  .select("id, title, status, cover_image_path, image_paths, cover_focal_x, cover_focal_y")
-                  .eq("id", recipeId)
-                  .maybeSingle()
-                  .then(({ data }) => {
-                    if (!data) return;
-                    const ref: JobRecipe = {
-                      id: data.id,
-                      title: data.title,
-                      status: data.status,
-                      cover_image_path: data.cover_image_path,
-                      image_paths: data.image_paths,
-                      cover_focal_x: data.cover_focal_x,
-                      cover_focal_y: data.cover_focal_y,
-                    };
-                    setRecipesByJob((c) => {
-                      const list = c[jobId] ?? [];
-                      if (list.some((r) => r.id === ref.id)) return c;
-                      return { ...c, [jobId]: [...list, ref] };
-                    });
-                  });
-                return current;
-              });
-            }
-            const without = prev.filter((j) => j.id !== next.id);
-            return [next, ...without].slice(0, PAGE_SIZE);
-          });
-        },
-      )
-      .subscribe();
-
-    // No straightforward way to filter ingestion_events by household_id
-    // without a view (events are scoped via job_id). Subscribe to all
-    // public.ingestion_events INSERTs and ignore ones we don't care about.
-    const eventsChannel = supabase
-      .channel(`ingestion-events-${householdId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "ingestion_events",
-        },
-        (payload) => {
-          const ev = payload.new as Event;
-          setLatestEvents((prev) => ({ ...prev, [ev.job_id]: ev.kind }));
-          setEventsByJob((prev) => ({
-            ...prev,
-            [ev.job_id]: [ev, ...(prev[ev.job_id] ?? [])],
-          }));
-          if (ev.kind === "extraction_completed") {
-            const p = ev.payload as { recipes_found?: number; recipes_kept?: number } | null;
-            if (p && typeof p.recipes_found === "number") {
-              setExtractionCounts((prev) => ({
-                ...prev,
-                [ev.job_id]: {
-                  found: p.recipes_found!,
-                  kept: p.recipes_kept ?? p.recipes_found!,
-                },
-              }));
-            }
-          }
-          // Vision phase chunk progress — drives the smooth bar climb
-          // from 20% → 70% as each chunk completes.
-          if (ev.kind === "ai_processing_started") {
-            const p = ev.payload as { chunk?: number; total_chunks?: number } | null;
-            if (p?.chunk && p.total_chunks) {
-              setProgressMeta((prev) => ({
-                ...prev,
-                [ev.job_id]: {
-                  ...prev[ev.job_id],
-                  chunk: p.chunk,
-                  totalChunks: p.total_chunks,
-                },
-              }));
-            }
-          }
-          // Persist phase progress — bar climbs 85% → 100% as each recipe
-          // lands in the cookbook.
-          if (ev.kind === "recipe_ready_for_review") {
-            const p = ev.payload as { index?: number; total?: number } | null;
-            if (typeof p?.index === "number" && p.total) {
-              setProgressMeta((prev) => ({
-                ...prev,
-                [ev.job_id]: {
-                  ...prev[ev.job_id],
-                  recipeIndex: p.index,
-                  recipeTotal: p.total,
-                },
-              }));
-            }
-          }
-          // Partial-failure summary event from process-upload / process-url.
-          if (ev.kind === "validation_completed") {
-            const p = ev.payload as
-              | { partial?: boolean; failed_titles?: string[]; failure_reasons?: string[] }
-              | null;
-            if (p?.partial && p.failed_titles) {
-              setPersistFailures((prev) => ({
-                ...prev,
-                [ev.job_id]: {
-                  titles: p.failed_titles!,
-                  reasons: p.failure_reasons ?? [],
-                },
-              }));
-            }
-          }
-          // Per-recipe failure event (fired as each persist attempt errors).
-          // Accumulate so the UI shows live failure counts as they arrive,
-          // even before the partial-summary event lands.
-          if (ev.kind === "failed") {
-            const p = ev.payload as {
-              reason?: string;
-              title?: string;
-              error?: string;
-            } | null;
-            if (p?.reason === "persist_recipe" && p.title) {
-              setPersistFailures((prev) => {
-                const bucket = prev[ev.job_id] ?? { titles: [], reasons: [] };
-                const titles = bucket.titles.includes(p.title!)
-                  ? bucket.titles
-                  : [...bucket.titles, p.title!];
-                const reasons =
-                  p.error && !bucket.reasons.includes(p.error)
-                    ? [...bucket.reasons, p.error]
-                    : bucket.reasons;
-                return { ...prev, [ev.job_id]: { titles, reasons } };
-              });
-            }
-          }
-        },
-      )
-      .subscribe();
-
-    // Watch recipes scoped to this household so siblings of a multi-recipe
-    // import flow into the row as they're persisted (driving the
-    // "Saving X of N" counter without polling).
-    const recipesChannel = supabase
-      .channel(`ingestion-recipes-${householdId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "recipes",
-          filter: `household_id=eq.${householdId}`,
-        },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            const old = payload.old as Recipe;
-            if (!old.ingestion_job_id) return;
-            const jobId = old.ingestion_job_id;
-            setRecipesByJob((prev) => {
-              const list = prev[jobId];
-              if (!list) return prev;
-              return { ...prev, [jobId]: list.filter((r) => r.id !== old.id) };
-            });
-            return;
-          }
-          const next = payload.new as Recipe;
-          if (!next.ingestion_job_id) return;
-          const jobId = next.ingestion_job_id;
-          const ref: JobRecipe = {
-            id: next.id,
-            title: next.title,
-            status: next.status,
-            cover_image_path: next.cover_image_path,
-            image_paths: next.image_paths,
-            cover_focal_x: next.cover_focal_x,
-            cover_focal_y: next.cover_focal_y,
-          };
-          setRecipesByJob((prev) => {
-            const list = prev[jobId] ?? [];
-            const idx = list.findIndex((r) => r.id === ref.id);
-            if (idx === -1) return { ...prev, [jobId]: [...list, ref] };
-            const copy = list.slice();
-            copy[idx] = ref;
-            return { ...prev, [jobId]: copy };
-          });
-        },
-      )
-      .subscribe();
-
     return () => {
       cancelled = true;
-      void supabase.removeChannel(jobsChannel);
-      void supabase.removeChannel(eventsChannel);
-      void supabase.removeChannel(recipesChannel);
     };
-  }, [householdId, supabase]);
+  }, [householdId]);
 
   // Azure realtime (ADR-0009): events carry ids only, so on any ingestion signal
   // we refetch the whole visible span from the server (Neon) and re-derive. No-op

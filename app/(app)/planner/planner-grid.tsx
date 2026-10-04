@@ -19,7 +19,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { MealSlot, Tables } from "@/types/database.types";
 import type { RecipeListItem } from "@/lib/services/recipe-service";
@@ -130,7 +129,6 @@ function computeDayMacros(
 
 // Realtime transport (ADR-0009): dual-run gate. When azure, the Supabase channel
 // below is skipped and the Web PubSub hook drives updates via router.refresh().
-const REALTIME_IS_AZURE = process.env.NEXT_PUBLIC_REALTIME_PROVIDER === "azure";
 
 export function PlannerGrid({
   householdId,
@@ -233,62 +231,6 @@ export function PlannerGrid({
   }
 
   // Realtime sync
-  // Realtime: merge changes directly into local state. Avoid router.refresh()
-  // on every event — that causes a full server round-trip and makes the grid
-  // feel laggy. Recipe info for new entries is looked up from the `recipes`
-  // prop (already in memory), so the thumbnail renders without a fetch.
-  useEffect(() => {
-    if (REALTIME_IS_AZURE) return; // azure path uses the Web PubSub hook below
-    const supabase = createClient();
-
-    function attachRecipe(row: Tables<"planner_entries">): EntryWithRecipe {
-      if (!row.recipe_id) return { ...row, recipe: null };
-      const r = recipes.find((r) => r.id === row.recipe_id);
-      return {
-        ...row,
-        recipe: r
-          ? {
-              id: r.id,
-              title: r.title,
-              cover_image_path: r.cover_image_path,
-              image_paths: r.image_paths ?? [],
-              cover_focal_x: r.cover_focal_x,
-              cover_focal_y: r.cover_focal_y,
-            }
-          : null,
-      };
-    }
-
-    const channel = supabase
-      .channel(`planner-${householdId}-${weekStartIso}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "planner_entries",
-          filter: `household_id=eq.${householdId}`,
-        },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            const next = attachRecipe(payload.new as Tables<"planner_entries">);
-            setEntries((prev) => (prev.some((e) => e.id === next.id) ? prev : [...prev, next]));
-          } else if (payload.eventType === "UPDATE") {
-            const next = attachRecipe(payload.new as Tables<"planner_entries">);
-            setEntries((prev) => prev.map((e) => (e.id === next.id ? next : e)));
-          } else if (payload.eventType === "DELETE") {
-            const id = (payload.old as Tables<"planner_entries">).id;
-            setEntries((prev) => prev.filter((e) => e.id !== id));
-          }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [householdId, weekStartIso, recipes]);
-
   // Azure realtime (ADR-0009): events carry ids only, so on a planner change we
   // refetch (router.refresh re-runs the server component) instead of applying a
   // row delta. Debounced so a copy/move burst collapses into one round-trip.
@@ -297,8 +239,8 @@ export function PlannerGrid({
     if (e.type === "planner.changed") debouncedRefresh();
   });
   useEffect(() => {
-    // Sync the refreshed server data into local state (azure path only).
-    if (REALTIME_IS_AZURE) setEntries(initialEntries as EntryWithRecipe[]);
+    // Sync the refreshed server data into local state.
+    setEntries(initialEntries as EntryWithRecipe[]);
   }, [initialEntries]);
 
   const grouped = useMemo(() => {
