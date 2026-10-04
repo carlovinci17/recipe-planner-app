@@ -14,7 +14,11 @@ const COOKIE = "active_household";
  * Wrapped with React.cache() so repeated calls within the same request
  * (layout + child page) share a single DB round-trip.
  */
-export const getActiveHousehold = cache(async function getActiveHousehold(): Promise<{ id: string; name: string; role: "owner" | "member" }> {
+export const getActiveHousehold = cache(async function getActiveHousehold(): Promise<{
+  id: string;
+  name: string;
+  role: "owner" | "member";
+}> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
@@ -24,8 +28,7 @@ export const getActiveHousehold = cache(async function getActiveHousehold(): Pro
   const memberships = await householdService.listForCurrentUser();
   if (memberships.length === 0) redirect("/onboarding");
 
-  const chosen =
-    memberships.find((m) => m.household.id === cookieValue) ?? memberships[0]!;
+  const chosen = memberships.find((m) => m.household.id === cookieValue) ?? memberships[0]!;
 
   if (cookieValue !== chosen.household.id) {
     try {

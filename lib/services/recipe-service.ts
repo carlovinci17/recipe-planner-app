@@ -1,12 +1,9 @@
 import "server-only";
 import { and, asc, desc, eq, gte, inArray, isNull, sql as dsql } from "drizzle-orm";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { recipeIngredients, recipeInstructions, recipes } from "@/lib/db/schema";
 import type { Tx } from "@/lib/db";
-import { env } from "@/lib/env";
 import { ingestionStorage } from "@/lib/ingestion/storage";
 import { runInUserTx } from "./user-tx";
-import { getCurrentUser } from "@/lib/auth/current-user";
 import type { Tables, UpdateTables } from "@/types/database.types";
 
 /** Read a recipe's `image_paths` inside an RLS-scoped tx (Neon path). */
@@ -68,39 +65,21 @@ export const recipeService = {
    * Inserts `status='needs_review'` so it lands in the review editor.
    */
   async createDraft(args: { householdId: string }): Promise<string> {
-    if (env.DATABASE_URL) {
-      return runInUserTx(async (tx, userId) => {
-        const inserted = await tx
-          .insert(recipes)
-          .values({
-            householdId: args.householdId,
-            createdBy: userId,
-            title: "Untitled recipe",
-            sourceKind: "manual",
-            status: "needs_review",
-          })
-          .returning({ id: recipes.id });
-        const id = inserted[0]?.id;
-        if (!id) throw new Error("Failed to create recipe");
-        return id;
-      });
-    }
-    const supabase = await createSupabaseServerClient();
-    const user = await getCurrentUser();
-    if (!user) throw new Error("Not authenticated");
-    const { data, error } = await supabase
-      .from("recipes")
-      .insert({
-        household_id: args.householdId,
-        created_by: user.id,
-        title: "Untitled recipe",
-        source_kind: "manual",
-        status: "needs_review",
-      })
-      .select("id")
-      .single();
-    if (error || !data) throw error ?? new Error("Failed to create recipe");
-    return data.id;
+    return runInUserTx(async (tx, userId) => {
+      const inserted = await tx
+        .insert(recipes)
+        .values({
+          householdId: args.householdId,
+          createdBy: userId,
+          title: "Untitled recipe",
+          sourceKind: "manual",
+          status: "needs_review",
+        })
+        .returning({ id: recipes.id });
+      const id = inserted[0]?.id;
+      if (!id) throw new Error("Failed to create recipe");
+      return id;
+    });
   },
 
   /**
@@ -109,65 +88,41 @@ export const recipeService = {
    * Supabase client otherwise (prod, until Module 9). Both satisfy the same
    * characterization tests.
    */
-  async list(args: { householdId: string; filters?: RecipeFilters; limit?: number }): Promise<RecipeListItem[]> {
-    return env.DATABASE_URL ? listViaDrizzle(args) : listViaSupabase(args);
+  async list(args: {
+    householdId: string;
+    filters?: RecipeFilters;
+    limit?: number;
+  }): Promise<RecipeListItem[]> {
+    return listRecipes(args);
   },
 
   async getById(recipeId: string): Promise<RecipeDetail> {
-    return env.DATABASE_URL ? getByIdViaDrizzle(recipeId) : getByIdViaSupabase(recipeId);
+    return getRecipeById(recipeId);
   },
 
   async setFavorite(recipeId: string, isFavorite: boolean) {
-    if (env.DATABASE_URL) {
-      await runInUserTx((tx) => tx.update(recipes).set({ isFavorite }).where(eq(recipes.id, recipeId)));
-      return;
-    }
-    const supabase = await createSupabaseServerClient();
-    const { error } = await supabase
-      .from("recipes")
-      .update({ is_favorite: isFavorite })
-      .eq("id", recipeId);
-    if (error) throw error;
+    await runInUserTx((tx) =>
+      tx.update(recipes).set({ isFavorite }).where(eq(recipes.id, recipeId)),
+    );
   },
 
   async setRating(recipeId: string, rating: number | null) {
-    if (env.DATABASE_URL) {
-      await runInUserTx((tx) => tx.update(recipes).set({ rating }).where(eq(recipes.id, recipeId)));
-      return;
-    }
-    const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.from("recipes").update({ rating }).eq("id", recipeId);
-    if (error) throw error;
+    await runInUserTx((tx) => tx.update(recipes).set({ rating }).where(eq(recipes.id, recipeId)));
   },
 
   async publish(recipeId: string) {
-    if (env.DATABASE_URL) {
-      await runInUserTx((tx) =>
-        tx.update(recipes).set({ status: "published" }).where(eq(recipes.id, recipeId)),
-      );
-      return;
-    }
-    const supabase = await createSupabaseServerClient();
-    const { error } = await supabase
-      .from("recipes")
-      .update({ status: "published" })
-      .eq("id", recipeId);
-    if (error) throw error;
+    await runInUserTx((tx) =>
+      tx.update(recipes).set({ status: "published" }).where(eq(recipes.id, recipeId)),
+    );
   },
 
   async archive(recipeId: string) {
-    if (env.DATABASE_URL) {
-      await runInUserTx((tx) =>
-        tx.update(recipes).set({ archivedAt: new Date().toISOString() }).where(eq(recipes.id, recipeId)),
-      );
-      return;
-    }
-    const supabase = await createSupabaseServerClient();
-    const { error } = await supabase
-      .from("recipes")
-      .update({ archived_at: new Date().toISOString() })
-      .eq("id", recipeId);
-    if (error) throw error;
+    await runInUserTx((tx) =>
+      tx
+        .update(recipes)
+        .set({ archivedAt: new Date().toISOString() })
+        .where(eq(recipes.id, recipeId)),
+    );
   },
 
   /**
@@ -177,13 +132,7 @@ export const recipeService = {
    * user to confirm this before calling — see `countPlannerEntries`.
    */
   async delete(recipeId: string) {
-    if (env.DATABASE_URL) {
-      await runInUserTx((tx) => tx.delete(recipes).where(eq(recipes.id, recipeId)));
-      return;
-    }
-    const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.from("recipes").delete().eq("id", recipeId);
-    if (error) throw error;
+    await runInUserTx((tx) => tx.delete(recipes).where(eq(recipes.id, recipeId)));
   },
 
   /**
@@ -195,23 +144,13 @@ export const recipeService = {
    */
   async bulkDelete(args: { householdId: string; recipeIds: string[] }): Promise<number> {
     if (args.recipeIds.length === 0) return 0;
-    if (env.DATABASE_URL) {
-      return runInUserTx(async (tx) => {
-        const deleted = await tx
-          .delete(recipes)
-          .where(and(eq(recipes.householdId, args.householdId), inArray(recipes.id, args.recipeIds)))
-          .returning({ id: recipes.id });
-        return deleted.length;
-      });
-    }
-    const supabase = await createSupabaseServerClient();
-    const { error, count } = await supabase
-      .from("recipes")
-      .delete({ count: "exact" })
-      .eq("household_id", args.householdId)
-      .in("id", args.recipeIds);
-    if (error) throw error;
-    return count ?? 0;
+    return runInUserTx(async (tx) => {
+      const deleted = await tx
+        .delete(recipes)
+        .where(and(eq(recipes.householdId, args.householdId), inArray(recipes.id, args.recipeIds)))
+        .returning({ id: recipes.id });
+      return deleted.length;
+    });
   },
 
   /**
@@ -222,44 +161,24 @@ export const recipeService = {
    */
   async bulkPublish(args: { recipeIds: string[] }): Promise<string[]> {
     if (args.recipeIds.length === 0) return [];
-    if (env.DATABASE_URL) {
-      return runInUserTx(async (tx) => {
-        const rows = await tx
-          .update(recipes)
-          .set({ status: "published" })
-          .where(and(inArray(recipes.id, args.recipeIds), eq(recipes.status, "needs_review")))
-          .returning({ id: recipes.id });
-        return rows.map((r) => r.id);
-      });
-    }
-    const supabase = await createSupabaseServerClient();
-    const { error, data } = await supabase
-      .from("recipes")
-      .update({ status: "published" })
-      .eq("status", "needs_review")
-      .in("id", args.recipeIds)
-      .select("id");
-    if (error) throw error;
-    return data?.map((r) => r.id) ?? [];
+    return runInUserTx(async (tx) => {
+      const rows = await tx
+        .update(recipes)
+        .set({ status: "published" })
+        .where(and(inArray(recipes.id, args.recipeIds), eq(recipes.status, "needs_review")))
+        .returning({ id: recipes.id });
+      return rows.map((r) => r.id);
+    });
   },
 
   /** How many planner entries reference this recipe? Used to gate the delete UI. */
   async countPlannerEntries(recipeId: string): Promise<number> {
-    if (env.DATABASE_URL) {
-      return runInUserTx(async (tx) => {
-        const rows = (await tx.execute(
-          dsql`select count(*)::int as n from public.planner_entries where recipe_id = ${recipeId}`,
-        )) as unknown as Array<{ n: number }>;
-        return rows[0]?.n ?? 0;
-      });
-    }
-    const supabase = await createSupabaseServerClient();
-    const { count, error } = await supabase
-      .from("planner_entries")
-      .select("id", { count: "exact", head: true })
-      .eq("recipe_id", recipeId);
-    if (error) throw error;
-    return count ?? 0;
+    return runInUserTx(async (tx) => {
+      const rows = (await tx.execute(
+        dsql`select count(*)::int as n from public.planner_entries where recipe_id = ${recipeId}`,
+      )) as unknown as Array<{ n: number }>;
+      return rows[0]?.n ?? 0;
+    });
   },
 
   /**
@@ -274,45 +193,29 @@ export const recipeService = {
     limit?: number;
   }): Promise<Array<{ id: string; title: string }>> {
     const limit = args.limit ?? 3;
-    if (env.DATABASE_URL) {
-      return runInUserTx(async (tx) => {
-        const rows = (await tx.execute(
-          dsql`select id, title from public.recipes
-               where household_id = ${args.householdId}
-                 and status = 'published'
-                 and id <> ${args.excludeRecipeId}
-                 and lower(title) = lower(${args.title})
-               limit ${limit}`,
-        )) as unknown as Array<{ id: string; title: string }>;
-        return rows;
-      });
-    }
-    const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase
-      .from("recipes")
-      .select("id, title")
-      .eq("household_id", args.householdId)
-      .eq("status", "published")
-      .neq("id", args.excludeRecipeId)
-      .ilike("title", args.title)
-      .limit(limit);
-    if (error) throw error;
-    return data ?? [];
+    return runInUserTx(async (tx) => {
+      const rows = (await tx.execute(
+        dsql`select id, title from public.recipes
+             where household_id = ${args.householdId}
+               and status = 'published'
+               and id <> ${args.excludeRecipeId}
+               and lower(title) = lower(${args.title})
+             limit ${limit}`,
+      )) as unknown as Array<{ id: string; title: string }>;
+      return rows;
+    });
   },
 
   async update(recipeId: string, patch: UpdateTables<"recipes">) {
-    if (env.DATABASE_URL) {
-      // patch keys are snake_case (DB columns); Drizzle `set` wants the schema's
-      // camelCase props. Map keys, then cast (postgres coerces number↔numeric).
-      const set = Object.fromEntries(
-        Object.entries(patch).map(([k, v]) => [k.replace(/_([a-z])/g, (_m, c) => c.toUpperCase()), v]),
-      ) as Partial<typeof recipes.$inferInsert>;
-      await runInUserTx((tx) => tx.update(recipes).set(set).where(eq(recipes.id, recipeId)));
-      return;
-    }
-    const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.from("recipes").update(patch).eq("id", recipeId);
-    if (error) throw error;
+    // patch keys are snake_case (DB columns); Drizzle `set` wants the schema's
+    // camelCase props. Map keys, then cast (postgres coerces number↔numeric).
+    const set = Object.fromEntries(
+      Object.entries(patch).map(([k, v]) => [
+        k.replace(/_([a-z])/g, (_m, c) => c.toUpperCase()),
+        v,
+      ]),
+    ) as Partial<typeof recipes.$inferInsert>;
+    await runInUserTx((tx) => tx.update(recipes).set(set).where(eq(recipes.id, recipeId)));
   },
 
   /**
@@ -329,17 +232,11 @@ export const recipeService = {
     const safeName = args.fileName.replace(/[^a-zA-Z0-9.-]/g, "_");
     const ts = Date.now();
     const path = `${args.householdId}/${args.recipeId}/cover-${ts}-${safeName}`;
-    // Azure is keyless — no browser signature. The browser POSTs the file to
-    // /api/storage/upload instead; we only need to hand back the target path.
-    if (env.STORAGE_PROVIDER === "azure") {
-      return { uploadUrl: "", token: "", path, bucket: "recipe-images" as const };
-    }
-    const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase.storage
-      .from("recipe-images")
-      .createSignedUploadUrl(path);
-    if (error || !data) throw error ?? new Error("Failed to sign upload");
-    return { uploadUrl: data.signedUrl, token: data.token, path, bucket: "recipe-images" as const };
+    // Azure Blob is keyless, so there is no browser-signed upload URL: the
+    // browser POSTs the file to /api/storage/upload and we only hand back the
+    // target path. `uploadUrl`/`token` stay in the shape for the callers that
+    // still destructure them.
+    return { uploadUrl: "", token: "", path, bucket: "recipe-images" as const };
   },
 
   /**
@@ -348,205 +245,76 @@ export const recipeService = {
    * `setCoverImage` to promote a different image.
    */
   async attachImage(args: { recipeId: string; path: string }) {
-    if (env.DATABASE_URL) {
-      await runInUserTx(async (tx) => {
-        const existing = await readImagePaths(tx, args.recipeId);
-        const next = Array.from(new Set([...existing, args.path]));
-        await tx.update(recipes).set({ imagePaths: next }).where(eq(recipes.id, args.recipeId));
-      });
-      return;
-    }
-    const supabase = await createSupabaseServerClient();
-    const { data: existing, error: fetchErr } = await supabase
-      .from("recipes")
-      .select("image_paths")
-      .eq("id", args.recipeId)
-      .single();
-    if (fetchErr || !existing) throw fetchErr ?? new Error("Recipe not found");
-
-    const nextImagePaths = Array.from(new Set([...(existing.image_paths ?? []), args.path]));
-    const { error } = await supabase
-      .from("recipes")
-      .update({ image_paths: nextImagePaths })
-      .eq("id", args.recipeId);
-    if (error) throw error;
+    await runInUserTx(async (tx) => {
+      const existing = await readImagePaths(tx, args.recipeId);
+      const next = Array.from(new Set([...existing, args.path]));
+      await tx.update(recipes).set({ imagePaths: next }).where(eq(recipes.id, args.recipeId));
+    });
   },
 
   /** Promote an existing image to position 0 (the visible cover). */
   async setCoverImage(args: { recipeId: string; path: string }) {
-    if (env.DATABASE_URL) {
-      await runInUserTx(async (tx) => {
-        const existing = await readImagePaths(tx, args.recipeId);
-        const next = [args.path, ...existing.filter((p) => p !== args.path)];
-        await tx.update(recipes).set({ imagePaths: next }).where(eq(recipes.id, args.recipeId));
-      });
-      return;
-    }
-    const supabase = await createSupabaseServerClient();
-    const { data: existing, error: fetchErr } = await supabase
-      .from("recipes")
-      .select("image_paths")
-      .eq("id", args.recipeId)
-      .single();
-    if (fetchErr || !existing) throw fetchErr ?? new Error("Recipe not found");
-
-    const without = (existing.image_paths ?? []).filter((p) => p !== args.path);
-    const next = [args.path, ...without];
-    const { error } = await supabase
-      .from("recipes")
-      .update({ image_paths: next })
-      .eq("id", args.recipeId);
-    if (error) throw error;
+    await runInUserTx(async (tx) => {
+      const existing = await readImagePaths(tx, args.recipeId);
+      const next = [args.path, ...existing.filter((p) => p !== args.path)];
+      await tx.update(recipes).set({ imagePaths: next }).where(eq(recipes.id, args.recipeId));
+    });
   },
 
   async removeImage(args: { recipeId: string; path: string }) {
-    if (env.DATABASE_URL) {
-      await runInUserTx(async (tx) => {
-        const existing = await readImagePaths(tx, args.recipeId);
-        const next = existing.filter((p) => p !== args.path);
-        await tx.update(recipes).set({ imagePaths: next }).where(eq(recipes.id, args.recipeId));
-      });
-      // Storage delete goes through the seam so it lands on Azure Blob when
-      // STORAGE_PROVIDER=azure, Supabase Storage otherwise.
-      await ingestionStorage.remove({ bucket: "recipe-images", paths: [args.path] });
-      return;
-    }
-    const supabase = await createSupabaseServerClient();
-    const { data: existing, error: fetchErr } = await supabase
-      .from("recipes")
-      .select("image_paths")
-      .eq("id", args.recipeId)
-      .single();
-    if (fetchErr || !existing) throw fetchErr ?? new Error("Recipe not found");
-
-    const next = (existing.image_paths ?? []).filter((p) => p !== args.path);
-    const { error: updateErr } = await supabase
-      .from("recipes")
-      .update({ image_paths: next })
-      .eq("id", args.recipeId);
-    if (updateErr) throw updateErr;
-
-    await supabase.storage.from("recipe-images").remove([args.path]);
+    await runInUserTx(async (tx) => {
+      const existing = await readImagePaths(tx, args.recipeId);
+      const next = existing.filter((p) => p !== args.path);
+      await tx.update(recipes).set({ imagePaths: next }).where(eq(recipes.id, args.recipeId));
+    });
+    // Storage delete goes through the seam, which lands on Azure Blob.
+    await ingestionStorage.remove({ bucket: "recipe-images", paths: [args.path] });
   },
 
-  async replaceIngredients(recipeId: string, ingredients: Array<Partial<Tables<"recipe_ingredients">> & { raw_text: string }>) {
-    if (env.DATABASE_URL) {
-      await runInUserTx(async (tx) => {
-        await tx.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, recipeId));
-        if (ingredients.length === 0) return;
-        await tx.insert(recipeIngredients).values(
-          ingredients.map((ing, idx) => ({
-            recipeId,
-            position: idx,
-            section: ing.section ?? null,
-            rawText: ing.raw_text,
-            quantity: ing.quantity ?? null,
-            unit: ing.unit ?? null,
-            ingredient: ing.ingredient ?? null,
-            notes: ing.notes ?? null,
-            optional: ing.optional ?? false,
-          })) as (typeof recipeIngredients.$inferInsert)[],
-        );
-      });
-      return;
-    }
-    const supabase = await createSupabaseServerClient();
-    const { error: delErr } = await supabase
-      .from("recipe_ingredients")
-      .delete()
-      .eq("recipe_id", recipeId);
-    if (delErr) throw delErr;
-    if (ingredients.length === 0) return;
-    const { error } = await supabase.from("recipe_ingredients").insert(
-      ingredients.map((ing, idx) => ({
-        recipe_id: recipeId,
-        position: idx,
-        section: ing.section ?? null,
-        raw_text: ing.raw_text,
-        quantity: ing.quantity ?? null,
-        unit: ing.unit ?? null,
-        ingredient: ing.ingredient ?? null,
-        notes: ing.notes ?? null,
-        optional: ing.optional ?? false,
-      })),
-    );
-    if (error) throw error;
+  async replaceIngredients(
+    recipeId: string,
+    ingredients: Array<Partial<Tables<"recipe_ingredients">> & { raw_text: string }>,
+  ) {
+    await runInUserTx(async (tx) => {
+      await tx.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, recipeId));
+      if (ingredients.length === 0) return;
+      await tx.insert(recipeIngredients).values(
+        ingredients.map((ing, idx) => ({
+          recipeId,
+          position: idx,
+          section: ing.section ?? null,
+          rawText: ing.raw_text,
+          quantity: ing.quantity ?? null,
+          unit: ing.unit ?? null,
+          ingredient: ing.ingredient ?? null,
+          notes: ing.notes ?? null,
+          optional: ing.optional ?? false,
+        })) as (typeof recipeIngredients.$inferInsert)[],
+      );
+    });
   },
 
-  async replaceInstructions(recipeId: string, instructions: Array<Partial<Tables<"recipe_instructions">> & { text: string }>) {
-    if (env.DATABASE_URL) {
-      await runInUserTx(async (tx) => {
-        await tx.delete(recipeInstructions).where(eq(recipeInstructions.recipeId, recipeId));
-        if (instructions.length === 0) return;
-        await tx.insert(recipeInstructions).values(
-          instructions.map((step, idx) => ({
-            recipeId,
-            position: idx,
-            section: step.section ?? null,
-            text: step.text,
-            durationMin: step.duration_min ?? null,
-          })) as (typeof recipeInstructions.$inferInsert)[],
-        );
-      });
-      return;
-    }
-    const supabase = await createSupabaseServerClient();
-    const { error: delErr } = await supabase
-      .from("recipe_instructions")
-      .delete()
-      .eq("recipe_id", recipeId);
-    if (delErr) throw delErr;
-    if (instructions.length === 0) return;
-    const { error } = await supabase.from("recipe_instructions").insert(
-      instructions.map((step, idx) => ({
-        recipe_id: recipeId,
-        position: idx,
-        section: step.section ?? null,
-        text: step.text,
-        duration_min: step.duration_min ?? null,
-      })),
-    );
-    if (error) throw error;
+  async replaceInstructions(
+    recipeId: string,
+    instructions: Array<Partial<Tables<"recipe_instructions">> & { text: string }>,
+  ) {
+    await runInUserTx(async (tx) => {
+      await tx.delete(recipeInstructions).where(eq(recipeInstructions.recipeId, recipeId));
+      if (instructions.length === 0) return;
+      await tx.insert(recipeInstructions).values(
+        instructions.map((step, idx) => ({
+          recipeId,
+          position: idx,
+          section: step.section ?? null,
+          text: step.text,
+          durationMin: step.duration_min ?? null,
+        })) as (typeof recipeInstructions.$inferInsert)[],
+      );
+    });
   },
 };
 
-// ── recipeService.list: two implementations behind the stable signature ──────
-
-async function listViaSupabase(args: {
-  householdId: string;
-  filters?: RecipeFilters;
-  limit?: number;
-}): Promise<RecipeListItem[]> {
-  const supabase = await createSupabaseServerClient();
-  let query = supabase
-    .from("recipes")
-    .select(
-      "id, title, description, cover_image_path, image_paths, created_by, prep_time_min, cook_time_min, servings, rating, is_favorite, tags, meal_types, diet_types, cuisines, source_url, status, created_at, household_id, nutrition, cover_focal_x, cover_focal_y, source_name, source_metadata",
-    )
-    .eq("household_id", args.householdId)
-    .is("archived_at", null)
-    .order("created_at", { ascending: false })
-    .limit(args.limit ?? 60);
-
-  const f = args.filters ?? {};
-  if (f.status) query = query.eq("status", f.status);
-  else query = query.in("status", ["published", "needs_review"]);
-  if (f.favoriteOnly) query = query.eq("is_favorite", true);
-  if (f.minRating) query = query.gte("rating", f.minRating);
-  if (f.mealTypes?.length) query = query.contains("meal_types", f.mealTypes);
-  if (f.dietTypes?.length) query = query.contains("diet_types", f.dietTypes);
-  if (f.cuisines?.length) query = query.contains("cuisines", f.cuisines);
-  if (f.query) {
-    // Basic FTS — websearch-style query is more forgiving than plainto_tsquery
-    query = query.textSearch("search_tsv", f.query, { type: "websearch", config: "english" });
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return data ?? [];
-}
-
-async function listViaDrizzle(args: {
+async function listRecipes(args: {
   householdId: string;
   filters?: RecipeFilters;
   limit?: number;
@@ -601,26 +369,7 @@ async function listViaDrizzle(args: {
   });
 }
 
-// ── recipeService.getById: two implementations behind the stable signature ───
-
-async function getByIdViaSupabase(recipeId: string): Promise<RecipeDetail> {
-  const supabase = await createSupabaseServerClient();
-  const { data: recipe, error } = await supabase
-    .from("recipes")
-    .select("*")
-    .eq("id", recipeId)
-    .single();
-  if (error) throw error;
-
-  const [{ data: ingredients }, { data: instructions }] = await Promise.all([
-    supabase.from("recipe_ingredients").select("*").eq("recipe_id", recipeId).order("position"),
-    supabase.from("recipe_instructions").select("*").eq("recipe_id", recipeId).order("position"),
-  ]);
-
-  return { recipe, ingredients: ingredients ?? [], instructions: instructions ?? [] };
-}
-
-async function getByIdViaDrizzle(recipeId: string): Promise<RecipeDetail> {
+async function getRecipeById(recipeId: string): Promise<RecipeDetail> {
   return runInUserTx(async (tx) => {
     // Columns aliased back to snake_case to preserve the exact Tables<> shape.
     const [recipe] = await tx
