@@ -38,6 +38,18 @@ type Check = {
   note?: string;
 };
 
+/**
+ * /recipes/new is not a page — it INSERTS a draft recipe and redirects to the
+ * editor. Visiting it on every sweep littered the database with "Untitled
+ * recipe" rows, and because local development points at the same Neon instance
+ * as production, those landed in real data.
+ *
+ * So it is opt-in, and it cleans up after itself: the draft id comes back in
+ * the redirect Location, and the row is deleted at the end of the run.
+ * SMOKE_INCLUDE_WRITES=1 to exercise it.
+ */
+const INCLUDE_WRITES = process.env.SMOKE_INCLUDE_WRITES === "1";
+
 async function resolveFixtures(): Promise<{
   profileId: string;
   email: string | null;
@@ -106,7 +118,6 @@ function buildChecks(f: Awaited<ReturnType<typeof resolveFixtures>>): Check[] {
 
     { path: "/recipes", expect: [200], auth: true },
     { path: "/recipes/import", expect: [200], auth: true },
-    { path: "/recipes/new", expect: [200, 307], auth: true, note: "creates a draft then redirects" },
     { path: "/planner", expect: [200], auth: true },
     { path: "/shopping", expect: [200], auth: true },
     { path: "/settings", expect: [200], auth: true },
@@ -146,6 +157,35 @@ function buildChecks(f: Awaited<ReturnType<typeof resolveFixtures>>): Check[] {
   return checks;
 }
 
+/** Exercise the draft-create route, then delete the row it inserted. */
+async function checkDraftCreate(cookie: string): Promise<boolean> {
+  const res = await fetch(`${BASE}/recipes/new`, {
+    headers: { cookie },
+    redirect: "manual",
+  });
+  const location = res.headers.get("location") ?? "";
+  const id = /\/recipes\/([0-9a-f-]{36})/.exec(location)?.[1];
+  const ok = (res.status === 307 || res.status === 302) && !!id;
+  console.log(
+    `${ok ? "PASS" : "FAIL"} [auth] ${res.status} /recipes/new -> ${location || "(no redirect)"}` +
+      "  # inserts a draft; cleaned up below",
+  );
+
+  if (id) {
+    const url = process.env.NEON_DATABASE_URL ?? process.env.DATABASE_URL;
+    if (url) {
+      const sql = postgres(url, { ssl: "require", prepare: false });
+      try {
+        await sql`delete from recipes where id = ${id} and title = 'Untitled recipe'`;
+        console.log(`     cleaned up draft ${id}`);
+      } finally {
+        await sql.end();
+      }
+    }
+  }
+  return ok;
+}
+
 async function main(): Promise<void> {
   const fixtures = await resolveFixtures();
   const cookie = await mintSessionCookie(fixtures);
@@ -181,8 +221,16 @@ async function main(): Promise<void> {
     );
   }
 
+  let total = checks.length;
+  if (INCLUDE_WRITES) {
+    total += 1;
+    if (!(await checkDraftCreate(cookie))) failed++;
+  } else {
+    console.log("SKIP [auth]     /recipes/new  # set SMOKE_INCLUDE_WRITES=1 (it inserts a row)");
+  }
+
   console.log("");
-  console.log(`${checks.length - failed}/${checks.length} passed`);
+  console.log(`${total - failed}/${total} passed`);
   if (failed > 0) process.exit(1);
 }
 
