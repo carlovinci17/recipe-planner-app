@@ -141,6 +141,11 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       Auth), and a local Postgres carrying the `authenticated` role that `withUserContext` sets
       — a bare Neon does not have it (`scripts/neon-roles.sql` provisions it). Recoverable from
       git at `f9d0f20^` as a reference for _what_ they covered.
+      **Acceptance criteria:** the new suite must re-introduce the safety guard that
+      `tests/setup.ts` used to carry — it refused to run unless the target database was local,
+      and it was removed with the tests it protected. `DATABASE_URL` in this repo resolves to
+      the **live Neon database**, so an unguarded seed-and-delete suite mutates production. Point
+      it at a disposable Neon branch, and assert that before the first write.
 - [ ] **Rebuild the Playwright end-to-end suite** — 5 specs plus page objects and
       `playwright.config.ts` were deleted on 2026-10-04; `tests/fixtures/test-user.ts` created
       and deleted real users through the Supabase service role, which no longer exists. The

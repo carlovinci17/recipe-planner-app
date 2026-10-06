@@ -11,9 +11,10 @@ function isoDate(d: Date): string {
   return format(d, "yyyy-MM-dd");
 }
 
-// Column set + mapper shared by getWeek and addEntry — mirrors the PostgREST
-// `recipe:recipes(...)` embedded select (a LEFT join; recipe is null for
-// custom-title entries) and aliases every column back to snake_case.
+// Column set + mapper shared by getWeek and addEntry. A LEFT join, so `recipe`
+// is null for custom-title entries, and every column is aliased back to
+// snake_case to match the `Tables<"planner_entries">` shape the components
+// already consume.
 const plannerRowColumns = {
   id: plannerEntries.id,
   date: plannerEntries.date,
