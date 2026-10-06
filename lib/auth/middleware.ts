@@ -23,7 +23,6 @@ const PUBLIC_PATHS = [
   "/invites",
   "/api/auth", // Auth.js (NextAuth v5) endpoints
   "/api/internal", // Durable Functions ingestion — authed by shared secret, not a session
-  "/api/webhooks",
 ];
 
 /** Both cookie names Auth.js uses: the `__Secure-` prefix appears over TLS. */
