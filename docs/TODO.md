@@ -9,13 +9,15 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 ## Open
 
+- [ ] **Make serving size adjustable** — default 2 for all recipes.
+
 - [ ] **Entra sign-in branding — design + apply in the portal** (do as part of the **Module 10 UI
       re-design step**, deferred 2026-08-20). Design the hosted sign-in screen alongside the app
       re-design so they match. Assets already staged in [`branding/`](branding/): `entra-signin.css`
       (theme-matched) + `entra-branding-spec.md` (palette, asset specs, portal steps). Steps: rename
       tenant → BiteBuddy; Company Branding (favicon, banner logo, bg `#FCFAF7`, upload the CSS). All in
       the **External ID "Recipe Planner" tenant**, not the home tenant. See ADR-0012. Nothing in code
-      depends on this. *(Post-logout redirect URI is already registered — done 2026-08-20.)*
+      depends on this. _(Post-logout redirect URI is already registered — done 2026-08-20.)_
 
 - [ ] **Every recipe must get ≥1 meal-type** (breakfast / lunch / dinner / snack) — noticed 2026-08-19
       when a URL import ("Crispy Parmesan Crusted Chicken") landed with `meal_types: []`. The tagger
@@ -24,9 +26,9 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       a fallback in `applyRecipeTags` (default to a sensible meal-type when the array is empty) so the
       planner + meal-type filters always have something to work with. Same shape as the tip-capture
       tweak; re-run a golden recipe to confirm. Optionally backfill existing empties.
-      **Partly done (2026-09-02):** the *manual* path is covered — the review/edit form has a
+      **Partly done (2026-09-02):** the _manual_ path is covered — the review/edit form has a
       meal-type editor, warns when empty, and "Improve with AI" (`improveRecipe`, whose schema
-      requires `meal_types.min(1)`) fills it in one click. **Still open:** the *import* path —
+      requires `meal_types.min(1)`) fills it in one click. **Still open:** the _import_ path —
       `RECIPE_TAGGING_SYSTEM` / `applyRecipeTags` can still land `meal_types: []`.
 
 - [ ] **Verify PDF import on the cutover stack (Slice 6)** — photo/image import verified working on
@@ -47,19 +49,19 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       one (`581514…`) was deleted. Pattern to follow: `process-url-core.ts` plus a Durable
       orchestrator/timer.
 
-- [ ] **Kitchen Assistant: speech-to-text (voice input)** — let the user *talk* to the assistant instead
+- [ ] **Kitchen Assistant: speech-to-text (voice input)** — let the user _talk_ to the assistant instead
       of typing. Add a mic button to the chat (`components/assistant/kitchen-assistant.tsx`) that
       captures speech → text → drops it in the input / sends it. Two paths to weigh: the browser's
       built-in **Web Speech API** (`SpeechRecognition`) — free, zero infra, but Chrome-only and
       inconsistent on iOS Safari; or **Azure AI Speech** (speech-to-text) — keyless via Managed Identity,
       consistent cross-browser + mobile, on-brand with the Azure stack, small cost. Recommend Web Speech
       for a quick v1, Azure Speech if mobile/Safari matters. Pairs with the agent-faces work. (Nice
-      future symmetry: Azure Speech also does text-to-speech, so the assistant could *reply* aloud.)
+      future symmetry: Azure Speech also does text-to-speech, so the assistant could _reply_ aloud.)
 
 - [ ] **Langfuse: token/model capture for AzureChatOpenAI** (found in Module 12.2 self-audit) — traces
       flow + structure is captured, but generations show `model=null` / `usage=null`. The `@langfuse/langchain`
       v5 OTEL handler doesn't map `AzureChatOpenAI` token usage (the docs' example uses plain OpenAI). The
-      model *does* emit `usage_metadata` + `response_metadata.model_name`. Options: a manual usage bridge
+      model _does_ emit `usage_metadata` + `response_metadata.model_name`. Options: a manual usage bridge
       (custom callback → set Langfuse observation usage), OpenAI-SDK OTEL instrumentation, or the OpenAI v1
       endpoint via `ChatOpenAI`. Needed for ADR-0010's cost monitoring. Revisit in 12.3.
 
@@ -76,7 +78,7 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 - [ ] **Source-name dedup** — the "Health with Bec" ×2 dupe is `source_name` vs
       `channel_name`; extend `scripts/normalize-recipe-tags.ts` to canonicalize the
-      *derived* source (`getRecipeSourceName`).
+      _derived_ source (`getRecipeSourceName`).
 
 - [ ] **Run the tag/source cleanup `--apply` on prod** — dry-run verified (173 recipes,
       31 changed); snapshot the DB first.
@@ -113,32 +115,32 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 - [ ] **Consider `--max-warnings 0` on lint** — `npm run lint` now runs the ESLint CLI against
       `eslint.config.mjs` and reports **zero** problems, and CI's `verify` job runs it. Only
-      *errors* fail the build today, so warnings can creep back in unnoticed. Adding
+      _errors_ fail the build today, so warnings can creep back in unnoticed. Adding
       `--max-warnings 0` to the `lint` script locks in the clean slate.
 
 - [ ] **The Azure Functions app is not deployed by CI** — `.github/workflows/build.yml` builds and
       deploys only the container app, so any change to `functions/src/**` (the Durable orchestrator)
       needs a manual `cd functions && npm run build && func azure functionapp publish
-      func-recipe-jobs`. Easy to forget, and the symptom is an orchestrator running old code against
+    func-recipe-jobs`. Easy to forget, and the symptom is an orchestrator running old code against
       new app endpoints. Adding a job needs two things decided: the `id-github-deploy` identity must
       have rights on `func-recipe-jobs`, and the job should only fire when `functions/**` actually
       changed (a `paths:` filter) so every UI commit doesn't republish it.
 
-- [ ] **Monthly cost overview** — after cutover, produce a clear guide to *where to find the monthly
-      cost* of the whole app: Azure Cost Management (per resource group / service — Container Apps,
+- [ ] **Monthly cost overview** — after cutover, produce a clear guide to _where to find the monthly
+      cost_ of the whole app: Azure Cost Management (per resource group / service — Container Apps,
       Foundry models + embeddings, Web PubSub, Blob, Key Vault, App Insights, Functions) **plus** the
       third-party services (Neon, Langfuse, Anthropic if still used, Google). One place that says "this
       is what it costs and where to see each line." Pairs with the [[notion-tech-stack-onepager]].
 
 - [ ] **Rebuild the service-layer integration tests** — the 6 suites in `tests/integration/`
       (household, permissions, planner, rating, recipe, shopping — ~1,200 lines) were deleted on
-      2026-10-04. They were *characterization* tests: built on Supabase Auth test users and a
+      2026-10-04. They were _characterization_ tests: built on Supabase Auth test users and a
       Supabase client, written to pin Supabase behaviour so the Drizzle port could be checked
       against it. That job is done and their scaffolding no longer exists. Rebuilding them on
       Drizzle needs: a test-user helper that inserts `profiles` rows directly (no Supabase
       Auth), and a local Postgres carrying the `authenticated` role that `withUserContext` sets
       — a bare Neon does not have it (`scripts/neon-roles.sql` provisions it). Recoverable from
-      git at `f9d0f20^` as a reference for *what* they covered.
+      git at `f9d0f20^` as a reference for _what_ they covered.
 - [ ] **Rebuild the Playwright end-to-end suite** — 5 specs plus page objects and
       `playwright.config.ts` were deleted on 2026-10-04; `tests/fixtures/test-user.ts` created
       and deleted real users through the Supabase service role, which no longer exists. The
@@ -178,31 +180,25 @@ the fact that it is fixed. Newest first.
       The File tab now has an optional "Pages to import" box accepting the print-dialog form —
       `2, 5-8, 13-15, 50-55` — parsed live (`lib/ingestion/page-range.ts`), capped at 100 pages,
       re-validated server-side. `prepare` rasterizes **only** those pages, so the pages nobody
-      asked for are never rendered: the saving is time as well as tokens.
-      - **The TODO's "backend already supports it" was wrong.** `startPage`/`maxPages` were plumbed
-        but inert: `maxPages` was gated on `bulkMode` (never set by the app), the skim step
-        discarded the slice, `prepare` used `startPage` only to raise the render *cap* (still
-        starting at page 1), and the only caller — `scripts/bulk-import.ts` — is itself broken
-        post-cutover (talks to Inngest + the deleted Supabase project). All fixed or bypassed.
-      - **New column** `ingestion_jobs.page_numbers integer[]` (migration
-        `20260914120000_ingestion_jobs_page_numbers.sql`) — the real book page behind each
-        rasterized image. Without it the skim picker labels a recipe on page 14 as "page 2",
-        because `source_page_index` counts the images the model saw, not the book's pages.
-      - **Neighbour expansion now respects real adjacency** in `apply-selection`: with "5-8, 13-15"
-        the image after page 8 is page 13, and the old ±1 rule pulled it in.
-      - Covered by `tests/unit/page-range.test.ts` (17), `tests/unit/pdf-page-selection.test.ts`
-        (7, against a real fixture PDF — proves we render the named pages, not page 1 repeated)
-        and `tests/unit/page-mapping.test.ts` (16 — the image→book-page translation and the
-        real-adjacency rule, both of which fail *silently* when wrong).
-      - **NOT yet verified end-to-end.** No real import has been run with a page selection: the
-        `prepare` branch, the orchestrator change and the UI have never executed. Run the local
-        pipeline (`cd functions && npm start` + `npm run dev`, `.env.local` already points
-        `FUNCTIONS_BASE_URL` at :7071) with a multi-page PDF and check three things — only the
-        picked pages rasterize, the skim picker shows real book page numbers, and a page number
-        past the end of the document fails with a readable message instead of hanging.
-      - **Still open:** the Google Drive half, deliberately left out — Drive import can't run at all
-        today (see below), so it could not be tested. Also still numeric-only: client-side page
-        thumbnails would need pdfjs in the browser bundle (it is `serverExternalPackages` today).
+      asked for are never rendered: the saving is time as well as tokens. - **The TODO's "backend already supports it" was wrong.** `startPage`/`maxPages` were plumbed
+      but inert: `maxPages` was gated on `bulkMode` (never set by the app), the skim step
+      discarded the slice, `prepare` used `startPage` only to raise the render _cap_ (still
+      starting at page 1), and the only caller — `scripts/bulk-import.ts` — is itself broken
+      post-cutover (talks to Inngest + the deleted Supabase project). All fixed or bypassed. - **New column** `ingestion_jobs.page_numbers integer[]` (migration
+      `20260914120000_ingestion_jobs_page_numbers.sql`) — the real book page behind each
+      rasterized image. Without it the skim picker labels a recipe on page 14 as "page 2",
+      because `source_page_index` counts the images the model saw, not the book's pages. - **Neighbour expansion now respects real adjacency** in `apply-selection`: with "5-8, 13-15"
+      the image after page 8 is page 13, and the old ±1 rule pulled it in. - Covered by `tests/unit/page-range.test.ts` (17), `tests/unit/pdf-page-selection.test.ts`
+      (7, against a real fixture PDF — proves we render the named pages, not page 1 repeated)
+      and `tests/unit/page-mapping.test.ts` (16 — the image→book-page translation and the
+      real-adjacency rule, both of which fail _silently_ when wrong). - **NOT yet verified end-to-end.** No real import has been run with a page selection: the
+      `prepare` branch, the orchestrator change and the UI have never executed. Run the local
+      pipeline (`cd functions && npm start` + `npm run dev`, `.env.local` already points
+      `FUNCTIONS_BASE_URL` at :7071) with a multi-page PDF and check three things — only the
+      picked pages rasterize, the skim picker shows real book page numbers, and a page number
+      past the end of the document fails with a readable message instead of hanging. - **Still open:** the Google Drive half, deliberately left out — Drive import can't run at all
+      today (see below), so it could not be tested. Also still numeric-only: client-side page
+      thumbnails would need pdfjs in the browser bundle (it is `serverExternalPackages` today).
 
 - [x] **Copy / move icons** — DONE (2026-09-14): the planner's drag-and-drop "Copy or move?" dialog
       used emoji (📋 / ✂️). Swapped for lucide icons — `Copy` (two overlapping pages) and `ArrowRight`.
@@ -217,7 +213,7 @@ the fact that it is fixed. Newest first.
 
 - [x] **Rating filter** on the recipe browser — DONE (verified 2026-09-02): `minRating` state +
       control + chip + predicate on `ratingAggregates[r.id]?.avg` in `recipes-browser.tsx`.
-      Options trimmed to Any/3★+/4★+ on 2026-09-02 (4.5 was reachable via the household *average*
+      Options trimmed to Any/3★+/4★+ on 2026-09-02 (4.5 was reachable via the household _average_
       but never occurred, and meant different things by household size).
 
 - [x] **Null out 10 dangling `cover_image_path`s** — DONE in Lesson 9.3 ("10 dangling nulled").
