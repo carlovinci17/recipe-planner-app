@@ -38,10 +38,13 @@ supabase/.temp/
 # Generated ARM template (build artefact from Bicep)
 infra/main.json
 
-# Playwright artefacts — screenshots, videos, traces and the run report are
-# per-run outputs, not source. Regenerated on every `test:e2e`.
-/test-results/
+# Playwright. `.auth/state.json` holds a VALID Auth.js session token minted
+# from AUTH_SECRET — committing it would publish a working login. The report
+# and results directories are per-run output.
+tests/e2e/.auth/
 /playwright-report/
+/test-results/
+/blob-report/
 /playwright/.cache/
 
 # Local Azurite emulator state (Durable task hub + blob/queue/table) — created by

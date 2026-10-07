@@ -146,13 +146,6 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       and it was removed with the tests it protected. `DATABASE_URL` in this repo resolves to
       the **live Neon database**, so an unguarded seed-and-delete suite mutates production. Point
       it at a disposable Neon branch, and assert that before the first write.
-- [ ] **Rebuild the Playwright end-to-end suite** — 5 specs plus page objects and
-      `playwright.config.ts` were deleted on 2026-10-04; `tests/fixtures/test-user.ts` created
-      and deleted real users through the Supabase service role, which no longer exists. The
-      replacement mechanism already exists: `scripts/smoke-pages.ts` mints a valid Auth.js
-      session cookie from AUTH_SECRET, and Playwright can load exactly that via `storageState`
-      — so the suite can come back without automating the Entra OAuth round-trip. Covered
-      auth/onboarding, recipe CRUD, planner+shopping, imports, and RBAC.
 - [x] **3 unguarded Supabase call sites** — DONE (2026-10-04), along with every other one.
       `app/auth/callback/route.ts` and `app/api/integrations/google/callback/route.ts` were
       deleted; `app/(app)/settings/integrations/actions.ts` went with the Drive subsystem. The

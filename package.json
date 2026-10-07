@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:golden": "RUN_GOLDEN=1 vitest run -c vitest.golden.config.mts",
-    "db:migrate": "tsx scripts/neon-apply-sql.ts"
+    "db:migrate": "tsx scripts/neon-apply-sql.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
@@ -76,6 +78,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.7",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
