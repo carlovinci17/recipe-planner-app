@@ -153,21 +153,6 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       session cookie from AUTH_SECRET, and Playwright can load exactly that via `storageState`
       — so the suite can come back without automating the Entra OAuth round-trip. Covered
       auth/onboarding, recipe CRUD, planner+shopping, imports, and RBAC.
-- [ ] **Strip the dead env vars from the Azure container app and GitHub** — the code no longer
-      reads any of them, and Zod silently drops unknown keys, so this is tidiness rather than a
-      bug. Container app: `AUTH_PROVIDER`, `STORAGE_PROVIDER`, `REALTIME_PROVIDER`,
-      `JOBS_PROVIDER`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-      `SUPABASE_SERVICE_ROLE_KEY`, `INNGEST_EVENT_KEY`. Key Vault:
-      `supabase-service-role-key`, `supabase-jwt-secret`, `inngest-event-key`. GitHub Actions
-      repo variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-      `NEXT_PUBLIC_REALTIME_PROVIDER`, `NEXT_PUBLIC_STORAGE_PROVIDER` (their build-args blocks
-      are already removed from the workflow and the Dockerfile).
-
-## Done
-
-Kept for the detail — what was actually wrong is usually more useful than
-the fact that it is fixed. Newest first.
-
 - [x] **3 unguarded Supabase call sites** — DONE (2026-10-04), along with every other one.
       `app/auth/callback/route.ts` and `app/api/integrations/google/callback/route.ts` were
       deleted; `app/(app)/settings/integrations/actions.ts` went with the Drive subsystem. The

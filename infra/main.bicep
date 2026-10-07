@@ -16,30 +16,11 @@ param ghcrUsername string = 'carlovinci17'
 @description('GitHub PAT (read:packages) to pull the private image')
 param ghcrPullToken string
 
-@description('Public Supabase URL (NEXT_PUBLIC — safe, ships to browser)')
-param supabaseUrl string = 'https://ykfcbebqwwhziqgfkrlz.supabase.co'
-
 @description('Key Vault name — globally unique, so override it for a fresh deploy')
 param keyVaultName string = 'kv-recipe-iac'
 
 @secure()
-@description('Public Supabase anon key')
-param supabaseAnonKey string
-
-@secure()
-param supabaseServiceRoleKey string
-
-@secure()
 param anthropicApiKey string
-
-@secure()
-param googleClientId string
-
-@secure()
-param googleClientSecret string
-
-@secure()
-param inngestEventKey string
 
 
 // ── Log Analytics workspace — backing store for logs & metrics ──
@@ -112,11 +93,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       secrets: [
         { name: 'ghcr-pull-token', value: ghcrPullToken }              // registry PAT (secure param)
         // Key Vault references — resolved by the app identity (no values here):
-        { name: 'supabase-service-role-key', keyVaultUrl: '${kvUri}secrets/supabase-service-role-key', identity: appIdentity.id }
         { name: 'anthropic-api-key',         keyVaultUrl: '${kvUri}secrets/anthropic-api-key',         identity: appIdentity.id }
-        { name: 'google-client-id',          keyVaultUrl: '${kvUri}secrets/google-client-id',          identity: appIdentity.id }
-        { name: 'google-client-secret',      keyVaultUrl: '${kvUri}secrets/google-client-secret',      identity: appIdentity.id }
-        { name: 'inngest-event-key',         keyVaultUrl: '${kvUri}secrets/inngest-event-key',         identity: appIdentity.id }
         { name: 'appinsights-connection-string', keyVaultUrl: '${kvUri}secrets/appinsights-connection-string', identity: appIdentity.id }
       ]
     }
@@ -125,15 +102,22 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         name: 'recipe-planner'
         image: containerImage
         resources: { cpu: json('0.5'), memory: '1Gi' }
+        // ⚠️ INCOMPLETE — DO NOT APPLY THIS TEMPLATE TO THE LIVE APP ⚠️
+        //
+        // Production runs 18 environment variables; this list has 3. The rest
+        // (DATABASE_URL, AUTH_SECRET, the Entra block, AZURE_*, AI_PROVIDER,
+        // FUNCTIONS_BASE_URL, INGESTION_INTERNAL_SECRET, AUTH_URL,
+        // AZURE_CLIENT_ID) were added imperatively with `az containerapp
+        // update` across Modules 4-11 and were never written back here.
+        //
+        // Applying this as-is would STRIP every one of them and take the app
+        // down — no database, no auth, no background jobs. Reconciling it is
+        // tracked in docs/TODO.md; until then this file is accurate for the
+        // infrastructure it creates (identities, Key Vault, RBAC, Web PubSub,
+        // storage) but NOT for the container app's runtime configuration.
         env: [
-          { name: 'NEXT_PUBLIC_SUPABASE_URL', value: supabaseUrl }
-          { name: 'NEXT_PUBLIC_SUPABASE_ANON_KEY', value: supabaseAnonKey }
           { name: 'NODE_ENV', value: 'production' }
-          { name: 'SUPABASE_SERVICE_ROLE_KEY', secretRef: 'supabase-service-role-key' }
           { name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }
-          { name: 'GOOGLE_CLIENT_ID', secretRef: 'google-client-id' }
-          { name: 'GOOGLE_CLIENT_SECRET', secretRef: 'google-client-secret' }
-          { name: 'INNGEST_EVENT_KEY', secretRef: 'inngest-event-key' }
           { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
         ]
       } ]
@@ -170,11 +154,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-resource sSvcRole  'Microsoft.KeyVault/vaults/secrets@2023-07-01' = { parent: keyVault, name: 'supabase-service-role-key', properties: { value: supabaseServiceRoleKey } }
 resource sAnthropic 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = { parent: keyVault, name: 'anthropic-api-key',         properties: { value: anthropicApiKey } }
-resource sGId      'Microsoft.KeyVault/vaults/secrets@2023-07-01' = { parent: keyVault, name: 'google-client-id',          properties: { value: googleClientId } }
-resource sGSecret  'Microsoft.KeyVault/vaults/secrets@2023-07-01' = { parent: keyVault, name: 'google-client-secret',      properties: { value: googleClientSecret } }
-resource sInngest  'Microsoft.KeyVault/vaults/secrets@2023-07-01' = { parent: keyVault, name: 'inngest-event-key',         properties: { value: inngestEventKey } }
 // App Insights connection string — pulled from the freshly-created resource (no param!)
 resource sAppI     'Microsoft.KeyVault/vaults/secrets@2023-07-01' = { parent: keyVault, name: 'appinsights-connection-string', properties: { value: appInsights.properties.ConnectionString } }
 
