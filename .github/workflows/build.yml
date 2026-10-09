@@ -72,6 +72,11 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
+          # Inlined into the client bundle by next.config.ts and shown in the
+          # app-shell footer. Must be a build arg: a runtime env var cannot
+          # reach an already-compiled NEXT_PUBLIC_ value.
+          build-args: |
+            GIT_SHA=${{ github.sha }}
 
   deploy:
     needs: build

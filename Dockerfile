@@ -11,15 +11,19 @@ FROM node:24-bookworm-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# No NEXT_PUBLIC_* build args. There used to be four — the Supabase URL and
-# anon key, plus realtime/storage provider gates — and they had to be build
-# args because Next inlines NEXT_PUBLIC_ values into the client bundle, where a
-# Container App runtime variable cannot reach them. All four are gone with
-# Supabase: storage and realtime each have one implementation, and the client
-# now asks the server (/api/realtime/negotiate) instead of reading a flag.
+# Build-time values only. NEXT_PUBLIC_ values are inlined into the client bundle,
+# so a Container App runtime variable cannot reach them — they must arrive here.
 #
-# If a genuine client-side value is ever needed again, it belongs here as an
-# ARG + ENV pair AND in both build-args blocks of .github/workflows/build.yml.
+# There used to be four: the Supabase URL and anon key, plus realtime/storage
+# provider gates. All four went with Supabase — storage and realtime each have
+# one implementation now, and the client asks the server
+# (/api/realtime/negotiate) instead of reading a flag.
+#
+# GIT_SHA is the one that remains: next.config.ts turns it into
+# NEXT_PUBLIC_GIT_SHA for the app-shell footer. CI fills it from `github.sha`.
+# Unset in a local build, which just means the footer shows no commit.
+ARG GIT_SHA=""
+ENV GIT_SHA=$GIT_SHA
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

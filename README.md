@@ -67,9 +67,14 @@ and new stacks can run side by side. Production runs the Azure value for all fiv
 | Hosting       | Azure Container Apps · image built + deployed by GitHub Actions           |
 
 **Still present in the codebase, not in the production path:** the Anthropic provider
-(`lib/ai/anthropic-provider.ts`, reachable by unsetting `AI_PROVIDER`), and the Supabase and
-Inngest code paths, which remain as dual-dispatch fallbacks pending
-[`docs/decommission-checklist.md`](docs/decommission-checklist.md).
+(`lib/ai/anthropic-provider.ts`, reachable with `AI_PROVIDER=anthropic`) and the OpenAI provider
+(unwired, kept as reference).
+
+**Gone, not fallback:** Supabase and Inngest were removed at the Module 11 cutover
+(2026-10-09) — the clients, the dual-dispatch service branches, the realtime channels, the
+packages. There is nothing to fall back to, which is the point: a provider switch whose second
+position pointed at a deleted service turned a missing environment variable into a site-wide
+outage. See [`docs/decommission-checklist.md`](docs/decommission-checklist.md).
 
 ---
 
@@ -99,8 +104,8 @@ lib/
   db/                     ← Drizzle schema + client (withUserContext sets RLS role)
   ingestion/              ← rasterize · normalize · persist · storage seam
   realtime/               ← Web PubSub publish + subscribe hooks
-  services/               ← recipe, household, planner, shopping, ingestion, integration
-  supabase/               ← legacy clients, still referenced by dual-dispatch paths
+  services/               ← recipe, household, planner, shopping, ingestion
+  db/                     ← Drizzle schema + lazily-connected client
 
 types/database.types.ts   ← HAND-AUTHORED. Do not run `db:types`; see CLAUDE.md
 ```
@@ -261,8 +266,10 @@ See [`.env.prod.example`](.env.prod.example) for the full production variable se
 | `npm run test`      | Vitest unit tests                                  |
 | `npm run test:golden` | Golden-set model evaluation (`RUN_GOLDEN=1`)     |
 | `npm run test:e2e`  | Playwright                                         |
-| `npm run db:push`   | ⚠️ Supabase CLI — legacy, pending decommission      |
-| `npm run db:types`  | ⚠️ **Do not run** — clobbers hand-authored types    |
+| `npm run db:migrate <file.sql>` | Apply one migration to Neon (no `psql` needed) |
+
+`db:push`, `db:reset`, `db:diff` and `db:types` are gone — all four shelled out to the Supabase
+CLI. `db:types` was the dangerous one: it overwrote the hand-authored `types/database.types.ts`.
 
 ---
 

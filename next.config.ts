@@ -7,7 +7,14 @@ const config: NextConfig = {
   output: "standalone",
   env: {
     NEXT_PUBLIC_APP_VERSION: version,
-    NEXT_PUBLIC_GIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "",
+    // Rendered in the app-shell footer. Read from GIT_SHA, which the Dockerfile
+    // takes as a build arg and CI fills from `github.sha` — it has to be a build
+    // arg because NEXT_PUBLIC_ values are inlined into the client bundle, where
+    // a Container App runtime variable cannot reach them.
+    //
+    // This used to read VERCEL_GIT_COMMIT_SHA, so after the move to Azure it was
+    // permanently "" and the footer silently dropped the commit.
+    NEXT_PUBLIC_GIT_SHA: process.env.GIT_SHA?.slice(0, 7) ?? "",
   },
   experimental: {
     serverActions: {
