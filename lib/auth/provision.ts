@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { profiles } from "@/lib/db/schema";
 
 export type ProfileClaims = {
@@ -10,12 +10,26 @@ export type ProfileClaims = {
 };
 
 /**
- * Resolve a signed-in Entra user to a `profiles.id` (ADR-0005 Decisions 3 & 6),
- * creating or linking the row as needed. Uses the direct Drizzle connection
- * (DB owner, bypasses RLS) — this is a system operation that runs *before* the
- * user is scoped into the app, so it must not go through `withUserContext`.
+ * Resolve a signed-in Entra user to a `profiles.id` (ADR-0005 Decision 3),
+ * creating the row on first sign-in. Uses the direct Drizzle connection (DB
+ * owner, bypasses RLS) — this is a system operation that runs *before* the user
+ * is scoped into the app, so it must not go through `withUserContext`.
  *
- * Requires `DATABASE_URL` (the Auth.js path runs on the Drizzle/Neon stack).
+ * Two branches only: known `oid`, or brand-new user.
+ *
+ * There used to be a third — "unknown oid but a profile with this email and no
+ * oid yet, so adopt it". That was the migration shim from ADR-0005 Decision 6,
+ * for carrying the two original Supabase-auth accounts across to Entra. It was
+ * always meant to be temporary, because it means **whoever can get an Entra
+ * account issued for a known email inherits that household**. Removed
+ * 2026-10-09: all profiles now have `entra_oid` set, so it could no longer
+ * match anything legitimate — only an attack.
+ *
+ * Do not reinstate it to "help" a user who has lost access. Re-point the
+ * existing row's `entra_oid` deliberately instead, with a human deciding that
+ * the two identities really are the same person.
+ *
+ * Requires `DATABASE_URL`.
  */
 export async function provisionProfile(claims: ProfileClaims): Promise<string> {
   const { db } = await import("@/lib/db");
@@ -29,21 +43,8 @@ export async function provisionProfile(claims: ProfileClaims): Promise<string> {
     .limit(1);
   if (byOid[0]) return byOid[0].id;
 
-  // 2. Pre-existing account — link by verified email. TEMPORARY migration shim;
-  //    remove after both users have linked (docs/decommission-checklist.md).
-  if (email) {
-    const byEmail = await db
-      .select({ id: profiles.id })
-      .from(profiles)
-      .where(and(eq(profiles.email, email), isNull(profiles.entraOid)))
-      .limit(1);
-    if (byEmail[0]) {
-      await db.update(profiles).set({ entraOid: claims.oid }).where(eq(profiles.id, byEmail[0].id));
-      return byEmail[0].id;
-    }
-  }
-
-  // 3. Brand-new user.
+  // 2. Brand-new user. An unknown `oid` is always a new person — never an
+  //    adoption of an existing row. See the note above.
   const inserted = await db
     .insert(profiles)
     .values({
