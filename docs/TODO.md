@@ -9,6 +9,24 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 ## Open
 
+- [ ] **Decide who owns the container app's config — bicep or `az containerapp update`** (found
+      2026-10-09). The template is now reconciled and safe to apply, but the underlying problem
+      is that two things write to one resource: CI sets the image on every deploy, and eight
+      modules of `az containerapp update` set everything else. That is why the template had
+      drifted to 3 env vars against production's 18 in the first place. Either bicep becomes the
+      sole owner (and CI stops using `az containerapp update`), or the container app is declared
+      out of scope for the template and managed by a checked-in script. Pick one; the current
+      state only *looks* settled because someone reconciled it by hand.
+      - **Reading a `what-if` on this template:** three diffs are permanent noise and are
+        documented inline in `infra/main.bicep` — the whole `configuration.secrets` array
+        (what-if diffs arrays positionally and the live order differs), `AZURE_CLIENT_ID` (an
+        unresolvable `reference()` at plan time), and `runningStatus` / `ingress.exposedPort`
+        (read-only). Anything else is real.
+      - Also expect **2 `Create` role assignments** on every run: bicep derives its names with
+        `guid()`, and the live assignments were created imperatively under different names.
+        Applying adds duplicates — harmless (same principal, role and scope) but untidy.
+        Hardcoding the existing GUIDs to silence it would be worse.
+
 - [ ] **Make serving size adjustable** — default 2 for all recipes.
 
 - [ ] **Entra sign-in branding — design + apply in the portal** (do as part of the **Module 10 UI
