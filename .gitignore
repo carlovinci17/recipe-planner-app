@@ -6,11 +6,17 @@ dist
 .env.local
 .env.test
 .env.*.local
-# Timestamped copies made by scripts/pull-local-env.sh before it overwrites
-# .env.local. These contain REAL SECRETS and matched none of the patterns
-# above, so they showed up as untracked and were one `git add -A` from being
-# committed.
-.env.local.bak.*
+# ANY backup of ANY env file. These contain REAL SECRETS.
+#
+# This started as the narrow `.env.local.bak.*` — the timestamped copies
+# scripts/pull-local-env.sh makes before overwriting .env.local. Then a cleanup
+# wrote .env.pre-decom.bak and friends, which matched nothing above and showed
+# up as untracked, one `git add -A` from being committed. Two near-misses is
+# enough: match the shape, not the specific name.
+.env*.bak
+.env*.bak.*
+.env*.backup
+.env*~
 # Google OAuth client secrets — must never land in the repo. Real secret
 # was moved to ~/Secrets/google-oauth/ on 2026-05-12.
 client_secret_*.json
