@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gte, inArray, isNull, sql as dsql } from "drizzle-orm";
+import { and, arrayContains, asc, desc, eq, gte, inArray, isNull, sql as dsql } from "drizzle-orm";
 import { recipeIngredients, recipeInstructions, recipes } from "@/lib/db/schema";
 import type { Tx } from "@/lib/db";
 import { ingestionStorage } from "@/lib/ingestion/storage";
@@ -326,9 +326,14 @@ async function listRecipes(args: {
     else conds.push(inArray(recipes.status, ["published", "needs_review"]));
     if (f.favoriteOnly) conds.push(eq(recipes.isFavorite, true));
     if (f.minRating) conds.push(gte(recipes.rating, f.minRating));
-    if (f.mealTypes?.length) conds.push(dsql`${recipes.mealTypes} @> ${f.mealTypes}::text[]`);
-    if (f.dietTypes?.length) conds.push(dsql`${recipes.dietTypes} @> ${f.dietTypes}::text[]`);
-    if (f.cuisines?.length) conds.push(dsql`${recipes.cuisines} @> ${f.cuisines}::text[]`);
+    // `arrayContains`, not a hand-written `@> ${array}::text[]`. The template
+    // form bound the JS array as ONE scalar parameter, so Postgres saw
+    // 'dinner' where it wanted '{dinner}' and raised
+    // `malformed array literal`. Not reachable from the UI — the recipe
+    // browser filters client-side — which is exactly why it went unnoticed.
+    if (f.mealTypes?.length) conds.push(arrayContains(recipes.mealTypes, f.mealTypes));
+    if (f.dietTypes?.length) conds.push(arrayContains(recipes.dietTypes, f.dietTypes));
+    if (f.cuisines?.length) conds.push(arrayContains(recipes.cuisines, f.cuisines));
     if (f.query) {
       conds.push(dsql`${recipes.searchTsv} @@ websearch_to_tsquery('english', ${f.query})`);
     }

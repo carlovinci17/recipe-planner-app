@@ -50,12 +50,37 @@ npm run dev                                     # 3. the app on :3000
 `INGESTION_INTERNAL_SECRET` must match between `.env.local` and
 `functions/local.settings.json`, or every ingestion step fails with 403.
 
-**Testing.** `tests/unit/` is all that runs today. The Playwright end-to-end suite and the
-service-layer integration suites were deleted with Supabase (they created test users through
-Supabase Auth) — see `docs/TODO.md` for what they covered and how to rebuild them.
-`scripts/smoke-pages.ts` is the current end-to-end check: it mints a real Auth.js session cookie
-from `AUTH_SECRET` and asserts every page renders. It is read-only by default — pass
-`SMOKE_INCLUDE_WRITES=1` to also exercise the draft-create route, which cleans up after itself.
+**Testing.** Three layers, in increasing cost:
+
+```bash
+npm test                 # unit — pure, no database, runs anywhere
+npm run test:db:up       # one-off: a disposable Postgres on :55432
+npm run test:integration # service layer against real Postgres and real RLS
+npm run test:e2e         # Playwright
+npx tsx scripts/smoke-pages.ts   # every page, with a real session
+```
+
+`test:integration` needs `test:db:up` first. That script stands up
+`pgvector/pgvector:pg18` and **clones the schema from Neon** — it does not replay
+`supabase/migrations/`, because the first migration does `references auth.users(id)` and installs
+a trigger on `auth.users`, both Supabase Auth objects that no longer exist. Module 9 moved to
+Neon by importing a dump, and the live schema has no FK to `auth.*` at all, so the dump is the
+truth and a replay would test a schema that exists nowhere. The image is pinned to pg18 because
+`pg_dump` refuses to dump a server newer than itself and Neon is on 18.6.
+
+A `beforeAll` in `tests/integration/setup.ts` **refuses to run against a non-local
+`DATABASE_URL`**. These suites seed and DELETE rows, and `DATABASE_URL` here normally resolves to
+live Neon. It is a setup-file hook rather than an exported helper precisely so a new suite cannot
+forget to call it.
+
+The integration suites mock exactly one thing — `getCurrentUser` — and let everything below it be
+real, so each assertion about a service is also an assertion about the RLS policies. That is what
+caught `arrayContains`: the meal-type filter had been building a malformed array literal and no
+unit test could see it.
+
+`scripts/smoke-pages.ts` mints a real Auth.js session cookie from `AUTH_SECRET` and asserts every
+page renders. Read-only by default — `SMOKE_INCLUDE_WRITES=1` also exercises the draft-create
+route, which cleans up after itself.
 
 ## Architecture
 

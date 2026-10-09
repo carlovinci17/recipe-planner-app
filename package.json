@@ -14,7 +14,10 @@
     "test:golden": "RUN_GOLDEN=1 vitest run -c vitest.golden.config.mts",
     "db:migrate": "tsx scripts/neon-apply-sql.ts",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:integration": "vitest run -c vitest.integration.config.mts",
+    "test:db:up": "bash scripts/test-db-up.sh",
+    "test:db:down": "bash scripts/test-db-up.sh --down"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
