@@ -150,20 +150,25 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       third-party services (Neon, Langfuse, Anthropic if still used, Google). One place that says "this
       is what it costs and where to see each line." Pairs with the [[notion-tech-stack-onepager]].
 
-- [ ] **Rebuild the service-layer integration tests** — the 6 suites in `tests/integration/`
-      (household, permissions, planner, rating, recipe, shopping — ~1,200 lines) were deleted on
-      2026-10-04. They were _characterization_ tests: built on Supabase Auth test users and a
-      Supabase client, written to pin Supabase behaviour so the Drizzle port could be checked
-      against it. That job is done and their scaffolding no longer exists. Rebuilding them on
-      Drizzle needs: a test-user helper that inserts `profiles` rows directly (no Supabase
-      Auth), and a local Postgres carrying the `authenticated` role that `withUserContext` sets
-      — a bare Neon does not have it (`scripts/neon-roles.sql` provisions it). Recoverable from
-      git at `f9d0f20^` as a reference for _what_ they covered.
-      **Acceptance criteria:** the new suite must re-introduce the safety guard that
-      `tests/setup.ts` used to carry — it refused to run unless the target database was local,
-      and it was removed with the tests it protected. `DATABASE_URL` in this repo resolves to
-      the **live Neon database**, so an unguarded seed-and-delete suite mutates production. Point
-      it at a disposable Neon branch, and assert that before the first write.
+## Done
+
+Kept for the detail — what was actually wrong is usually more useful than the fact that
+it is fixed. Newest first.
+
+- [x] **Meal-type / diet-type / cuisine filters built a malformed array literal** — DONE
+      (2026-10-09), found by the rebuilt integration suite on its first run.
+      `recipe-service.listRecipes` used a `@> ${array}::text[]` template, which binds a JS array
+      as ONE scalar parameter — Postgres got `'dinner'` where it wanted `'{dinner}'` and raised
+      `malformed array literal`. Replaced with Drizzle's `arrayContains`. Not reachable from the
+      UI (the recipe browser filters client-side), which is exactly why nothing caught it: the
+      types were satisfied and no unit test touches a database.
+
+- [x] **Rebuild the service-layer integration tests** — DONE (2026-10-09). Six suites, 45
+      tests, on a disposable `pgvector/pgvector:pg18` container whose schema is CLONED FROM NEON
+      (`npm run test:db:up`). The migrations are not replayable — the first one references
+      `auth.users`. The safety guard is now a `beforeAll` in `tests/integration/setup.ts` rather
+      than an uncalled helper, and is verified to refuse a hosted `DATABASE_URL`.
+
 - [x] **3 unguarded Supabase call sites** — DONE (2026-10-04), along with every other one.
       `app/auth/callback/route.ts` and `app/api/integrations/google/callback/route.ts` were
       deleted; `app/(app)/settings/integrations/actions.ts` went with the Drive subsystem. The
@@ -171,6 +176,7 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       service branches, 6 realtime channel subscriptions, the storage seam's Supabase arm, and
       the `@supabase/*` packages. Zero references remain in app, lib, components, scripts or
       tests.
+
 - [x] **Three `db:*` scripts shelling out to the deleted Supabase project** — DONE
       (2026-10-04). `db:reset`, `db:diff` and `db:types` are gone, along with the `supabase`
       CLI dependency. `db:migrate` (Neon, via `scripts/neon-apply-sql.ts`) is the only database
