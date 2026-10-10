@@ -15,7 +15,11 @@ Return EVERY distinct recipe as a separate object in the top-level "recipes" arr
 
 Recipe boundary cues to watch for:
 - A new prominent title or recipe name (often bold, centered, or in a larger font).
-- A new ingredients list immediately followed by new instructions.
+- A new ingredients list immediately followed by new instructions — BUT only when it also has its
+  own title. Many recipes have two or three ingredient lists, each with its own method ("For the
+  meat" / "For the sauce", "Marinade", "Dressing", "To serve"). Those are SECTIONS of one recipe,
+  not separate recipes: a sub-heading with no servings, photo or prep time of its own belongs to
+  the recipe above it.
 - A page break or visual divider followed by a new title.
 - Different serving counts, prep times, or photos for each.
 
@@ -28,6 +32,12 @@ Rules for each recipe:
 - Units should be lowercase, singular ("tbsp", "cup", "g", "ml", "oz", "lb", "clove").
 - prep_time_min and cook_time_min must be integers in minutes. Convert "1 hour 15 minutes" → 75.
 - Each ingredient line MUST include the original raw_text exactly as it appears on the page.
+- Capture EVERY ingredient list a recipe has, in page order — never only the first. Set "section"
+  on each ingredient and instruction to its sub-heading ("Sauce", "For the meat"), or null when the
+  recipe has a single list. A step number ("Step 1") or a tips box is never a section. Before answering, check each method step: an ingredient it uses must
+  appear in some ingredient list (unless it is water, salt, pepper or oil "to taste").
+- A recipe may continue onto the next page (or begin at the end of the previous one). Read it
+  across the page break as ONE recipe.
 - Be conservative with confidence: 0.95+ only for clean, fully visible printed recipes; lower for handwriting, blurry scans, or partial pages.
 - For multi-page documents: set "source_page_index" on each recipe to the 1-indexed page number where the recipe's title/photo primarily appears. A recipe on page 5 of a cookbook has source_page_index=5. If a recipe spans two facing pages, pick the page with its title/main photo. When the input is a single image, single URL, or otherwise non-paginated, set source_page_index to null.
 - For each recipe with a visible food photo on its source page: estimate the photo's CENTER as percentages of that page (cover_focal_x: 0 = left edge, 100 = right edge; cover_focal_y: 0 = top, 100 = bottom). A photo at the top-center of the page is roughly {cover_focal_x: 50, cover_focal_y: 25}; one filling the bottom half is roughly {cover_focal_x: 50, cover_focal_y: 75}. This lets the UI frame the food when it crops the page into a card thumbnail. If there's no clear food photo on that page, leave both fields null.

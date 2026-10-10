@@ -12,12 +12,25 @@ import {
 
 type Ingredient = {
   id: string;
+  section: string | null;
   raw_text: string;
   quantity: number | null;
   unit: string | null;
   ingredient: string | null;
   notes: string | null;
 };
+
+/** Consecutive runs of the same section; a null section joins no heading. */
+function groupBySection(items: Ingredient[]) {
+  const groups: { section: string | null; items: Ingredient[] }[] = [];
+  for (const ing of items) {
+    const section = ing.section?.trim() || null;
+    const last = groups[groups.length - 1];
+    if (last && last.section === section) last.items.push(ing);
+    else groups.push({ section, items: [ing] });
+  }
+  return groups;
+}
 
 /**
  * Ingredients with a servings stepper. Opens at DEFAULT_SERVINGS and scales
@@ -73,14 +86,27 @@ export function ScaledIngredients({
           Scaled from the original {base} {base === 1 ? "serving" : "servings"}.
         </p>
       ) : null}
-      <ul className="space-y-2 text-sm">
-        {ingredients.map((ing) => (
-          <li key={ing.id} className="flex gap-2">
-            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-            <span>{scaleIngredientText(ing, scale)}</span>
-          </li>
+      {/* Grouped by section ("Meat", "Sauce") in list order, so a recipe with
+          several ingredient lists reads the way the page printed it. */}
+      <div className="space-y-4">
+        {groupBySection(ingredients).map((group, gi) => (
+          <div key={gi}>
+            {group.section ? (
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.section}
+              </h3>
+            ) : null}
+            <ul className="space-y-2 text-sm">
+              {group.items.map((ing) => (
+                <li key={ing.id} className="flex gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                  <span>{scaleIngredientText(ing, scale)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
+      </div>
     </section>
   );
 }
