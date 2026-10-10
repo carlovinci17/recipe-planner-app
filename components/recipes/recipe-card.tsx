@@ -39,10 +39,11 @@ export function RecipeCard({
   const href = `/recipes/${recipe.id}`;
 
   return (
-    <div className="group relative flex overflow-hidden rounded-xl border bg-card shadow-sm transition-colors hover:bg-accent/40 flex-row items-stretch sm:flex-col">
-
-      {/* Action buttons — absolutely positioned, outside the link */}
-      <div className="absolute right-2 top-2 z-10 flex flex-col gap-1">
+    <div className="group relative flex flex-row items-stretch overflow-hidden rounded-xl border bg-card shadow-sm transition-colors hover:bg-accent/40 sm:flex-col">
+      {/* Action buttons, outside the link. Phone: a column on the card's left,
+          beside the title and time, so they no longer sit over the thumbnail.
+          sm and up: floated over the cover image's top-right corner. */}
+      <div className="z-10 flex shrink-0 flex-col justify-center gap-1 pl-2.5 sm:absolute sm:right-2 sm:top-2 sm:pl-0">
         <button
           type="button"
           onClick={toggleFavorite}
@@ -50,8 +51,8 @@ export function RecipeCard({
           className={cn(
             "flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition-colors",
             isFavorite
-              ? "bg-amber-400 hover:bg-amber-500 text-white"
-              : "bg-background/80 hover:bg-amber-50 text-muted-foreground hover:text-amber-500 border border-border/60",
+              ? "bg-amber-400 text-white hover:bg-amber-500"
+              : "border border-border/60 bg-background/80 text-muted-foreground hover:bg-amber-50 hover:text-amber-500",
           )}
         >
           <Star className={cn("h-3.5 w-3.5", isFavorite && "fill-current")} />
@@ -61,7 +62,6 @@ export function RecipeCard({
 
       {/* Clickable content — image + body wrapped in Link */}
       <Link href={href} className="flex flex-1 flex-row items-stretch sm:flex-col">
-
         {/* Desktop cover image */}
         <div className="relative hidden aspect-[4/3] w-full overflow-hidden bg-muted sm:block">
           {cover ? (
@@ -90,13 +90,15 @@ export function RecipeCard({
         {/* Card body */}
         <div className="flex flex-1 flex-col gap-1 p-2.5 sm:gap-2 sm:p-4">
           {recipe.status === "needs_review" ? (
-            <div className="sm:hidden mb-0.5">
-              <Badge variant="default" className="text-xs">Needs review</Badge>
+            <div className="mb-0.5 sm:hidden">
+              <Badge variant="default" className="text-xs">
+                Needs review
+              </Badge>
             </div>
           ) : null}
           <div className="line-clamp-2 font-medium leading-snug">{recipe.title}</div>
           {recipe.description ? (
-            <div className="hidden sm:block line-clamp-2 text-sm text-muted-foreground">
+            <div className="line-clamp-2 hidden text-sm text-muted-foreground sm:block">
               {recipe.description.length > 120
                 ? `${recipe.description.slice(0, 120).trimEnd()}…`
                 : recipe.description}
@@ -109,13 +111,13 @@ export function RecipeCard({
               </span>
             ) : null}
             {recipe.servings ? (
-              <span className="hidden sm:flex items-center gap-1">
+              <span className="hidden items-center gap-1 sm:flex">
                 <Users className="h-3.5 w-3.5" /> {recipe.servings}
               </span>
             ) : null}
             {rating && rating.count > 0 ? (
               <span
-                className="hidden sm:flex items-center gap-1"
+                className="hidden items-center gap-1 sm:flex"
                 title={`${rating.count} ${rating.count === 1 ? "rating" : "ratings"}`}
               >
                 <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
@@ -125,7 +127,7 @@ export function RecipeCard({
             ) : null}
           </div>
           {recipe.tags.length > 0 ? (
-            <div className="hidden sm:flex flex-wrap gap-1">
+            <div className="hidden flex-wrap gap-1 sm:flex">
               {recipe.tags.slice(0, 3).map((tag) => (
                 <Badge key={tag} variant="secondary" className="font-normal">
                   {tag}
@@ -150,7 +152,6 @@ export function RecipeCard({
             <div className="flex h-full w-full items-center justify-center text-xl">🍽️</div>
           )}
         </div>
-
       </Link>
     </div>
   );

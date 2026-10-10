@@ -9,15 +9,9 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 ## Open
 
-- [ ] **Run the metadata cleanup `--apply` on prod** — `npx tsx scripts/normalize-recipe-tags.ts`
-      dry-run (2026-10-10): **54 of 182 recipes** change — 24 get a meal type (22 had none; 2 had
-      only `side` / `appetizer`), "Healthwithbec" merges into "Health with Bec", and 10 duplicate
-      tags collapse. Take a Neon branch snapshot, then re-run with `--apply` (asks for YES).
-
-- [ ] **Turn on password reset in Entra (portal, ~2 min)** — in the **External ID "Recipe
-      Planner" tenant**: Entra ID → Authentication methods → **Email OTP** → enabled for all
-      users; then Company Branding → Default sign-in → Sign-in form → **Show self-service password
-      reset** → Save. The login page already tells people where the link is.
+- [ ] **Voice input v2 — Azure AI Speech** (only if v1 falls short) — v1 uses the browser's Web
+      Speech API, which Firefox lacks and iOS Safari only offers with Siri enabled. Upgrade path:
+      Azure AI Speech (keyless via managed identity), which would also let the assistant reply aloud.
 
 - [ ] **Entra sign-in branding — design + apply in the portal** (do as part of the **Module 10 UI
       re-design step**, deferred 2026-08-20). Design the hosted sign-in screen alongside the app
@@ -45,28 +39,12 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       one (`581514…`) was deleted. Pattern to follow: `process-url-core.ts` plus a Durable
       orchestrator/timer.
 
-- [ ] **Kitchen Assistant: speech-to-text (voice input)** — let the user _talk_ to the assistant instead
-      of typing. Add a mic button to the chat (`components/assistant/kitchen-assistant.tsx`) that
-      captures speech → text → drops it in the input / sends it. Two paths to weigh: the browser's
-      built-in **Web Speech API** (`SpeechRecognition`) — free, zero infra, but Chrome-only and
-      inconsistent on iOS Safari; or **Azure AI Speech** (speech-to-text) — keyless via Managed Identity,
-      consistent cross-browser + mobile, on-brand with the Azure stack, small cost. Recommend Web Speech
-      for a quick v1, Azure Speech if mobile/Safari matters. Pairs with the agent-faces work. (Nice
-      future symmetry: Azure Speech also does text-to-speech, so the assistant could _reply_ aloud.)
-
 - [ ] **Langfuse: token/model capture for AzureChatOpenAI** (found in Module 12.2 self-audit) — traces
       flow + structure is captured, but generations show `model=null` / `usage=null`. The `@langfuse/langchain`
       v5 OTEL handler doesn't map `AzureChatOpenAI` token usage (the docs' example uses plain OpenAI). The
       model _does_ emit `usage_metadata` + `response_metadata.model_name`. Options: a manual usage bridge
       (custom callback → set Langfuse observation usage), OpenAI-SDK OTEL instrumentation, or the OpenAI v1
       endpoint via `ChatOpenAI`. Needed for ADR-0010's cost monitoring. Revisit in 12.3.
-
-- [ ] **Agent faces / avatars** (design) — every agent surface should have a distinct **face**, not just
-      an emoji chip. Covers the Kitchen Assistant coordinator + each specialist (Chef/finder, planner,
-      shopping, and later critic + nutrition) and the existing "AI Chef" (`ai-chef-dialog.tsx`). Show the
-      face of whichever agent handled the turn (the per-turn avatar from ADR-0008/0010 §"visible
-      delegation"). Decide the visual system (illustrated character set vs generated avatars) and render
-      it in the chat + the AI Chef dialog.
 
 - [ ] **Tip-capture prompt tweak** — golden set (7.3) showed gpt-4o-mini captures recipe
       tips/notes on only ~2 of 10 recipes vs Claude's near-full coverage. Likely a prompt
@@ -115,6 +93,24 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 Kept for the detail — what was actually wrong is usually more useful than the fact that
 it is fixed. Newest first.
+
+- [x] **Voice input, agent faces, mobile card actions, edit-page polish** — DONE (2026-10-10).
+      - **Voice input (v1):** mic button in the Kitchen Assistant (`use-speech-input.ts`, browser Web
+        Speech API). Fills the input rather than sending, so a misheard word can be fixed. Hidden
+        where unsupported; shows a clear message when the mic is blocked.
+      - **Agent faces:** `components/assistant/agent-avatar.tsx` — one illustrated SVG set (same
+        face, distinct colour + accessory): Kitchen Assistant (toque), Finder (glasses), Planner
+        (pencil), Shopping (cap), AI Chef (toque + moustache), and Critic / Nutrition ready for
+        when those agents exist. Used per turn in the chat and on the AI Chef dialog.
+      - **Mobile recipe cards:** favourite + add-to-planner now sit in a column left of the title
+        and time instead of over the thumbnail.
+      - **Improve with AI** failed on Foundry ("Couldn't reach the AI") — the model returned
+        ingredient lines as strings. Prompt now spells out the JSON shape; the schema lifts a bare
+        string to `{ raw_text }`. The button moved beside Save; suggestions open in a dialog.
+      - **Nutrition tiles** lost their top/bottom borders (divide-y-0 overriding md:border) — fixed.
+        **Kitchen Assistant** is hidden on edit/review pages, where it covered Save.
+      - **Metadata cleanup applied** to prod (54 rows: meal types, "Healthwithbec" merge, tags).
+        **Entra password reset** verified end-to-end: "Forgot password?" shows on the hosted page.
 
 - [x] **Serving size, meal types, Improve with AI, password reset, source dedup** — DONE
       (2026-10-10).

@@ -1,26 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChefHat, Check, Send, Sparkles } from "lucide-react";
+import { ChefHat, Check, Mic, MicOff, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { confirmProposalAction } from "@/components/assistant/actions";
+import { AgentAvatar, agentFor } from "@/components/assistant/agent-avatar";
+import { useSpeechInput } from "@/components/assistant/use-speech-input";
 import type { AssistantProposal } from "@/lib/agents/proposals";
 
 /**
  * The "Ask AI" Kitchen Assistant chat (Module 12.5 / ADR-0010). A floating button
  * opens a chat that talks to /api/assistant (the LangGraph supervisor). Each reply
- * renders with the avatar of whichever specialist answered — the per-turn avatar.
- * (Emoji avatars are placeholders; the illustrated faces are a tracked design TODO.)
+ * renders with the face of whichever specialist answered — the per-turn avatar
+ * (`AgentAvatar`).
  */
-const AVATAR: Record<string, { face: string; label: string }> = {
-  finder: { face: "🔎", label: "Finder" },
-  planner: { face: "📅", label: "Planner" },
-  shopping: { face: "🛒", label: "Shopping" },
-};
-const COORDINATOR = { face: "🧑‍🍳", label: "Kitchen Assistant" };
-
 type Msg = {
   role: "user" | "assistant";
   content: string;
@@ -34,9 +35,11 @@ type Msg = {
  * Newlines are preserved by the container's `whitespace-pre-wrap`.
  */
 function renderRichText(text: string) {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-    /^\*\*[^*]+\*\*$/.test(part) ? <strong key={i}>{part.slice(2, -2)}</strong> : part,
-  );
+  return text
+    .split(/(\*\*[^*]+\*\*)/g)
+    .map((part, i) =>
+      /^\*\*[^*]+\*\*$/.test(part) ? <strong key={i}>{part.slice(2, -2)}</strong> : part,
+    );
 }
 
 /** One-line human summary of a proposal for the Confirm card. */
@@ -55,6 +58,9 @@ export function KitchenAssistant() {
   // "running" | "done" | an error string.
   const [confirming, setConfirming] = useState<Record<string, string>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Voice drops the transcript into the input rather than sending it, so a
+  // misheard word can be fixed before the question goes off.
+  const speech = useSpeechInput({ onTranscript: setInput });
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -89,7 +95,10 @@ export function KitchenAssistant() {
         },
       ]);
     } catch {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Sorry, I couldn't reach the kitchen right now." }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Sorry, I couldn't reach the kitchen right now." },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -102,7 +111,10 @@ export function KitchenAssistant() {
       const res = await confirmProposalAction(p);
       if (res.ok) {
         setConfirming((s) => ({ ...s, [key]: "done" }));
-        setMessages((prev) => [...prev, { role: "assistant", content: `✅ ${res.message}`, specialist: null }]);
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: `✅ ${res.message}`, specialist: null },
+        ]);
       } else {
         setConfirming((s) => ({ ...s, [key]: res.error }));
       }
@@ -125,7 +137,7 @@ export function KitchenAssistant() {
       <DialogContent className="flex h-[80vh] max-w-md flex-col gap-0 p-0">
         <DialogHeader className="border-b px-4 py-3">
           <DialogTitle className="flex items-center gap-2">
-            <span className="text-xl">{COORDINATOR.face}</span> Kitchen Assistant
+            <AgentAvatar agent="coordinator" size={32} /> Kitchen Assistant
           </DialogTitle>
         </DialogHeader>
 
@@ -136,18 +148,20 @@ export function KitchenAssistant() {
             </p>
           )}
           {messages.map((m, i) => {
-            const av = m.specialist ? (AVATAR[m.specialist] ?? COORDINATOR) : COORDINATOR;
             return (
-              <div key={i} className={m.role === "user" ? "flex justify-end" : "flex items-start gap-2"}>
+              <div
+                key={i}
+                className={m.role === "user" ? "flex justify-end" : "flex items-start gap-2"}
+              >
                 {m.role === "assistant" && (
-                  <span className="mt-1 text-lg" title={av.label} aria-label={av.label}>
-                    {av.face}
-                  </span>
+                  <AgentAvatar agent={agentFor(m.specialist)} className="mt-0.5" />
                 )}
                 <div className="flex max-w-[80%] flex-col gap-2">
                   <div
                     className={`whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
-                      m.role === "user" ? "self-end bg-primary text-primary-foreground" : "self-start bg-muted"
+                      m.role === "user"
+                        ? "self-end bg-primary text-primary-foreground"
+                        : "self-start bg-muted"
                     }`}
                   >
                     {m.role === "assistant" ? renderRichText(m.content) : m.content}
@@ -164,10 +178,16 @@ export function KitchenAssistant() {
                           </p>
                         ) : (
                           <>
-                            <Button size="sm" disabled={st === "running"} onClick={() => void confirm(key, p)}>
+                            <Button
+                              size="sm"
+                              disabled={st === "running"}
+                              onClick={() => void confirm(key, p)}
+                            >
                               {st === "running" ? "Working…" : "Confirm"}
                             </Button>
-                            {st && st !== "running" && <p className="mt-1 text-xs text-destructive">{st}</p>}
+                            {st && st !== "running" && (
+                              <p className="mt-1 text-xs text-destructive">{st}</p>
+                            )}
                           </>
                         )}
                       </div>
@@ -179,11 +199,16 @@ export function KitchenAssistant() {
           })}
           {loading && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Sparkles className="h-4 w-4 animate-pulse" /> thinking…
+              <AgentAvatar agent="coordinator" className="animate-pulse" /> thinking…
             </div>
           )}
         </div>
 
+        {speech.error && (
+          <p className="border-t px-3 pt-2 text-xs text-destructive" role="alert">
+            {speech.error}
+          </p>
+        )}
         <form
           className="flex gap-2 border-t p-3"
           onSubmit={(e) => {
@@ -191,10 +216,24 @@ export function KitchenAssistant() {
             void send();
           }}
         >
+          {speech.supported && (
+            <Button
+              type="button"
+              size="icon"
+              variant={speech.listening ? "default" : "outline"}
+              className={speech.listening ? "animate-pulse" : undefined}
+              onClick={speech.listening ? speech.stop : speech.start}
+              disabled={loading}
+              aria-label={speech.listening ? "Stop listening" : "Speak your question"}
+              aria-pressed={speech.listening}
+            >
+              {speech.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            </Button>
+          )}
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask the kitchen…"
+            placeholder={speech.listening ? "Listening…" : "Ask the kitchen…"}
             disabled={loading}
           />
           <Button type="submit" size="icon" disabled={loading || !input.trim()}>

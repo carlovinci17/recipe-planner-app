@@ -2,7 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { format, parseISO } from "date-fns";
-import { ChefHat, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
+import { AgentAvatar } from "@/components/assistant/agent-avatar";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -85,20 +86,16 @@ export function AIChefDialog({
   // Pull cuisine + diet options from the user's actual library so the
   // multi-select only offers values that exist (no dead choices).
   const cuisineOptions = useMemo(
-    () =>
-      Array.from(new Set(recipes.flatMap((r) => r.cuisines ?? []).filter(Boolean))).sort(),
+    () => Array.from(new Set(recipes.flatMap((r) => r.cuisines ?? []).filter(Boolean))).sort(),
     [recipes],
   );
   const dietOptions = useMemo(
-    () =>
-      Array.from(new Set(recipes.flatMap((r) => r.diet_types ?? []).filter(Boolean))).sort(),
+    () => Array.from(new Set(recipes.flatMap((r) => r.diet_types ?? []).filter(Boolean))).sort(),
     [recipes],
   );
 
   function toggleSlot(slot: MealSlot) {
-    setSlots((prev) =>
-      prev.includes(slot) ? prev.filter((s) => s !== slot) : [...prev, slot],
-    );
+    setSlots((prev) => (prev.includes(slot) ? prev.filter((s) => s !== slot) : [...prev, slot]));
   }
 
   function generate() {
@@ -156,9 +153,7 @@ export function AIChefDialog({
       const failed = results.filter((r) => !r.ok).length;
       const success = results.length - failed;
       if (success > 0) {
-        toast.success(
-          `Added ${success} ${success === 1 ? "meal" : "meals"} to the planner`,
-        );
+        toast.success(`Added ${success} ${success === 1 ? "meal" : "meals"} to the planner`);
         onApplied();
       }
       if (failed > 0) {
@@ -197,7 +192,7 @@ export function AIChefDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ChefHat className="h-5 w-5 text-primary" />
+            <AgentAvatar agent="chef" size={32} />
             Ask AI Chef
           </DialogTitle>
           <DialogDescription>
