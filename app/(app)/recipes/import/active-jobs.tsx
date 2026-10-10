@@ -2,12 +2,27 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { CheckCircle2, CheckCheck, Clock, Loader2, Trash2, X, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  CheckCheck,
+  Clock,
+  Loader2,
+  Trash2,
+  X,
+  MinusCircle,
+  XCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
 import { loadActiveJobsAction } from "./actions";
 import type { ActiveJobRecipe } from "@/lib/services/ingestion-service";
-import { ImportFailureDetails } from "./import-failure-details";
+import { ImportDetails } from "./import-details";
+import {
+  jobFileName,
+  jobOutcome,
+  OUTCOME_LABEL,
+  type JobOutcome,
+} from "@/lib/ingestion/job-outcome";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -43,9 +58,7 @@ function readSkimState(job: Job): {
   awaitingSelection: boolean;
   recipes: SkimRecipe[];
 } {
-  const raw = job.skim_results as
-    | { recipes?: SkimRecipe[]; selected_titles?: string[] }
-    | null;
+  const raw = job.skim_results as { recipes?: SkimRecipe[]; selected_titles?: string[] } | null;
   if (!raw || !Array.isArray(raw.recipes) || raw.recipes.length === 0) {
     return { awaitingSelection: false, recipes: [] };
   }
@@ -157,12 +170,7 @@ function computeProgress(kind: IngestionEventKind | undefined, meta: ProgressMet
  */
 function computeLabel(kind: IngestionEventKind | undefined, meta: ProgressMeta): string {
   if (!kind) return "Settling in";
-  if (
-    kind === "ai_processing_started" &&
-    meta.chunk &&
-    meta.totalChunks &&
-    meta.totalChunks > 1
-  ) {
+  if (kind === "ai_processing_started" && meta.chunk && meta.totalChunks && meta.totalChunks > 1) {
     return `Tasting page ${meta.chunk} of ${meta.totalChunks}`;
   }
   if (
@@ -177,7 +185,6 @@ function computeLabel(kind: IngestionEventKind | undefined, meta: ProgressMeta):
 }
 
 const PAGE_SIZE = 25;
-
 
 type Derived = {
   jobs: Job[];
@@ -205,7 +212,11 @@ const toJobRecipe = (r: ActiveJobRecipe): JobRecipe => ({
  * the UI renders. Events must be newest-first (the service returns them so).
  * Shared by the initial load and the realtime refetch (Module 11.1).
  */
-function assembleBundle(bundle: { jobs: Job[]; events: Event[]; recipes: ActiveJobRecipe[] }): Derived {
+function assembleBundle(bundle: {
+  jobs: Job[];
+  events: Event[];
+  recipes: ActiveJobRecipe[];
+}): Derived {
   const { jobs, events, recipes } = bundle;
 
   const recipesByJob: Record<string, JobRecipe[]> = {};
@@ -248,11 +259,18 @@ function assembleBundle(bundle: { jobs: Job[]; events: Event[]; recipes: ActiveJ
     if (ev.kind === "extraction_completed" && !extractionCounts[ev.job_id]) {
       const p = ev.payload as { recipes_found?: number; recipes_kept?: number } | null;
       if (p && typeof p.recipes_found === "number") {
-        extractionCounts[ev.job_id] = { found: p.recipes_found, kept: p.recipes_kept ?? p.recipes_found };
+        extractionCounts[ev.job_id] = {
+          found: p.recipes_found,
+          kept: p.recipes_kept ?? p.recipes_found,
+        };
       }
     }
     if (ev.kind === "validation_completed") {
-      const p = ev.payload as { partial?: boolean; failed_titles?: string[]; failure_reasons?: string[] } | null;
+      const p = ev.payload as {
+        partial?: boolean;
+        failed_titles?: string[];
+        failure_reasons?: string[];
+      } | null;
       if (p?.partial && p.failed_titles && !persistFailures[ev.job_id]) {
         persistFailures[ev.job_id] = { titles: p.failed_titles, reasons: p.failure_reasons ?? [] };
       }
@@ -388,7 +406,11 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
   });
 
   async function loadMore() {
-    const res = await loadActiveJobsAction({ householdId, limit: PAGE_SIZE + 1, offset: jobs.length });
+    const res = await loadActiveJobsAction({
+      householdId,
+      limit: PAGE_SIZE + 1,
+      offset: jobs.length,
+    });
     if (!res.ok) return;
     const more = res.jobs as Job[];
     if (more.length > 0) {
@@ -421,9 +443,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
       // payload, so the channel filter on household_id strips them out
       // before we ever see them. Update local state explicitly here.
       if (result.cleared > 0) {
-        const removedIds = new Set(
-          jobs.filter((j) => j.status === "failed").map((j) => j.id),
-        );
+        const removedIds = new Set(jobs.filter((j) => j.status === "failed").map((j) => j.id));
         setJobs((prev) => prev.filter((j) => j.status !== "failed"));
         setLatestEvents((prev) => {
           const next = { ...prev };
@@ -474,9 +494,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
       if (result.cleared === 0) {
         toast.info("Nothing to clear");
       } else {
-        toast.success(
-          `Cleared ${result.cleared} ${result.cleared === 1 ? "import" : "imports"}`,
-        );
+        toast.success(`Cleared ${result.cleared} ${result.cleared === 1 ? "import" : "imports"}`);
       }
     });
   }
@@ -592,7 +610,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
               className="h-7 text-muted-foreground hover:text-destructive"
             >
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-              Clear {failedCount} failed
+              Clear {failedCount} not imported
             </Button>
           ) : null}
           <Button
@@ -624,18 +642,22 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
             onCancel={cancelJob}
             onSaveAll={(ids) => saveAllForJob(j.id, ids)}
             onOpenSkim={() => setSkimDialogJobId(j.id)}
-            onOpenCoverPicker={(recipeId) =>
-              setCoverPickerTarget({ recipeId, jobId: j.id })
-            }
+            onOpenCoverPicker={(recipeId) => setCoverPickerTarget({ recipeId, jobId: j.id })}
           />
         ))}
-        {(visibleCount < jobs.length || jobs.length === totalLoaded) && totalLoaded >= PAGE_SIZE && (
-          <div className="pt-1 flex justify-center">
-            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={loadMore}>
-              Show more
-            </Button>
-          </div>
-        )}
+        {(visibleCount < jobs.length || jobs.length === totalLoaded) &&
+          totalLoaded >= PAGE_SIZE && (
+            <div className="flex justify-center pt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground"
+                onClick={loadMore}
+              >
+                Show more
+              </Button>
+            </div>
+          )}
       </CardContent>
 
       {/* Cover-picker dialog — opens when a recipe thumbnail in a sub-row
@@ -682,9 +704,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
           derived from the job's URL when present (URL imports get a useful
           pre-fill; file/PDF imports start blank for the user to type). */}
       {(() => {
-        const activeJob = skimDialogJobId
-          ? jobs.find((j) => j.id === skimDialogJobId)
-          : null;
+        const activeJob = skimDialogJobId ? jobs.find((j) => j.id === skimDialogJobId) : null;
         const defaultUrl = activeJob?.source_url ?? null;
         const defaultName = defaultUrl ? getSourceName(defaultUrl) : null;
         return (
@@ -711,8 +731,8 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
           <DialogHeader>
             <DialogTitle>Clear all imports?</DialogTitle>
             <DialogDescription>
-              This removes all {jobs.length} {jobs.length === 1 ? "row" : "rows"} from
-              Recent imports — successful, failed, and any{" "}
+              This removes all {jobs.length} {jobs.length === 1 ? "row" : "rows"} from Recent
+              imports — successful, failed, and any{" "}
               {inFlightCount > 0
                 ? `${inFlightCount} still in progress (those will be aborted)`
                 : "in-flight imports"}
@@ -779,7 +799,17 @@ function JobRow({
     ? Math.round(computeProgress(latestEvent, progressMeta) * 100)
     : 100;
   const stepLabel = isProcessing ? computeLabel(latestEvent, progressMeta) : null;
-  const statusText = isProcessing && stepLabel ? stepLabel : STATUS_LABEL[job.status];
+  const outcome = jobOutcome(job);
+  const fileName = jobFileName(job, events);
+  // A file with no recipes, or only recipes already in the library, is a normal
+  // outcome — labelled as such, not as a red "Failed".
+  const statusText = skimState.awaitingSelection
+    ? "Waiting for you to pick recipes"
+    : isProcessing && stepLabel
+      ? stepLabel
+      : outcome !== "in_progress" && outcome !== "ok"
+        ? OUTCOME_LABEL[outcome]
+        : STATUS_LABEL[job.status];
 
   // Multi-recipe progress: once extraction reports its count, replace the
   // generic "Recipe extracted" / "Validating" labels with concrete progress.
@@ -787,8 +817,11 @@ function JobRow({
   const persistedCount = recipes.length;
   const expectedCount = extractionCount?.kept ?? 0;
   const failedCount = failures?.titles.length ?? 0;
+  // The skim also reports as extraction_completed; while the user still has to
+  // pick, "Saving 0 of 11" would be misleading.
   const showMultiProgress =
     isProcessing &&
+    !skimState.awaitingSelection &&
     expectedCount > 1 &&
     (latestEvent === "extraction_completed" ||
       latestEvent === "validation_completed" ||
@@ -820,7 +853,8 @@ function JobRow({
         <div className="mb-2 flex items-center justify-between gap-3 rounded-md border border-primary/40 bg-primary/5 px-3 py-2">
           <div className="min-w-0">
             <div className="text-xs font-semibold uppercase tracking-wide text-primary">
-              {skimState.recipes.length} {skimState.recipes.length === 1 ? "recipe" : "recipes"} found
+              {skimState.recipes.length} {skimState.recipes.length === 1 ? "recipe" : "recipes"}{" "}
+              found
             </div>
             <div className="text-xs text-muted-foreground">
               Pick which to import before the slower extraction runs.
@@ -839,11 +873,11 @@ function JobRow({
       ) : null}
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <StatusIcon status={job.status} />
+          <StatusIcon status={job.status} outcome={outcome} />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-baseline gap-2">
               <span className="truncate font-medium">
-                {headlineTitle ?? (
+                {headlineTitle ?? fileName ?? (
                   <span className="italic text-muted-foreground">Untitled recipe</span>
                 )}
               </span>
@@ -869,17 +903,30 @@ function JobRow({
                   {failedCount} failed
                 </span>
               ) : null}
-              {job.error ? (
-                <span className="text-destructive">
+              {job.error && (outcome === "failed" || outcome === "skipped") ? (
+                <span className={outcome === "failed" ? "text-destructive" : undefined}>
                   {" — "}
-                  {job.error}
+                  {/* The label already says "Skipped"; don't repeat it. */}
+                  {job.error.replace(/^Skipped\s*—\s*/, "")}
                 </span>
               ) : null}
             </div>
-            {/* Failed, or finished with some recipes unsaved — offer the detail
-                panel rather than a truncated message and a hover tooltip. */}
-            {job.status === "failed" || failedCount > 0 ? (
-              <ImportFailureDetails job={job} events={events} failures={failures} />
+            {/* Always say which file this was, so it's clear where recipes came from. */}
+            {fileName && headlineTitle ? (
+              <div className="truncate text-xs text-muted-foreground" title={fileName}>
+                From {fileName}
+              </div>
+            ) : null}
+            {/* Every finished import gets the detail panel — what was imported,
+                from which file, and how it went — not only failures. */}
+            {outcome !== "in_progress" || failedCount > 0 ? (
+              <ImportDetails
+                job={job}
+                events={events}
+                failures={failures}
+                recipeTitles={recipes.map((r) => r.title)}
+                extractionCount={extractionCount}
+              />
             ) : null}
           </div>
         </div>
@@ -918,71 +965,67 @@ function JobRow({
           than one recipe (cookbook PDF, listicle URL). Each gets its own
           Review/Open link. Renders during persistence too, so users see the
           list grow in real time as siblings are saved. */}
-      {isMultiRecipe && recipes.length > 0 ? (() => {
-        // "Save all" only makes sense when 2+ recipes are still awaiting
-        // review. 1 left = just click Review →. 0 left = everything's done.
-        const needsReviewIds = recipes
-          .filter((r) => r.status === "needs_review")
-          .map((r) => r.id);
-        return (
-          <>
-            {needsReviewIds.length >= 2 ? (
-              <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs">
-                <span className="text-muted-foreground">
-                  {needsReviewIds.length} {needsReviewIds.length === 1 ? "recipe" : "recipes"} ready
-                  — skip individual review?
-                </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="default"
-                  className="h-7 px-2.5 text-xs"
-                  onClick={() => onSaveAll(needsReviewIds)}
-                  disabled={savingAll}
-                >
-                  <CheckCheck className="mr-1 h-3.5 w-3.5" />
-                  {savingAll ? "Saving..." : `Save all ${needsReviewIds.length}`}
-                </Button>
-              </div>
-            ) : null}
-            <ul className="mt-2 divide-y divide-border/40 rounded-md bg-muted/40 px-2 py-1">
-              {recipes.map((r) => (
-                <li
-                  key={r.id}
-                  className="flex items-center gap-3 px-1.5 py-1.5 text-sm"
-                >
-                  <RecipeCoverThumb
-                    recipe={r}
-                    onClick={() => onOpenCoverPicker(r.id)}
-                  />
-                  <span className="min-w-0 flex-1 truncate" title={r.title}>
-                    {r.title}
-                  </span>
-                  {r.status === "needs_review" ? (
-                    <Link
-                      href={`/recipes/${r.id}/review`}
-                      className="shrink-0 text-xs font-medium text-primary hover:underline"
-                    >
-                      Review →
-                    </Link>
-                  ) : r.status === "published" ? (
-                    <Link
-                      href={`/recipes/${r.id}`}
-                      className="shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
-                    >
-                      Open →
-                    </Link>
-                  ) : (
-                    <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
-                      {r.status}
+      {isMultiRecipe && recipes.length > 0
+        ? (() => {
+            // "Save all" only makes sense when 2+ recipes are still awaiting
+            // review. 1 left = just click Review →. 0 left = everything's done.
+            const needsReviewIds = recipes
+              .filter((r) => r.status === "needs_review")
+              .map((r) => r.id);
+            return (
+              <>
+                {needsReviewIds.length >= 2 ? (
+                  <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs">
+                    <span className="text-muted-foreground">
+                      {needsReviewIds.length} {needsReviewIds.length === 1 ? "recipe" : "recipes"}{" "}
+                      ready — skip individual review?
                     </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </>
-        );
-      })() : null}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="default"
+                      className="h-7 px-2.5 text-xs"
+                      onClick={() => onSaveAll(needsReviewIds)}
+                      disabled={savingAll}
+                    >
+                      <CheckCheck className="mr-1 h-3.5 w-3.5" />
+                      {savingAll ? "Saving..." : `Save all ${needsReviewIds.length}`}
+                    </Button>
+                  </div>
+                ) : null}
+                <ul className="mt-2 divide-y divide-border/40 rounded-md bg-muted/40 px-2 py-1">
+                  {recipes.map((r) => (
+                    <li key={r.id} className="flex items-center gap-3 px-1.5 py-1.5 text-sm">
+                      <RecipeCoverThumb recipe={r} onClick={() => onOpenCoverPicker(r.id)} />
+                      <span className="min-w-0 flex-1 truncate" title={r.title}>
+                        {r.title}
+                      </span>
+                      {r.status === "needs_review" ? (
+                        <Link
+                          href={`/recipes/${r.id}/review`}
+                          className="shrink-0 text-xs font-medium text-primary hover:underline"
+                        >
+                          Review →
+                        </Link>
+                      ) : r.status === "published" ? (
+                        <Link
+                          href={`/recipes/${r.id}`}
+                          className="shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+                        >
+                          Open →
+                        </Link>
+                      ) : (
+                        <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
+                          {r.status}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            );
+          })()
+        : null}
 
       {/* Failed-recipe breakdown — appears under the success list when an
           import partially failed. Reasons are deduped at the action layer
@@ -991,8 +1034,8 @@ function JobRow({
       {failures && failures.titles.length > 0 ? (
         <details className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-xs">
           <summary className="cursor-pointer font-medium text-destructive">
-            {failures.titles.length} {failures.titles.length === 1 ? "recipe" : "recipes"}{" "}
-            failed to save
+            {failures.titles.length} {failures.titles.length === 1 ? "recipe" : "recipes"} failed to
+            save
           </summary>
           <ul className="mt-1.5 space-y-1 pl-2">
             {failures.titles.map((title) => (
@@ -1003,7 +1046,9 @@ function JobRow({
           </ul>
           {failures.reasons.length > 0 ? (
             <div className="mt-2 border-t border-destructive/20 pt-1.5 text-muted-foreground">
-              <div className="font-medium text-destructive/90">Reason{failures.reasons.length > 1 ? "s" : ""}:</div>
+              <div className="font-medium text-destructive/90">
+                Reason{failures.reasons.length > 1 ? "s" : ""}:
+              </div>
               {failures.reasons.map((reason, i) => (
                 <div key={i} className="mt-0.5 whitespace-pre-wrap break-words">
                   {reason}
@@ -1036,13 +1081,7 @@ function JobRow({
  * 40px-square render slot @ 2× DPI. Click bubbles up to open the cover
  * picker dialog scoped to this recipe.
  */
-function RecipeCoverThumb({
-  recipe,
-  onClick,
-}: {
-  recipe: JobRecipe;
-  onClick: () => void;
-}) {
+function RecipeCoverThumb({ recipe, onClick }: { recipe: JobRecipe; onClick: () => void }) {
   const ref = resolveCoverImage({
     image_paths: recipe.image_paths,
     cover_image_path: recipe.cover_image_path,
@@ -1079,9 +1118,11 @@ function RecipeCoverThumb({
   );
 }
 
-function StatusIcon({ status }: { status: Job["status"] }) {
+function StatusIcon({ status, outcome }: { status: Job["status"]; outcome: JobOutcome }) {
   if (status === "needs_review" || status === "published")
     return <CheckCircle2 className="h-4 w-4 text-green-600" />;
+  if (outcome === "no_recipes" || outcome === "skipped" || outcome === "cancelled")
+    return <MinusCircle className="h-4 w-4 text-muted-foreground" />;
   if (status === "failed") return <XCircle className="h-4 w-4 text-destructive" />;
   return <Clock className="h-4 w-4 animate-pulse text-muted-foreground" />;
 }

@@ -4,19 +4,21 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { toast } from "sonner";
 import type { Tables } from "@/types/database.types";
+import { jobFileName, jobOutcome, OUTCOME_LABEL } from "@/lib/ingestion/job-outcome";
 
 type Job = Tables<"ingestion_jobs">;
 type Event = Tables<"ingestion_events">;
 
 /**
- * "More info" panel on a failed (or partially failed) import.
+ * "More info" panel on every finished import — imported, skipped, no recipes
+ * found, cancelled or failed.
  *
  * Everything shown here is already on the client — `listActiveJobs` does a
  * `select *` on ingestion_jobs and returns the job's events alongside — so
  * expanding costs no extra round-trip.
  *
- * The point is to answer "why did this fail, and what was it trying to
- * import?" without a trip to the database or the logs. The event list is the
+ * The point is to answer "what was imported from where, and what happened?"
+ * without a trip to the database or the logs. The event list is the
  * most useful part: it shows how far the pipeline actually got.
  */
 
@@ -26,6 +28,7 @@ const SOURCE_LABEL: Record<string, string> = {
   pdf: "PDF upload",
   url: "Web page (URL)",
   drive: "Google Drive",
+  google_drive: "Google Drive sync",
   manual: "Manual entry",
 };
 
@@ -59,13 +62,6 @@ function durationBetween(a: string | null, b: string | null): string | null {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
-/** The last path segment, which is the filename for an uploaded file. */
-function fileNameOf(path: string | null): string | null {
-  if (!path) return null;
-  const parts = path.split("/");
-  return parts[parts.length - 1] ?? null;
-}
-
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   if (value === null || value === undefined || value === "") return null;
   return (
@@ -76,21 +72,28 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export function ImportFailureDetails({
+export function ImportDetails({
   job,
   events = [],
   failures,
+  recipeTitles = [],
+  extractionCount,
 }: {
   job: Job;
   /** All events for this job, newest first. */
   events?: Event[];
   /** Per-recipe failures on a partially-successful multi-recipe import. */
   failures?: { titles: string[]; reasons: string[] };
+  /** Recipes this import created. */
+  recipeTitles?: string[];
+  extractionCount?: { found: number; kept: number };
 }) {
   const [open, setOpen] = useState(false);
 
   const sourceLabel = SOURCE_LABEL[job.source_kind] ?? job.source_kind;
-  const fileName = fileNameOf(job.storage_path);
+  const fileName = jobFileName(job, events);
+  const outcome = jobOutcome(job);
+  const isError = outcome === "failed";
   const pageCount = job.page_image_paths?.length ?? 0;
   const duration = durationBetween(job.created_at, job.updated_at);
   const tokens =
@@ -103,13 +106,14 @@ export function ImportFailureDetails({
 
   async function copyDiagnostics() {
     const lines = [
-      `Import failure — job ${job.id}`,
+      `Import ${outcome === "in_progress" ? "in progress" : OUTCOME_LABEL[outcome].toLowerCase()} — job ${job.id}`,
       `Type: ${sourceLabel}`,
       job.source_url ? `URL: ${job.source_url}` : null,
       fileName ? `File: ${fileName}` : null,
       pageCount ? `Pages rasterized: ${pageCount}` : null,
       `Status: ${job.status}`,
-      job.error ? `Error: ${job.error}` : null,
+      job.error ? `${isError ? "Error" : "Note"}: ${job.error}` : null,
+      recipeTitles.length ? `Recipes: ${recipeTitles.join(", ")}` : null,
       job.ai_model ? `Model: ${job.ai_model}` : null,
       tokens ? `Tokens: ${tokens}` : null,
       `Started: ${timeOf(job.created_at)}`,
@@ -142,9 +146,26 @@ export function ImportFailureDetails({
 
       {open && (
         <div className="mt-2 space-y-3 rounded-lg border bg-muted/30 p-3 text-xs">
+          {recipeTitles.length > 0 && (
+            <div>
+              <p className="mb-1 font-medium">
+                {recipeTitles.length} recipe{recipeTitles.length === 1 ? "" : "s"} imported
+              </p>
+              <ul className="list-inside list-disc text-muted-foreground">
+                {recipeTitles.map((t) => (
+                  <li key={t} className="break-words">
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {job.error && (
             <div>
-              <p className="mb-1 font-medium text-destructive">What went wrong</p>
+              <p className={`mb-1 font-medium ${isError ? "text-destructive" : ""}`}>
+                {isError ? "What went wrong" : "What happened"}
+              </p>
               {/* Full message, wrapped — the row above truncates it. */}
               <p className="whitespace-pre-wrap break-words text-muted-foreground">{job.error}</p>
             </div>
@@ -153,8 +174,8 @@ export function ImportFailureDetails({
           {failures && failures.titles.length > 0 && (
             <div>
               <p className="mb-1 font-medium text-destructive">
-                {failures.titles.length} recipe{failures.titles.length === 1 ? "" : "s"} couldn&apos;t
-                be saved
+                {failures.titles.length} recipe{failures.titles.length === 1 ? "" : "s"}{" "}
+                couldn&apos;t be saved
               </p>
               <ul className="list-inside list-disc text-muted-foreground">
                 {failures.titles.map((t) => (
@@ -193,6 +214,14 @@ export function ImportFailureDetails({
                 }
               />
               <Row label="Pages" value={pageCount > 0 ? String(pageCount) : null} />
+              <Row
+                label="Recipes found"
+                value={
+                  extractionCount && extractionCount.found > 0
+                    ? `${extractionCount.found} (${extractionCount.kept} kept)`
+                    : null
+                }
+              />
               <Row label="Started" value={timeOf(job.created_at)} />
               <Row label="Ended" value={timeOf(job.updated_at)} />
               <Row label="Took" value={duration} />
@@ -209,7 +238,7 @@ export function ImportFailureDetails({
                 {timeline.map((e) => (
                   <li key={e.id} className="flex gap-2">
                     <span className="w-32 shrink-0 tabular-nums">{timeOf(e.created_at)}</span>
-                    <span className={e.kind === "failed" ? "text-destructive" : ""}>
+                    <span className={e.kind === "failed" && isError ? "text-destructive" : ""}>
                       {EVENT_LABEL[e.kind] ?? e.kind}
                     </span>
                   </li>

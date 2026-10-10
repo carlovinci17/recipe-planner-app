@@ -317,6 +317,8 @@ export async function retryDriveFiles(args: {
             eq(ingestionJobs.status, "failed"),
             sql`coalesce(${ingestionJobs.error}, '') not like 'Skipped%'`,
             sql`coalesce(${ingestionJobs.error}, '') not like 'Cancelled%'`,
+            sql`coalesce(${ingestionJobs.error}, '') not like 'No recipes found%'`,
+            sql`coalesce(${ingestionJobs.error}, '') <> 'Source did not appear to contain any recipes'`,
           ),
         ),
       ),

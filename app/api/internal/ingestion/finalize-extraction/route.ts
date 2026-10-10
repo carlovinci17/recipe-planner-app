@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       status: bulkMode ? "needs_review" : "failed",
       error:
         reason === "no_recipes"
-          ? "Source did not appear to contain any recipes"
+          ? "No recipes found in this file."
           : "Detected content didn't reach the confidence threshold",
       raw_extraction: { recipes: deduped },
       ...usagePatch,

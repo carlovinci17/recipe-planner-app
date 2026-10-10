@@ -67,7 +67,7 @@ export const driveService = {
             when ${driveFiles.status} = 'failed' then 'failed'
             when ${driveFiles.status} = 'pending' then 'waiting'
             when ${ingestionJobs.status} in ('needs_review', 'published') then 'imported'
-            when ${ingestionJobs.status} = 'failed' and ${ingestionJobs.error} like 'Skipped%' then 'skipped'
+            when ${ingestionJobs.status} = 'failed' and (${ingestionJobs.error} like 'Skipped%' or ${ingestionJobs.error} like 'No recipes found%' or ${ingestionJobs.error} = 'Source did not appear to contain any recipes') then 'skipped'
             when ${ingestionJobs.status} = 'failed' then 'failed'
             else 'importing' end`,
           n: sql<number>`count(*)::int`,
