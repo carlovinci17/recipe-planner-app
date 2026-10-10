@@ -63,6 +63,15 @@ const serverSchema = z.object({
   AZURE_FOUNDRY_DEPLOYMENT: z.string().default("gpt-4o-mini"),
   // Embedding deployment for recipes.embedding (1536 dims = text-embedding-3-small).
   AZURE_FOUNDRY_EMBED_DEPLOYMENT: z.string().default("text-embedding-3-small"),
+  // Google Drive folder sync (lib/integrations/google-drive.ts). The service
+  // account households share their folder with, and — in Azure only — the
+  // Workload Identity Federation pair that lets the managed identity act as it.
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
+  // The container app's user-assigned managed identity. Unset locally on purpose
+  // (see CLAUDE.md "Env"); its presence is how code knows it runs in Azure.
+  AZURE_CLIENT_ID: z.string().optional(),
+  GOOGLE_WIF_AUDIENCE: z.string().optional(),
+  GOOGLE_WIF_AZURE_RESOURCE: z.string().optional(),
   // OpenAI — provider file kept on disk as a reference, not wired.
   OPENAI_API_KEY: optional(10),
   OPENAI_MODEL_VISION: z.string().default("gpt-5.5"),

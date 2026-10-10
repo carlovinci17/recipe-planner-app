@@ -101,3 +101,56 @@ jobs:
             --resource-group rg-recipe-planner \
             --image ${{ env.IMAGE }}:${{ github.sha }} \
             --output none
+
+  # The Durable Functions host (functions/) is a separate app. It used to be
+  # published by hand, which let an orchestrator run old code against new app
+  # endpoints. Now it ships after the app, and only when functions/ changed.
+  # Ordered after `deploy` so new activities never call endpoints that don't
+  # exist yet.
+  deploy-functions:
+    needs: deploy
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            functions:
+              - 'functions/**'
+
+      - uses: actions/setup-node@v4
+        if: steps.changes.outputs.functions == 'true' || github.event_name == 'workflow_dispatch'
+        with:
+          node-version: "22" # matches func-recipe-jobs' runtime
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Build
+        if: steps.changes.outputs.functions == 'true' || github.event_name == 'workflow_dispatch'
+        working-directory: functions
+        run: |
+          npm ci
+          npm run build
+          npm prune --omit=dev
+
+      - name: Azure login (OIDC — passwordless)
+        if: steps.changes.outputs.functions == 'true' || github.event_name == 'workflow_dispatch'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to func-recipe-jobs (Flex Consumption)
+        if: steps.changes.outputs.functions == 'true' || github.event_name == 'workflow_dispatch'
+        uses: Azure/functions-action@v1
+        with:
+          app-name: func-recipe-jobs
+          package: functions
+          sku: flexconsumption

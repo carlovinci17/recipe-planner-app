@@ -19,3 +19,20 @@ app.timer("sweepStuckJobs", {
     }
   },
 });
+
+// Every 5 minutes: Google Drive folder sync. The app re-lists folders that are
+// due (every 30 min) and starts up to a few new files, so a 100-PDF first sync
+// trickles through instead of firing 100 vision calls at once.
+app.timer("driveSync", {
+  schedule: "0 */5 * * * *",
+  handler: async (_timer: Timer, context: InvocationContext) => {
+    try {
+      const r = await callApp<{ listed: number; queued: number; failed: number }>("drive-sync", {});
+      if (r.listed || r.queued || r.failed) {
+        context.log(`Drive sync: listed ${r.listed} folder(s), queued ${r.queued}, failed ${r.failed}.`);
+      }
+    } catch (err) {
+      context.error(`driveSync timer failed: ${(err as Error).message}`);
+    }
+  },
+});

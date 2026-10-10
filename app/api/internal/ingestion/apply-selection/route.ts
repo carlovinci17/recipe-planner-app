@@ -17,11 +17,13 @@ export async function POST(req: NextRequest) {
   const deny = assertInternalSecret(req);
   if (deny) return deny;
 
-  const { jobId, selectedIndices, sourceName, sourceUrl } = (await req.json()) as {
+  const { jobId, selectedIndices, sourceName, sourceUrl, emptyReason } = (await req.json()) as {
     jobId: string;
     selectedIndices: number[];
     sourceName?: string | null;
     sourceUrl?: string | null;
+    /** Automatic (Drive) imports: why nothing was selected. */
+    emptyReason?: "all_in_library" | "no_recipes";
   };
   const job = await ingestionStore.getJob(jobId);
   const skim = ((job?.skim_results as { recipes?: SkimRecipe[] } | null)?.recipes ?? []) as SkimRecipe[];
@@ -33,7 +35,12 @@ export async function POST(req: NextRequest) {
   if (selected.length === 0) {
     await ingestionStore.updateJob(jobId, {
       status: "failed",
-      error: "Cancelled at the recipe selection step.",
+      error:
+        emptyReason === "all_in_library"
+          ? "Skipped — every recipe in this file is already in your library."
+          : emptyReason === "no_recipes"
+            ? "Skipped — no recipes found in this file."
+            : "Cancelled at the recipe selection step.",
     });
     return Response.json({ cancelled: true });
   }

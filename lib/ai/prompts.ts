@@ -38,6 +38,11 @@ Rules for each recipe:
   appear in some ingredient list (unless it is water, salt, pepper or oil "to taste").
 - A recipe may continue onto the next page (or begin at the end of the previous one). Read it
   across the page break as ONE recipe.
+- source_notes: capture the recipe's OWN tips and notes, word for word where you can — boxes
+  headed "Tips", "Notes", "Bec's tips", "Make ahead", "Storage", "Swaps" or "Serving suggestion",
+  and short asides beside the method. Join several with blank lines. This is the cook's know-how,
+  so look for it on every recipe, including on the facing page and below the photo. null only when
+  the page truly has none. Do not put the description or the method here.
 - Be conservative with confidence: 0.95+ only for clean, fully visible printed recipes; lower for handwriting, blurry scans, or partial pages.
 - For multi-page documents: set "source_page_index" on each recipe to the 1-indexed page number where the recipe's title/photo primarily appears. A recipe on page 5 of a cookbook has source_page_index=5. If a recipe spans two facing pages, pick the page with its title/main photo. When the input is a single image, single URL, or otherwise non-paginated, set source_page_index to null.
 - For each recipe with a visible food photo on its source page: estimate the photo's CENTER as percentages of that page (cover_focal_x: 0 = left edge, 100 = right edge; cover_focal_y: 0 = top, 100 = bottom). A photo at the top-center of the page is roughly {cover_focal_x: 50, cover_focal_y: 25}; one filling the bottom half is roughly {cover_focal_x: 50, cover_focal_y: 75}. This lets the UI frame the food when it crops the page into a card thumbnail. If there's no clear food photo on that page, leave both fields null.

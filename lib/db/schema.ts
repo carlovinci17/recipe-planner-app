@@ -13,7 +13,6 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 export const householdRole = pgEnum("household_role", ['owner', 'member'])
 export const ingestionEventKind = pgEnum("ingestion_event_kind", ['file_uploaded', 'ingestion_requested', 'ai_processing_started', 'extraction_completed', 'validation_completed', 'recipe_ready_for_review', 'recipe_saved', 'failed'])
-export const integrationProvider = pgEnum("integration_provider", ['google_drive'])
 export const mealSlot = pgEnum("meal_slot", ['breakfast', 'lunch', 'dinner', 'snack'])
 export const recipeSourceKind = pgEnum("recipe_source_kind", ['manual', 'url', 'pdf', 'image', 'screenshot', 'google_drive', 'paste'])
 export const recipeStatus = pgEnum("recipe_status", ['draft', 'processing', 'needs_review', 'published', 'failed'])
@@ -244,68 +243,6 @@ export const shoppingListItems = pgTable("shopping_list_items", {
   WHERE ((sl.id = shopping_list_items.list_id) AND is_household_member(sl.household_id, auth.uid()))))`  }),
 ]);
 
-export const integrationAccounts = pgTable("integration_accounts", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	householdId: uuid("household_id").notNull(),
-	userId: uuid("user_id").notNull(),
-	provider: integrationProvider().notNull(),
-	externalId: text("external_id").notNull(),
-	email: citext("email"),
-	accessToken: text("access_token").notNull(),
-	refreshToken: text("refresh_token"),
-	scopes: text().array().default(sql`'{}'`).notNull(),
-	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }),
-	metadata: jsonb().default({}).notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	foreignKey({
-			columns: [table.householdId],
-			foreignColumns: [households.id],
-			name: "integration_accounts_household_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.userId],
-			foreignColumns: [profiles.id],
-			name: "integration_accounts_user_id_fkey"
-		}).onDelete("cascade"),
-	unique("integration_accounts_household_id_provider_external_id_key").on(table.householdId, table.provider, table.externalId),
-	pgPolicy("integration_accounts household delete", { as: "permissive", for: "delete", to: ["public"], using: sql`is_household_member(household_id, auth.uid())` }),
-	pgPolicy("integration_accounts household update", { as: "permissive", for: "update", to: ["public"] }),
-	pgPolicy("integration_accounts household write", { as: "permissive", for: "insert", to: ["public"] }),
-	pgPolicy("integration_accounts household read", { as: "permissive", for: "select", to: ["public"] }),
-]);
-
-export const driveWatchedFolders = pgTable("drive_watched_folders", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	accountId: uuid("account_id").notNull(),
-	householdId: uuid("household_id").notNull(),
-	folderId: text("folder_id").notNull(),
-	folderName: text("folder_name"),
-	pageToken: text("page_token"),
-	isActive: boolean("is_active").default(true).notNull(),
-	lastSyncedAt: timestamp("last_synced_at", { withTimezone: true, mode: 'string' }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("drive_watched_folders_household_idx").using("btree", table.householdId.asc().nullsLast().op("uuid_ops")),
-	foreignKey({
-			columns: [table.accountId],
-			foreignColumns: [integrationAccounts.id],
-			name: "drive_watched_folders_account_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.householdId],
-			foreignColumns: [households.id],
-			name: "drive_watched_folders_household_id_fkey"
-		}).onDelete("cascade"),
-	unique("drive_watched_folders_account_id_folder_id_key").on(table.accountId, table.folderId),
-	pgPolicy("drive_watched_folders household delete", { as: "permissive", for: "delete", to: ["public"], using: sql`is_household_member(household_id, auth.uid())` }),
-	pgPolicy("drive_watched_folders household update", { as: "permissive", for: "update", to: ["public"] }),
-	pgPolicy("drive_watched_folders household write", { as: "permissive", for: "insert", to: ["public"] }),
-	pgPolicy("drive_watched_folders household read", { as: "permissive", for: "select", to: ["public"] }),
-]);
-
 export const ingestionJobs = pgTable("ingestion_jobs", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	householdId: uuid("household_id").notNull(),
@@ -358,6 +295,74 @@ export const ingestionJobs = pgTable("ingestion_jobs", {
 	pgPolicy("ingestion_jobs household write", { as: "permissive", for: "insert", to: ["public"] }),
 	pgPolicy("ingestion_jobs household read", { as: "permissive", for: "select", to: ["public"] }),
 ]);
+
+export const driveFolders = pgTable("drive_folders", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	householdId: uuid("household_id").notNull(),
+	createdBy: uuid("created_by").notNull(),
+	folderId: text("folder_id").notNull(),
+	folderName: text("folder_name"),
+	ownerEmail: citext("owner_email"),
+	confirmedAt: timestamp("confirmed_at", { withTimezone: true, mode: 'string' }),
+	isActive: boolean("is_active").default(true).notNull(),
+	lastListedAt: timestamp("last_listed_at", { withTimezone: true, mode: 'string' }),
+	lastError: text("last_error"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.householdId],
+			foreignColumns: [households.id],
+			name: "drive_folders_household_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [profiles.id],
+			name: "drive_folders_created_by_fkey"
+		}),
+	unique("drive_folders_household_id_folder_id_key").on(table.householdId, table.folderId),
+	pgPolicy("drive_folders household read", { as: "permissive", for: "select", to: ["public"], using: sql`is_household_member(household_id, app_uid())` }),
+	pgPolicy("drive_folders household write", { as: "permissive", for: "insert", to: ["public"] }),
+	pgPolicy("drive_folders household update", { as: "permissive", for: "update", to: ["public"] }),
+	pgPolicy("drive_folders household delete", { as: "permissive", for: "delete", to: ["public"] }),
+]);
+
+export const driveFiles = pgTable("drive_files", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	householdId: uuid("household_id").notNull(),
+	folderId: uuid("folder_id").notNull(),
+	driveFileId: text("drive_file_id").notNull(),
+	name: text().notNull(),
+	path: text(),
+	mimeType: text("mime_type").notNull(),
+	modifiedTime: timestamp("modified_time", { withTimezone: true, mode: 'string' }),
+	status: text().default('pending').notNull(),
+	jobId: uuid("job_id"),
+	error: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("drive_files_folder_status_idx").using("btree", table.folderId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.householdId],
+			foreignColumns: [households.id],
+			name: "drive_files_household_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.folderId],
+			foreignColumns: [driveFolders.id],
+			name: "drive_files_folder_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.jobId],
+			foreignColumns: [ingestionJobs.id],
+			name: "drive_files_job_id_fkey"
+		}).onDelete("set null"),
+	unique("drive_files_household_id_drive_file_id_key").on(table.householdId, table.driveFileId),
+	check("drive_files_status_check", sql`status = ANY (ARRAY['pending'::text, 'queued'::text, 'unsupported'::text, 'failed'::text])`),
+	pgPolicy("drive_files household read", { as: "permissive", for: "select", to: ["public"], using: sql`is_household_member(household_id, app_uid())` }),
+]);
+
 
 export const recipes = pgTable("recipes", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
@@ -432,36 +437,6 @@ export const recipes = pgTable("recipes", {
 	check("recipes_rating_check", sql`(rating >= 0) AND (rating <= 5)`),
 	check("recipes_cover_focal_x_check", sql`(cover_focal_x >= 0) AND (cover_focal_x <= 100)`),
 	check("recipes_cover_focal_y_check", sql`(cover_focal_y >= 0) AND (cover_focal_y <= 100)`),
-]);
-
-export const driveFileIndex = pgTable("drive_file_index", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	householdId: uuid("household_id").notNull(),
-	driveFileId: text("drive_file_id").notNull(),
-	fileName: text("file_name").notNull(),
-	folderPath: text("folder_path").default("").notNull(),
-	mimeType: text("mime_type").notNull(),
-	modifiedTime: timestamp("modified_time", { withTimezone: true, mode: 'string' }),
-	indexStatus: text("index_status").default('pending').notNull(),
-	currentPage: integer("current_page"),
-	totalPages: integer("total_pages"),
-	recipeTitles: text("recipe_titles").array().default(sql`'{}'`).notNull(),
-	indexedAt: timestamp("indexed_at", { withTimezone: true, mode: 'string' }),
-	error: text(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	indexMethod: text("index_method"),
-}, (table) => [
-	index("drive_file_index_household_status").using("btree", table.householdId.asc().nullsLast().op("uuid_ops"), table.indexStatus.asc().nullsLast().op("uuid_ops")),
-	foreignKey({
-			columns: [table.householdId],
-			foreignColumns: [households.id],
-			name: "drive_file_index_household_id_fkey"
-		}).onDelete("cascade"),
-	unique("drive_file_index_household_id_drive_file_id_key").on(table.householdId, table.driveFileId),
-	pgPolicy("household members can manage drive_file_index", { as: "permissive", for: "all", to: ["public"], using: sql`(household_id IN ( SELECT household_members.household_id
-   FROM household_members
-  WHERE (household_members.user_id = auth.uid())))` }),
 ]);
 
 export const householdMembers = pgTable("household_members", {

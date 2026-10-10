@@ -14,6 +14,8 @@ type FileUploadedData = {
   /** Explicit 1-based pages the user picked ("2, 5-8, 13-15"). */
   pageNumbers?: number[];
   allowedTitles?: string[];
+  /** "drive" for the folder sync — the orchestrator then skims and auto-selects. */
+  source?: "drive";
 };
 
 /**

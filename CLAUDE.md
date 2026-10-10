@@ -174,8 +174,20 @@ When touching it:
 - Keep activity payloads minimal — ids only; fetch the rest from the database inside the step.
 - `ingestion_events` rows are the per-job audit log; token usage and estimated cost live on the
   job row.
-- **`functions/` is not deployed by CI.** After changing it:
+- **`functions/` deploys from CI** (`deploy-functions` in `build.yml`), after the app and only
+  when `functions/**` changed. A manual publish still works:
   `cd functions && npm run build && func azure functionapp publish func-recipe-jobs`.
+
+**Google Drive folder sync** (`lib/ingestion/drive-sync.ts`, `lib/integrations/google-drive.ts`).
+A household *shares* a Drive folder with the app's service account
+(`GOOGLE_SERVICE_ACCOUNT_EMAIL`) — no user OAuth, no stored tokens. In Azure the managed identity
+reaches Google through Workload Identity Federation (`GOOGLE_WIF_*`); locally your gcloud
+Application Default Credentials impersonate the same service account. The `driveSync` timer
+(every 5 min) re-lists folders every 30 min into `drive_files` and starts at most 3 files at a
+time. Drive jobs (`source: "drive"`) **always skim**, and the skim marks titles the household
+already has (`in_library`), so a re-synced folder never duplicates: nothing new → skipped;
+≤ 10 pages → new recipes import without the picker; longer → the picker, duplicates unticked.
+The folder's Drive owner must be a household member.
 
 `recipe_status`: `draft → processing → needs_review → published`, plus terminal `failed`.
 

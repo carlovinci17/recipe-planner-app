@@ -23,7 +23,13 @@ type SkimRecipe = {
   title: string;
   summary: string;
   source_page_index: number | null;
+  /** Set by the skim step when the household already has a recipe with this title. */
+  in_library?: boolean;
 };
+
+/** Everything not already in the library starts ticked. */
+const defaultSelection = (recipes: SkimRecipe[]) =>
+  new Set(recipes.flatMap((r, i) => (r.in_library ? [] : [i])));
 
 /**
  * Two-phase import: Phase 1 (skim) returns this list of recipe candidates.
@@ -31,7 +37,8 @@ type SkimRecipe = {
  * before Phase 2 (deep extract) commits expensive Opus tokens.
  *
  * UX notes:
- *   - All recipes default-checked. The expected interaction is "scan,
+ *   - Recipes default-checked, except ones already in the library (skim marks
+ *     them `in_library`), so re-importing a cookbook doesn't duplicate. The expected interaction is "scan,
  *     uncheck a few, hit Import".
  *   - Cancel is *not* a "close the dialog" — it commits an empty selection
  *     and marks the job failed. The dialog dismisses without choosing
@@ -76,9 +83,7 @@ export function SkimPreviewDialog({
 }) {
   // Selection is by index in the recipes array — same indices the server
   // action consumes, so no name-matching ambiguity.
-  const [selected, setSelected] = useState<Set<number>>(
-    () => new Set(recipes.map((_, i) => i)),
-  );
+  const [selected, setSelected] = useState<Set<number>>(() => defaultSelection(recipes));
   // Batch source override. Pre-filled from the AI/job-derived defaults; the
   // user can type to rebrand the whole import (e.g. "Health with Bec").
   const [sourceName, setSourceName] = useState<string>(defaultSourceName ?? "");
@@ -90,7 +95,7 @@ export function SkimPreviewDialog({
   // mid-edit by an incidental re-render.
   useEffect(() => {
     if (open) {
-      setSelected(new Set(recipes.map((_, i) => i)));
+      setSelected(defaultSelection(recipes));
       setSourceName(defaultSourceName ?? "");
       setSourceUrl(defaultSourceUrl ?? "");
     }
@@ -242,6 +247,11 @@ export function SkimPreviewDialog({
                     {bookPage ? (
                       <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                         page {bookPage}
+                      </span>
+                    ) : null}
+                    {r.in_library ? (
+                      <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        Already in your library
                       </span>
                     ) : null}
                   </div>

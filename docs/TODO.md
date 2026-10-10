@@ -9,6 +9,13 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 ## Open
 
+- [ ] **Google Drive sync — first real run** — built and deployed 2026-10-11 (see Done). Still to
+      do with a real folder: share it with
+      `bitebuddy-drive@recipe-planner-ai-app.iam.gserviceaccount.com`, paste the link on Add Recipes →
+      Google Drive, check the preview, Start import, and watch the first files land. This is also
+      the first production test of the Azure → Google federation. Locally, Drive needs
+      `gcloud auth application-default login` once.
+
 - [ ] **Voice input v2 — Azure AI Speech** (only if v1 falls short) — v1 uses the browser's Web
       Speech API, which Firefox lacks and iOS Safari only offers with Siri enabled. Upgrade path:
       Azure AI Speech (keyless via managed identity), which would also let the assistant reply aloud.
@@ -21,24 +28,6 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       the **External ID "Recipe Planner" tenant**, not the home tenant. See ADR-0012. Nothing in code
       depends on this. _(Post-logout redirect URI is already registered — done 2026-08-20.)_
 
-- [ ] **Verify PDF import on the cutover stack (Slice 6)** — photo/image import verified working on
-      Neon+Durable (2026-08-19, after the ingestion_events INSERT-policy fix). Still need to run a
-      **PDF** import end-to-end on the new stack (rasterize → skim/extract → needs_review) to confirm
-      the `prepare` → vision-chunk path works on Durable+Neon, not just the single-image path.
-
-- [ ] **Re-build the Google Drive import on Durable Functions + Neon** — the subsystem was
-      DELETED on 2026-10-04 (not merely disabled), because its four Inngest functions were the
-      last consumers of the service-role Supabase client. Recoverable from git at `f9d0f20^`.
-      What went: `drive-poller`, `process-drive-file`, `index-drive-file` and
-      `sweep-stuck-drive-index`; `lib/integrations/google-drive.ts`;
-      `lib/services/integration-service.ts`; `app/api/integrations/google/{start,callback}`;
-      `app/api/webhooks/drive` (the n8n webhook); the `/settings/integrations` page and its 4
-      components; and the import page's Drive tab, `import-bulk.tsx` and
-      `drive-index-manager.tsx`. The `drive_watched_folders` / `integration_accounts` tables and
-      the `GOOGLE_*` Key Vault secrets still exist. Needs a NEW Google OAuth client — the old
-      one (`581514…`) was deleted. Pattern to follow: `process-url-core.ts` plus a Durable
-      orchestrator/timer.
-
 - [ ] **Langfuse: token/model capture for AzureChatOpenAI** (found in Module 12.2 self-audit) — traces
       flow + structure is captured, but generations show `model=null` / `usage=null`. The `@langfuse/langchain`
       v5 OTEL handler doesn't map `AzureChatOpenAI` token usage (the docs' example uses plain OpenAI). The
@@ -46,22 +35,10 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       (custom callback → set Langfuse observation usage), OpenAI-SDK OTEL instrumentation, or the OpenAI v1
       endpoint via `ChatOpenAI`. Needed for ADR-0010's cost monitoring. Revisit in 12.3.
 
-- [ ] **Tip-capture prompt tweak** — golden set (7.3) showed gpt-4o-mini captures recipe
-      tips/notes on only ~2 of 10 recipes vs Claude's near-full coverage. Likely a prompt
-      fix, not a capability gap: nudge `RECIPE_EXTRACTION_SYSTEM` to always capture
-      tips/back-tips into `source_notes`, then re-run `npm run test:golden` to confirm.
-
 - [ ] **Revoke the migration-era Anthropic key** at Module 11 cutover — the low-cap key
       used for golden-set/local Claude runs during the Foundry migration. (Belt-and-suspenders
       with `decommission-checklist.md`'s `anthropic-api-key` line.) Also rotate the key that
       was pasted into chat on 2026-08-18.
-
-- [ ] **New recipes never get an embedding** — semantic search silently misses them. Nothing in
-      `lib/ingestion/` or `lib/inngest/` generates one; `lib/agents/embeddings.ts` only exports
-      `embedQuery` (search side), and `scripts/backfill-embeddings.ts` is a manual one-off. Count is
-      drifting: **8 of 180 recipes unembedded** as of 2026-09-02 (was 5 of 177 earlier the same day —
-      every recipe added since has none). Fix: embed at persist time (or on publish), then backfill
-      the current 8.
 
 - [ ] **Household switcher UI was never built** — `app/(app)/layout.tsx` passes `activeHousehold`
       and `households` into `AppShell`, and `switchHouseholdAction` exists in
@@ -75,14 +52,6 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       _errors_ fail the build today, so warnings can creep back in unnoticed. Adding
       `--max-warnings 0` to the `lint` script locks in the clean slate.
 
-- [ ] **The Azure Functions app is not deployed by CI** — `.github/workflows/build.yml` builds and
-      deploys only the container app, so any change to `functions/src/**` (the Durable orchestrator)
-      needs a manual `cd functions && npm run build && func azure functionapp publish
-    func-recipe-jobs`. Easy to forget, and the symptom is an orchestrator running old code against
-      new app endpoints. Adding a job needs two things decided: the `id-github-deploy` identity must
-      have rights on `func-recipe-jobs`, and the job should only fire when `functions/**` actually
-      changed (a `paths:` filter) so every UI commit doesn't republish it.
-
 - [ ] **Monthly cost overview** — after cutover, produce a clear guide to _where to find the monthly
       cost_ of the whole app: Azure Cost Management (per resource group / service — Container Apps,
       Foundry models + embeddings, Web PubSub, Blob, Key Vault, App Insights, Functions) **plus** the
@@ -93,6 +62,28 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 Kept for the detail — what was actually wrong is usually more useful than the fact that
 it is fixed. Newest first.
+
+- [x] **Google Drive folder sync, multi-section recipes, embeddings, Functions CI, tips** — DONE
+      (2026-10-11).
+      - **Drive sync (rebuilt):** share a folder (subfolders included) with the app's Google
+        service account — no OAuth, no stored tokens, keyless Azure → Google Workload Identity
+        Federation. `drive_folders` / `drive_files` replace the old OAuth tables (migration
+        `20261011090000`). Timer every 5 min, 3 files in flight. Mix rule: Drive jobs always skim;
+        titles already in the library are skipped; ≤ 10 pages auto-import, longer ones use the
+        picker. Uploads benefit too: the picker now unticks titles already in the library.
+      - **Missing ingredients in multi-section recipes:** chunk-edge halves are merged instead of
+        one being dropped, the prompt treats "For the sauce" lists as sections of one recipe, and
+        the recipe page shows section headings.
+      - **Embeddings:** every new and edited recipe is embedded; the 10 missing were backfilled.
+      - **Functions CI:** `deploy-functions` job, path-filtered to `functions/**`.
+      - **Tips:** the prompt now says what `source_notes` is for, and tips land in the recipe's
+        Notes (they used to sit in `ai_metadata`, unseen).
+      - **PDF import verified end-to-end on Durable + Neon:** a 1-page PDF reached needs_review
+        with 3 ingredient sections, tips in Notes, a meal type and an embedding; a multi-page PDF
+        skimmed and parked on the picker; test rows deleted.
+      - **Bicep:** the template now adopts the two live role assignments by name. Our earlier note
+        said re-applying "adds harmless duplicates" — wrong: Azure rejects it with
+        `RoleAssignmentExists` and the deployment fails.
 
 - [x] **Voice input, agent faces, mobile card actions, edit-page polish** — DONE (2026-10-10).
       - **Voice input (v1):** mic button in the Kitchen Assistant (`use-speech-input.ts`, browser Web
@@ -150,9 +141,8 @@ it is fixed. Newest first.
         (what-if diffs arrays positionally and the live order differs), `AZURE_CLIENT_ID` (an
         unresolvable `reference()` at plan time), and `runningStatus` / `ingress.exposedPort`
         (read-only). Anything else is real.
-      - Also expect **2 `Create` role assignments** on every run: bicep derives its names with
-        `guid()`, and the live assignments were created imperatively under different names.
-        Applying adds duplicates — harmless (same principal, role and scope) but untidy.
+      - The 2 role assignments are adopted by name (params default to the live GUIDs), so
+        `what-if` shows them as Modify, not Create. See the 2026-10-11 Done entry.
 
 - [x] **Meal-type / diet-type / cuisine filters built a malformed array literal** — DONE
       (2026-10-09), found by the rebuilt integration suite on its first run.

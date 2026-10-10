@@ -8,15 +8,13 @@ import { raiseIngestionEvent } from "@/lib/ingestion/start-job";
 import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logger";
 import { MAX_SELECTED_PAGES } from "@/lib/ingestion/page-range";
+import { driveService } from "@/lib/services/drive-service";
 
 /**
  * Authorization for every action in this file: the caller must belong to the
  * household they are acting on. Defence in depth — Row-Level Security (RLS)
  * enforces the same rule at the row level, but an action that checks first
  * fails with a clear message instead of a silently empty result.
- *
- * Lived further down the file until the Google Drive actions above it were
- * removed with the Inngest decommission.
  */
 async function assertMembership(householdId: string) {
   const memberships = await householdService.listForCurrentUser();
@@ -285,5 +283,76 @@ export async function loadActiveJobsAction(input: {
   } catch (err) {
     logger.error({ err }, "loadActiveJobsAction failed");
     return { ok: false as const, error: (err as Error).message };
+  }
+}
+
+// ── Google Drive folder sync ─────────────────────────────────────────────────
+
+const DriveConnectSchema = z.object({
+  householdId: z.string().uuid(),
+  link: z.string().min(5).max(500),
+});
+
+export async function connectDriveFolderAction(input: z.infer<typeof DriveConnectSchema>) {
+  const parsed = DriveConnectSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Paste a Google Drive folder link." };
+  try {
+    await assertMembership(parsed.data.householdId);
+    const result = await driveService.connect(parsed.data);
+    if (result.ok) revalidatePath("/recipes/import");
+    return result;
+  } catch (err) {
+    logger.error({ err }, "connectDriveFolderAction failed");
+    return { ok: false as const, error: "Couldn't reach Google Drive just now. Try again in a moment." };
+  }
+}
+
+const DriveFolderSchema = z.object({
+  householdId: z.string().uuid(),
+  folderRowId: z.string().uuid(),
+});
+
+export async function confirmDriveFolderAction(input: z.infer<typeof DriveFolderSchema>) {
+  const parsed = DriveFolderSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid folder" };
+  try {
+    await assertMembership(parsed.data.householdId);
+    await driveService.confirm(parsed.data);
+    revalidatePath("/recipes/import");
+    return { ok: true as const };
+  } catch (err) {
+    logger.error({ err }, "confirmDriveFolderAction failed");
+    return { ok: false as const, error: "Couldn't start the import. Try again in a moment." };
+  }
+}
+
+export async function syncDriveFolderAction(input: z.infer<typeof DriveFolderSchema>) {
+  const parsed = DriveFolderSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid folder" };
+  try {
+    await assertMembership(parsed.data.householdId);
+    const preview = await driveService.syncNow(parsed.data);
+    revalidatePath("/recipes/import");
+    return preview ? { ok: true as const, preview } : { ok: false as const, error: "Folder not found" };
+  } catch (err) {
+    logger.error({ err }, "syncDriveFolderAction failed");
+    return {
+      ok: false as const,
+      error: "Couldn't read that folder. Check it is still shared with the app.",
+    };
+  }
+}
+
+export async function removeDriveFolderAction(input: z.infer<typeof DriveFolderSchema>) {
+  const parsed = DriveFolderSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid folder" };
+  try {
+    await assertMembership(parsed.data.householdId);
+    await driveService.remove(parsed.data);
+    revalidatePath("/recipes/import");
+    return { ok: true as const };
+  } catch (err) {
+    logger.error({ err }, "removeDriveFolderAction failed");
+    return { ok: false as const, error: "Couldn't remove that folder." };
   }
 }

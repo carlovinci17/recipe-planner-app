@@ -124,7 +124,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         name: 'recipe-planner'
         image: containerImage
         resources: { cpu: json('0.5'), memory: '1Gi' }
-        // RECONCILED 2026-10-08 against the live app — all 18 variables.
+        // RECONCILED 2026-10-08 against the live app — 18 variables; 21 with the
+        // Google Drive trio added 2026-10-11.
         //
         // This list previously held 3. The other 15 had been added imperatively
         // with `az containerapp update` across Modules 4-11 and never written
@@ -161,7 +162,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'AUTH_MICROSOFT_ENTRA_ID_ISSUER',        secretRef: 'entra-issuer' }
           { name: 'INGESTION_INTERNAL_SECRET',             secretRef: 'ingestion-secret' }
 
-          // Plain (10). AI_PROVIDER is the only provider switch left after the
+          // Plain (13). AI_PROVIDER is the only provider switch left after the
           // Supabase/Inngest decommission — the rest were deleted because each
           // had one working position and a missing one silently broke a feature.
           { name: 'AI_PROVIDER',              value: 'foundry' }
@@ -172,6 +173,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'FUNCTIONS_BASE_URL',       value: 'https://func-recipe-jobs.azurewebsites.net' }
           { name: 'NEXT_PUBLIC_APP_URL',      value: appPublicUrl }
           { name: 'NODE_ENV',                 value: 'production' }
+          // Google Drive folder sync: the service account households share
+          // their folder with, and the Workload Identity Federation pair that
+          // lets this app's managed identity act as it — no Google key exists.
+          // (Google project recipe-planner-ai-app; Entra app bitebuddy-gcp-drive-wif.)
+          { name: 'GOOGLE_SERVICE_ACCOUNT_EMAIL', value: 'bitebuddy-drive@recipe-planner-ai-app.iam.gserviceaccount.com' }
+          { name: 'GOOGLE_WIF_AUDIENCE',          value: '//iam.googleapis.com/projects/206666617044/locations/global/workloadIdentityPools/azure-bitebuddy/providers/azure-mi' }
+          { name: 'GOOGLE_WIF_AZURE_RESOURCE',    value: 'api://1fd5328d-e623-4d47-a0ed-f2894201f1ce' }
           // Two that a codebase grep cannot prove are used, because a framework
           // reads them for itself. Both were on the "looks dead" side of the
           // decommission audit, and removing either takes production down:
@@ -242,12 +250,22 @@ resource sAppI 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = { parent: keyVau
 
 
 // Built-in role IDs
+// The two live role assignments were created imperatively, under names that are
+// not what guid() derives here. Re-creating them under the derived names FAILS
+// the deployment (RoleAssignmentExists — Azure refuses a second assignment of
+// the same role to the same principal at the same scope), so the template
+// adopts the live ones by name. A fresh environment passes '' to derive new ones.
+@description('Name (GUID) of the existing app-identity → Key Vault Secrets User assignment; empty to derive one')
+param appKvRoleAssignmentName string = '2654dd61-a5ef-44e0-9548-9c4dd6da0f90'
+@description('Name (GUID) of the existing deploy-identity → Contributor assignment; empty to derive one')
+param deployRoleAssignmentName string = 'de702987-b154-4267-87c0-b85777fab73f'
+
 var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 var contributorRoleId   = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
 
 // app identity → Key Vault Secrets User (read secrets)
 resource appKvRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, appIdentity.id, kvSecretsUserRoleId)
+  name: empty(appKvRoleAssignmentName) ? guid(keyVault.id, appIdentity.id, kvSecretsUserRoleId) : appKvRoleAssignmentName
   scope: keyVault
   properties: {
     principalId: appIdentity.properties.principalId
@@ -258,7 +276,7 @@ resource appKvRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 
 // deploy identity → Contributor on the resource group
 resource deployRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(resourceGroup().id, deployIdentity.id, contributorRoleId)
+  name: empty(deployRoleAssignmentName) ? guid(resourceGroup().id, deployIdentity.id, contributorRoleId) : deployRoleAssignmentName
   scope: resourceGroup()
   properties: {
     principalId: deployIdentity.properties.principalId

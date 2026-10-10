@@ -59,6 +59,10 @@ export async function persistDraftRecipe(args: {
       coverImagePath: args.coverImagePath ?? null,
       imagePaths: args.imagePaths ?? [],
       nutrition: args.extracted.nutrition ?? {},
+      // The page's own tips ("make ahead", "swap the cream for…") become the
+      // recipe's Notes, shown above the method and editable on review. They used
+      // to sit in ai_metadata only, where nobody ever saw them.
+      notes: args.extracted.source_notes?.trim() || null,
       aiMetadata: { source_notes: args.extracted.source_notes },
       aiConfidence: args.extracted.confidence,
       aiModel: args.aiModel,

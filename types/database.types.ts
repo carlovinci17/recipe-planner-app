@@ -42,7 +42,6 @@ export type IngestionEventKind =
   | "recipe_ready_for_review"
   | "recipe_saved"
   | "failed";
-export type IntegrationProvider = "google_drive";
 
 export type Database = {
   public: {
@@ -610,150 +609,6 @@ export type Database = {
         };
         Relationships: [];
       };
-      integration_accounts: {
-        Row: {
-          id: UUID;
-          household_id: UUID;
-          user_id: UUID;
-          provider: IntegrationProvider;
-          external_id: string;
-          email: string | null;
-          access_token: string;
-          refresh_token: string | null;
-          scopes: string[];
-          expires_at: Timestamp | null;
-          metadata: Json;
-          created_at: Timestamp;
-          updated_at: Timestamp;
-        };
-        Insert: {
-          id?: UUID;
-          household_id: UUID;
-          user_id: UUID;
-          provider: IntegrationProvider;
-          external_id: string;
-          email?: string | null;
-          access_token: string;
-          refresh_token?: string | null;
-          scopes?: string[];
-          expires_at?: Timestamp | null;
-          metadata?: Json;
-          created_at?: Timestamp;
-          updated_at?: Timestamp;
-        };
-        Update: {
-          id?: UUID;
-          household_id?: UUID;
-          user_id?: UUID;
-          provider?: IntegrationProvider;
-          external_id?: string;
-          email?: string | null;
-          access_token?: string;
-          refresh_token?: string | null;
-          scopes?: string[];
-          expires_at?: Timestamp | null;
-          metadata?: Json;
-          created_at?: Timestamp;
-          updated_at?: Timestamp;
-        };
-        Relationships: [];
-      };
-      drive_file_index: {
-        Row: {
-          id: UUID;
-          household_id: UUID;
-          drive_file_id: string;
-          file_name: string;
-          folder_path: string;
-          mime_type: string;
-          modified_time: Timestamp | null;
-          index_status: string;
-          index_method: string | null;
-          current_page: number | null;
-          total_pages: number | null;
-          recipe_titles: string[];
-          indexed_at: Timestamp | null;
-          error: string | null;
-          created_at: Timestamp;
-          updated_at: Timestamp;
-        };
-        Insert: {
-          id?: UUID;
-          household_id: UUID;
-          drive_file_id: string;
-          file_name: string;
-          folder_path?: string;
-          mime_type: string;
-          modified_time?: Timestamp | null;
-          index_status?: string;
-          index_method?: string | null;
-          current_page?: number | null;
-          total_pages?: number | null;
-          recipe_titles?: string[];
-          indexed_at?: Timestamp | null;
-          error?: string | null;
-          created_at?: Timestamp;
-          updated_at?: Timestamp;
-        };
-        Update: {
-          id?: UUID;
-          household_id?: UUID;
-          drive_file_id?: string;
-          file_name?: string;
-          folder_path?: string;
-          mime_type?: string;
-          modified_time?: Timestamp | null;
-          index_status?: string;
-          index_method?: string | null;
-          current_page?: number | null;
-          total_pages?: number | null;
-          recipe_titles?: string[];
-          indexed_at?: Timestamp | null;
-          error?: string | null;
-          created_at?: Timestamp;
-          updated_at?: Timestamp;
-        };
-        Relationships: [];
-      };
-      drive_watched_folders: {
-        Row: {
-          id: UUID;
-          account_id: UUID;
-          household_id: UUID;
-          folder_id: string;
-          folder_name: string | null;
-          page_token: string | null;
-          is_active: boolean;
-          last_synced_at: Timestamp | null;
-          created_at: Timestamp;
-          updated_at: Timestamp;
-        };
-        Insert: {
-          id?: UUID;
-          account_id: UUID;
-          household_id: UUID;
-          folder_id: string;
-          folder_name?: string | null;
-          page_token?: string | null;
-          is_active?: boolean;
-          last_synced_at?: Timestamp | null;
-          created_at?: Timestamp;
-          updated_at?: Timestamp;
-        };
-        Update: {
-          id?: UUID;
-          account_id?: UUID;
-          household_id?: UUID;
-          folder_id?: string;
-          folder_name?: string | null;
-          page_token?: string | null;
-          is_active?: boolean;
-          last_synced_at?: Timestamp | null;
-          created_at?: Timestamp;
-          updated_at?: Timestamp;
-        };
-        Relationships: [];
-      };
     };
     Views: {
       [_ in never]: never;
@@ -790,7 +645,6 @@ export type Database = {
       recipe_status: RecipeStatus;
       meal_slot: MealSlot;
       ingestion_event_kind: IngestionEventKind;
-      integration_provider: IntegrationProvider;
     };
     CompositeTypes: {
       [_ in never]: never;
