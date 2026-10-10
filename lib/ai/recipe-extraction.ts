@@ -81,7 +81,8 @@ export async function extractRecipeFromText(args: {
   text: string;
   url?: string;
 }): Promise<StructuredCallResult<RecipeExtractionResult>> {
-  const trimmed = args.text.length > 16000 ? `${args.text.slice(0, 16000)}\n[truncated]` : args.text;
+  const trimmed =
+    args.text.length > 16000 ? `${args.text.slice(0, 16000)}\n[truncated]` : args.text;
 
   return ai.callStructured({
     schema: RecipeExtractionResultSchema,
@@ -194,28 +195,42 @@ export async function tagRecipe(recipe: {
  */
 export async function improveRecipe(recipe: {
   title: string;
-  description?: string | null;
+  description: string | null;
+  servings: number | null;
+  prepTimeMin: number | null;
+  cookTimeMin: number | null;
+  nutrition: Record<string, number | null>;
+  mealTypes: string[];
+  dietTypes: string[];
+  cuisines: string[];
+  tags: string[];
   ingredients: string[];
-  instructions?: string[];
-  filledFields: string[];
+  instructions: string[];
 }): Promise<StructuredCallResult<RecipeImprovement>> {
   return ai.callStructured({
     schema: RecipeImprovementSchema,
     schemaName: "recipe_improvement",
-    // Same tier as tagging: this is classification plus light estimation, not
-    // reasoning. Haiku rejects `effort`/`thinking`, so neither is passed.
-    model: env.ANTHROPIC_MODEL_FAST,
-    maxOutputTokens: 900,
+    // Text tier, not the fast tagger: this rewrites ingredient lines and
+    // estimates nutrition from quantities, which Haiku-class models get wrong.
+    model: env.ANTHROPIC_MODEL_TEXT,
+    maxOutputTokens: 6000,
     messages: [
       { role: "system", content: RECIPE_IMPROVE_SYSTEM },
       {
         role: "user",
         content: JSON.stringify({
           title: recipe.title,
-          description: recipe.description ?? null,
-          ingredients: recipe.ingredients.slice(0, 60),
-          instructions: (recipe.instructions ?? []).slice(0, 30),
-          already_filled_by_user: recipe.filledFields,
+          description: recipe.description,
+          servings: recipe.servings,
+          prep_time_min: recipe.prepTimeMin,
+          cook_time_min: recipe.cookTimeMin,
+          nutrition_per_serving: recipe.nutrition,
+          meal_types: recipe.mealTypes,
+          diet_types: recipe.dietTypes,
+          cuisines: recipe.cuisines,
+          tags: recipe.tags,
+          ingredients: recipe.ingredients.slice(0, 80),
+          instructions: recipe.instructions.slice(0, 40),
         }),
       },
     ],

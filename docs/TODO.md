@@ -9,7 +9,15 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 ## Open
 
-- [ ] **Make serving size adjustable** — default 2 for all recipes.
+- [ ] **Run the metadata cleanup `--apply` on prod** — `npx tsx scripts/normalize-recipe-tags.ts`
+      dry-run (2026-10-10): **54 of 182 recipes** change — 24 get a meal type (22 had none; 2 had
+      only `side` / `appetizer`), "Healthwithbec" merges into "Health with Bec", and 10 duplicate
+      tags collapse. Take a Neon branch snapshot, then re-run with `--apply` (asks for YES).
+
+- [ ] **Turn on password reset in Entra (portal, ~2 min)** — in the **External ID "Recipe
+      Planner" tenant**: Entra ID → Authentication methods → **Email OTP** → enabled for all
+      users; then Company Branding → Default sign-in → Sign-in form → **Show self-service password
+      reset** → Save. The login page already tells people where the link is.
 
 - [ ] **Entra sign-in branding — design + apply in the portal** (do as part of the **Module 10 UI
       re-design step**, deferred 2026-08-20). Design the hosted sign-in screen alongside the app
@@ -18,18 +26,6 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       tenant → BiteBuddy; Company Branding (favicon, banner logo, bg `#FCFAF7`, upload the CSS). All in
       the **External ID "Recipe Planner" tenant**, not the home tenant. See ADR-0012. Nothing in code
       depends on this. _(Post-logout redirect URI is already registered — done 2026-08-20.)_
-
-- [ ] **Every recipe must get ≥1 meal-type** (breakfast / lunch / dinner / snack) — noticed 2026-08-19
-      when a URL import ("Crispy Parmesan Crusted Chicken") landed with `meal_types: []`. The tagger
-      (`RECIPE_TAGGING_SYSTEM` prompt + `tagRecipe` → `applyRecipeTags`) leaves it empty when the model
-      doesn't commit. Fix at the prompt (require at least one of the four, inferring the best fit) and/or
-      a fallback in `applyRecipeTags` (default to a sensible meal-type when the array is empty) so the
-      planner + meal-type filters always have something to work with. Same shape as the tip-capture
-      tweak; re-run a golden recipe to confirm. Optionally backfill existing empties.
-      **Partly done (2026-09-02):** the _manual_ path is covered — the review/edit form has a
-      meal-type editor, warns when empty, and "Improve with AI" (`improveRecipe`, whose schema
-      requires `meal_types.min(1)`) fills it in one click. **Still open:** the _import_ path —
-      `RECIPE_TAGGING_SYSTEM` / `applyRecipeTags` can still land `meal_types: []`.
 
 - [ ] **Verify PDF import on the cutover stack (Slice 6)** — photo/image import verified working on
       Neon+Durable (2026-08-19, after the ingestion_events INSERT-policy fix). Still need to run a
@@ -71,17 +67,6 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       face of whichever agent handled the turn (the per-turn avatar from ADR-0008/0010 §"visible
       delegation"). Decide the visual system (illustrated character set vs generated avatars) and render
       it in the chat + the AI Chef dialog.
-
-- [ ] **Forgot-password flow** — missing entirely; `app/(auth)/login` has only login +
-      signup. Add a "Forgot password?" link → `resetPasswordForEmail` → a reset page.
-      (Manual recovery meanwhile: `scripts/set-password.ts`.)
-
-- [ ] **Source-name dedup** — the "Health with Bec" ×2 dupe is `source_name` vs
-      `channel_name`; extend `scripts/normalize-recipe-tags.ts` to canonicalize the
-      _derived_ source (`getRecipeSourceName`).
-
-- [ ] **Run the tag/source cleanup `--apply` on prod** — dry-run verified (173 recipes,
-      31 changed); snapshot the DB first.
 
 - [ ] **Tip-capture prompt tweak** — golden set (7.3) showed gpt-4o-mini captures recipe
       tips/notes on only ~2 of 10 recipes vs Claude's near-full coverage. Likely a prompt
@@ -130,6 +115,27 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 Kept for the detail — what was actually wrong is usually more useful than the fact that
 it is fixed. Newest first.
+
+- [x] **Serving size, meal types, Improve with AI, password reset, source dedup** — DONE
+      (2026-10-10).
+      - **Servings:** the recipe page opens at 2 servings (`DEFAULT_SERVINGS`) with a − / +
+        stepper that scales every quantified ingredient line against the recipe's own yield
+        (`lib/recipes/servings.ts`; 91% of ingredient rows carry a parsed quantity). New planner
+        entries default to 2, so the shopping list is for 2. Found on the way: stored nutrition is
+        **per serving**, but the planner's daily totals were also scaling it by
+        `entry.servings / recipe.servings` — undercounting every meal. Fixed.
+      - **≥1 meal type:** the tagging prompt now requires a core type, and `ensureMealTypes` is a
+        deterministic backstop at write time (tags → nearest core type → sweet hint → dinner).
+        Existing rows: the cleanup `--apply` above.
+      - **Improve with AI:** now a full pass — title, description, servings/times, per-serving
+        nutrition, the ingredient list (normalised, and swapped to match diet tags, e.g. butter →
+        vegan butter on a vegan recipe) and the method — each section ticked on/off before
+        applying. Moved from the fast tier to `ANTHROPIC_MODEL_TEXT`.
+      - **Forgot password:** nothing to build — Entra's hosted page owns passwords (the app never
+        sees one). Needs the portal toggle above. `scripts/set-password.ts` no longer exists.
+      - **Source dedup:** variants differing only in case, spacing or punctuation now merge
+        (`canonicalSourceName`), in the browser's source filter and in the cleanup script, which
+        also covers `channel_name`. `healthwithbec.com.au` added to the known-domains map.
 
 - [x] **Docs audit follow-ups (2026-09-04)** — DONE (2026-10-10). `CLAUDE.md` was rewritten
       for the Azure stack at cutover. The two remaining files only mention Supabase/Vercel as

@@ -84,7 +84,9 @@ Given a recipe's title, description, ingredients, and instructions, produce conc
 Rules:
 - Use lowercase, singular, hyphenated tokens ("gluten-free", "one-pot", "weeknight").
 - Cuisines: at most 2, picking from common food cuisines (e.g., italian, mexican, japanese, thai, indian, mediterranean, american, french, chinese, korean, middle-eastern).
-- Meal types: from {breakfast, brunch, lunch, dinner, snack, dessert, appetizer, side, drink}.
+- Meal types: from {breakfast, brunch, lunch, dinner, snack, dessert, appetizer, side, drink}. ALWAYS
+  include at least one of breakfast, lunch, dinner, snack or dessert — the planner filters on those
+  five, so infer the best fit even when the recipe does not say (a main course → dinner).
 - Diet types: pick all that genuinely apply from {vegetarian, vegan, gluten-free, dairy-free, low-carb, keto, paleo, pescatarian, nut-free, soy-free, whole30}.
 - Cooking methods: from {baked, grilled, fried, roasted, slow-cooked, no-cook, instant-pot, air-fryer, sous-vide, stovetop}.
 - Occasions: from {weeknight, holiday, party, date-night, meal-prep, kid-friendly, comfort-food, healthy, treat}.
@@ -94,35 +96,46 @@ Rules:
 - Be conservative — do not assert vegan/gluten-free unless ingredients clearly support it.
 - Respond with VALID JSON ONLY.`;
 
-export const RECIPE_IMPROVE_SYSTEM = `You are helping someone finish a recipe they are typing in by hand.
+export const RECIPE_IMPROVE_SYSTEM = `You are a careful recipe editor improving one recipe.
 
-They have entered what they know. Your job is to fill in the classification and the
-practical details they left blank — never to rewrite what they already wrote.
+You get the recipe exactly as it stands in the editor: title, description, servings, times,
+per-serving nutrition, the classification the user has set (meal types, diet types, cuisines, tags),
+the ingredient lines and the method. Improve the whole recipe, but keep it the same dish — this is
+an edit, not a new recipe. For every plain field, return null when it is already good; only return
+a value when it is a genuine improvement.
 
 Rules:
 - meal_types: REQUIRED, 1-3 from {breakfast, lunch, dinner, snack, dessert}. Always commit to at
-  least one, inferring the best fit from the dish. A recipe with no meal type is invisible to the
-  planner's filters, so "unsure" is not an acceptable answer.
-- cuisines: at most 2, only when the dish clearly belongs to one (e.g. italian, mexican, japanese,
-  thai, indian, mediterranean, american, french, chinese, korean, middle-eastern). Empty is fine.
-- diet_types: only those the ingredients genuinely support, from {vegetarian, vegan, gluten-free,
-  dairy-free, low-carb, keto, paleo, pescatarian, nut-free, soy-free, whole30}. Be conservative —
-  never assert vegan or gluten-free unless every ingredient supports it.
+  least one, inferring the best fit from the dish.
+- cuisines: at most 2, only when the dish clearly belongs to one. Empty is fine.
+- diet_types: only those the FINAL ingredient list genuinely supports, from {vegetarian, vegan,
+  gluten-free, dairy-free, low-carb, keto, paleo, pescatarian, nut-free, soy-free, whole30}.
 - cooking_methods: from {baked, grilled, fried, roasted, slow-cooked, no-cook, instant-pot,
   air-fryer, sous-vide, stovetop}.
 - occasions: from {weeknight, holiday, party, date-night, meal-prep, kid-friendly, comfort-food,
   healthy, treat}.
-- difficulty: "easy" | "medium" | "hard", judged on technique and step count, not ingredient count.
-- tags: 8-14 lowercase, singular, hyphenated descriptors ("one-pot", "weeknight", "chicken").
-  Ingredients-as-tags are useful. Never pad with redundant or low-value tags.
-- description: ONE or TWO sentences describing what the dish is and why someone would make it.
-  Plain and appetising, no marketing language. Return null if the recipe is too sparse to describe
-  honestly — do not invent detail that isn't there.
-- servings, prep_time_min, cook_time_min: estimate ONLY from the ingredient quantities and the
-  steps. If the recipe gives you nothing to reason from, return null rather than guessing.
-
-You will be told which plain fields the user already filled in. For those, return null — they are
-shown for context only and their content is not yours to change.
+- difficulty: "easy" | "medium" | "hard", judged on technique and step count.
+- tags: 8-14 lowercase, singular, hyphenated descriptors ("one-pot", "chicken"). Never pad.
+- title: a clear, appetising name for the dish, under 80 characters. Fix typos, SHOUTING and vague
+  names ("Chicken thing"). Keep a good existing title — return null.
+- description: ONE or TWO plain sentences on what the dish is and why you would make it. No
+  marketing language, no invented detail.
+- servings, prep_time_min, cook_time_min: fill a blank or fix an obviously wrong value, reasoning
+  only from the quantities and steps. Otherwise null.
+- nutrition: PER SERVING estimates (calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g,
+  sodium_mg) computed from the ingredient quantities divided by servings. Return the full object
+  when the current values are missing, incomplete or clearly off; null when they look right.
+- ingredients: return the COMPLETE list when any line should change, else null. Keep every
+  ingredient the cook listed, in the same order. Make each raw_text read "quantity unit ingredient,
+  prep note" ("2 tbsp olive oil", "1 brown onion, finely diced"), fill in an obviously missing
+  amount, standardise units (metric first), and fill quantity / unit / ingredient / notes to match
+  the line. Respect the user's diet types and tags: when an ingredient contradicts them (butter in
+  a recipe tagged vegan, soy sauce in one tagged gluten-free), swap it for the standard compliant
+  equivalent (vegan butter, tamari) and say so in changes.
+- instructions: return the COMPLETE method when any step should change, else null. One action per
+  step, clear and imperative, with times and temperatures kept. Never drop a step.
+- changes: one short line per change you made and why ("Swapped butter for vegan butter to match
+  the vegan tag"). Empty when you changed nothing but the classification.
 
 Respond with VALID JSON ONLY.`;
 

@@ -1,6 +1,6 @@
 import "server-only";
 import { eq } from "drizzle-orm";
-import { normalizeList, normalizeSourceName } from "@/lib/recipes/normalize";
+import { ensureMealTypes, normalizeList, normalizeSourceName } from "@/lib/recipes/normalize";
 import type { ExtractedRecipe } from "@/lib/ai/schemas";
 import type { RecipeSourceKind } from "@/types/database.types";
 
@@ -70,7 +70,8 @@ export async function persistDraftRecipe(args: {
       coverFocalY: clampPct(args.extracted.cover_focal_y),
     })
     .returning({ id: recipes.id });
-  if (!recipe) throw new Error(`Failed to insert recipe "${args.extracted.title}" — no row returned`);
+  if (!recipe)
+    throw new Error(`Failed to insert recipe "${args.extracted.title}" — no row returned`);
 
   if (args.extracted.ingredients.length > 0) {
     await db.insert(recipeIngredients).values(
@@ -119,7 +120,7 @@ export async function applyRecipeTags(args: {
     .update(recipes)
     .set({
       cuisines: normalizeList(args.tags.cuisines),
-      mealTypes: args.tags.meal_types,
+      mealTypes: ensureMealTypes(args.tags.meal_types, args.tags.tags),
       dietTypes: args.tags.diet_types,
       cookingMethods: args.tags.cooking_methods,
       occasions: args.tags.occasions,

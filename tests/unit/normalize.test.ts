@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ensureMealTypes,
   normalizeTag,
   normalizeList,
   normalizeSourceName,
@@ -71,5 +72,32 @@ describe("canonicalSourceName", () => {
     expect(map.get("Health with Bec")).toBe("Health with Bec"); // 2 vs 1 → wins
     expect(map.get("Health With Bec")).toBe("Health with Bec");
     expect(map.get("BBC Good Food")).toBe("BBC Good Food");
+  });
+});
+
+describe("ensureMealTypes", () => {
+  it("keeps a list that already has a core meal type", () => {
+    expect(ensureMealTypes(["dinner", "side"])).toEqual(["dinner", "side"]);
+  });
+  it("takes a core type from the tags first", () => {
+    expect(ensureMealTypes([], ["pasta", "dinner"])).toEqual(["dinner"]);
+  });
+  it("maps a tagger-only type onto the nearest core one", () => {
+    expect(ensureMealTypes(["appetizer"])).toEqual(["appetizer", "snack"]);
+    expect(ensureMealTypes(["side"])).toEqual(["side", "dinner"]);
+  });
+  it("reads a sweet hint as dessert", () => {
+    expect(ensureMealTypes([], ["chocolate", "no-bake"])).toEqual(["dessert"]);
+  });
+  it("falls back to dinner", () => {
+    expect(ensureMealTypes([], [])).toEqual(["dinner"]);
+    expect(ensureMealTypes(null)).toEqual(["dinner"]);
+  });
+});
+
+describe("canonicalSourceName — punctuation and spacing", () => {
+  it("merges a domain-derived name into the spaced display", () => {
+    const m = canonicalSourceName(["Health with Bec", "Health with Bec", "Healthwithbec"]);
+    expect(m.get("Healthwithbec")).toBe("Health with Bec");
   });
 });

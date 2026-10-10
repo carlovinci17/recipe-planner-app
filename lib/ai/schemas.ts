@@ -126,15 +126,16 @@ export const RecipeTagsSchema = z.object({
 export type RecipeTags = z.infer<typeof RecipeTagsSchema>;
 
 // =====================================================================
-// "Improve with AI" (manual recipe entry)
+// "Improve with AI" (review/edit form)
 // =====================================================================
-// Powers the review/edit form's Improve button. Same taxonomy as tagging,
-// plus the handful of plain fields a hand-typed recipe usually leaves blank.
+// Powers the review/edit form's Improve button: a full pass over the recipe —
+// taxonomy, title, description, yield and times, per-serving nutrition, and the
+// ingredient and method lists.
 //
-// Every field is a *suggestion* the user accepts or rejects — nothing here is
-// written straight to the DB. The plain fields are nullable so the model can
-// say "no opinion" rather than inventing a number, and the action layer only
-// offers them for fields the user actually left empty.
+// Every field is a *suggestion* the user accepts or rejects section by section;
+// nothing here is written straight to the DB (propose → confirm → execute,
+// ADR-0010). `null` means "no change suggested", so the model is never forced
+// to rewrite something that is already good.
 
 /** The meal types the recipe browser filters on (recipes-browser.tsx). */
 export const MEAL_TYPE_VALUES = ["breakfast", "lunch", "dinner", "snack", "dessert"] as const;
@@ -148,11 +149,20 @@ export const RecipeImprovementSchema = z.object({
   occasions: z.array(z.string()).max(5).default([]),
   difficulty: z.enum(["easy", "medium", "hard"]).nullable().default(null),
   tags: z.array(z.string()).max(15).default([]),
-  /** One or two sentences. Only offered when the user left the description blank. */
+  title: z.string().min(1).max(120).nullable().default(null),
+  /** One or two sentences. */
   description: z.string().max(400).nullable().default(null),
   servings: z.number().int().min(1).max(50).nullable().default(null),
   prep_time_min: z.number().int().min(0).max(1440).nullable().default(null),
   cook_time_min: z.number().int().min(0).max(1440).nullable().default(null),
+  /** PER SERVING, matching how `recipes.nutrition` is stored and shown. */
+  nutrition: ExtractedNutritionSchema.nullable().default(null),
+  /** The whole list, in order, when any line should change; null otherwise. */
+  ingredients: z.array(ExtractedIngredientSchema).max(80).nullable().default(null),
+  /** The whole method, in order, when any step should change; null otherwise. */
+  instructions: z.array(z.string().min(1).max(2000)).max(40).nullable().default(null),
+  /** Short, plain-English reasons for each change, shown to the user. */
+  changes: z.array(z.string().max(200)).max(10).default([]),
 });
 
 export type RecipeImprovement = z.infer<typeof RecipeImprovementSchema>;

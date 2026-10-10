@@ -16,17 +16,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { RecipeCard } from "@/components/recipes/recipe-card";
 import { MultiSelectPopover } from "@/components/recipes/multi-select-popover";
 import { cn } from "@/lib/utils";
 import type { RecipeListItem } from "@/lib/services/recipe-service";
 import { getRecipeSourceName } from "@/lib/recipes/source-name";
+import { canonicalSourceName, normalizeSourceName } from "@/lib/recipes/normalize";
 import { bulkDeleteRecipesAction, bulkPublishRecipesAction } from "./actions";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack", "dessert"] as const;
@@ -106,12 +102,16 @@ export function RecipesBrowser({
   const [reviewOnly, setReviewOnly] = useState(() => sp("review") === "1");
   const [meal, setMeal] = useState<string | null>(() => sp("meal"));
   const [diets, setDiets] = useState<string[]>(() => sp("diets")?.split(",").filter(Boolean) ?? []);
-  const [cuisines, setCuisines] = useState<string[]>(() => sp("cuisines")?.split(",").filter(Boolean) ?? []);
+  const [cuisines, setCuisines] = useState<string[]>(
+    () => sp("cuisines")?.split(",").filter(Boolean) ?? [],
+  );
   const [maxTime, setMaxTime] = useState<number | null>(() => {
     const n = Number(sp("maxTime"));
     return Number.isFinite(n) && n > 0 ? n : null;
   });
-  const [sources, setSources] = useState<string[]>(() => sp("sources")?.split(",").filter(Boolean) ?? []);
+  const [sources, setSources] = useState<string[]>(
+    () => sp("sources")?.split(",").filter(Boolean) ?? [],
+  );
   const [favOnly, setFavOnly] = useState(() => sp("fav") === "1");
   const [minRating, setMinRating] = useState<number | null>(() => {
     const n = Number(sp("minRating"));
@@ -134,7 +134,8 @@ export function RecipesBrowser({
   }) {
     const params = new URLSearchParams(window.location.search);
     const set = (k: string, v: string | null | undefined) => {
-      if (v) params.set(k, v); else params.delete(k);
+      if (v) params.set(k, v);
+      else params.delete(k);
     };
     if ("meal" in patch) set("meal", patch.meal ?? null);
     if ("diets" in patch) set("diets", patch.diets?.join(",") || null);
@@ -156,17 +157,22 @@ export function RecipesBrowser({
   // source_url → friendly name (e.g. "https://recipetineats.com/..." →
   // "RecipeTin Eats"). Recipes without a source_url are excluded from the
   // source list.
-  const { allCuisines, allSources } = useMemo(() => {
+  //
+  // Source names are merged case/whitespace-insensitively ("Health with Bec"
+  // from source_name and "Health With Bec" from a YouTube channel_name are one
+  // source), so the filter offers each source once and matches every variant.
+  const { allCuisines, allSources, sourceOf } = useMemo(() => {
     const c = new Set<string>();
-    const s = new Set<string>();
-    for (const r of recipes) {
-      r.cuisines.forEach((x) => c.add(x));
-      const name = getRecipeSourceName(r);
-      if (name) s.add(name);
-    }
+    for (const r of recipes) r.cuisines.forEach((x) => c.add(x));
+    const canon = canonicalSourceName(recipes.map((r) => getRecipeSourceName(r)));
+    const sourceOf = (r: (typeof recipes)[number]) => {
+      const name = normalizeSourceName(getRecipeSourceName(r));
+      return name ? (canon.get(name) ?? name) : null;
+    };
     return {
       allCuisines: Array.from(c).sort(),
-      allSources: Array.from(s).sort(),
+      allSources: Array.from(new Set(canon.values())).sort(),
+      sourceOf,
     };
   }, [recipes]);
 
@@ -183,7 +189,9 @@ export function RecipesBrowser({
           r.cuisines.join(" "),
           r.meal_types.join(" "),
           r.diet_types.join(" "),
-        ].join(" ").toLowerCase();
+        ]
+          .join(" ")
+          .toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       if (reviewOnly && r.status !== "needs_review") return false;
@@ -198,7 +206,7 @@ export function RecipesBrowser({
         if (total === 0 || total > maxTime) return false; // 0 = no time data → excluded
       }
       if (sources.length) {
-        const recipeSource = getRecipeSourceName(r);
+        const recipeSource = sourceOf(r);
         if (!recipeSource || !sources.includes(recipeSource)) return false;
       }
       if (minRating) {
@@ -208,27 +216,48 @@ export function RecipesBrowser({
       }
       return true;
     });
-  }, [recipes, deferredQuery, reviewOnly, favOnly, meal, diets, cuisines, maxTime, sources, minRating, ratingAggregates]);
+  }, [
+    recipes,
+    sourceOf,
+    deferredQuery,
+    reviewOnly,
+    favOnly,
+    meal,
+    diets,
+    cuisines,
+    maxTime,
+    sources,
+    minRating,
+    ratingAggregates,
+  ]);
 
   function commitTextSearch(value: string) {
     // Preserve all active filter params when updating the text query.
     const next = new URLSearchParams(window.location.search);
-    if (value.trim()) next.set("q", value.trim()); else next.delete("q");
+    if (value.trim()) next.set("q", value.trim());
+    else next.delete("q");
     startTransition(() => router.push(`${pathname}?${next.toString()}`));
   }
 
   function removeChip(c: ChipRemoval) {
-    if (c.kind === "fav") { setFavOnly(false); syncUrl({ fav: false }); }
-    else if (c.kind === "meal") { setMeal(null); syncUrl({ meal: null }); }
-    else if (c.kind === "diet" && c.value) {
+    if (c.kind === "fav") {
+      setFavOnly(false);
+      syncUrl({ fav: false });
+    } else if (c.kind === "meal") {
+      setMeal(null);
+      syncUrl({ meal: null });
+    } else if (c.kind === "diet" && c.value) {
       const next = diets.filter((x) => x !== c.value);
-      setDiets(next); syncUrl({ diets: next });
+      setDiets(next);
+      syncUrl({ diets: next });
     } else if (c.kind === "cuisine" && c.value) {
       const next = cuisines.filter((x) => x !== c.value);
-      setCuisines(next); syncUrl({ cuisines: next });
+      setCuisines(next);
+      syncUrl({ cuisines: next });
     } else if (c.kind === "source" && c.value) {
       const next = sources.filter((x) => x !== c.value);
-      setSources(next); syncUrl({ sources: next });
+      setSources(next);
+      syncUrl({ sources: next });
     }
   }
 
@@ -241,16 +270,33 @@ export function RecipesBrowser({
     setFavOnly(false);
     setReviewOnly(false);
     setMinRating(null);
-    syncUrl({ meal: null, diets: [], cuisines: [], maxTime: null, sources: [], fav: false, review: false, minRating: null });
+    syncUrl({
+      meal: null,
+      diets: [],
+      cuisines: [],
+      maxTime: null,
+      sources: [],
+      fav: false,
+      review: false,
+      minRating: null,
+    });
     setQuery("");
     commitTextSearch("");
   }
 
   const activeChips: { key: string; label: string; remove: () => void }[] = [];
   if (favOnly)
-    activeChips.push({ key: "fav", label: "favourites", remove: () => removeChip({ kind: "fav" }) });
+    activeChips.push({
+      key: "fav",
+      label: "favourites",
+      remove: () => removeChip({ kind: "fav" }),
+    });
   if (meal)
-    activeChips.push({ key: `meal-${meal}`, label: meal, remove: () => removeChip({ kind: "meal" }) });
+    activeChips.push({
+      key: `meal-${meal}`,
+      label: meal,
+      remove: () => removeChip({ kind: "meal" }),
+    });
   for (const d of diets)
     activeChips.push({
       key: `diet-${d}`,
@@ -267,13 +313,19 @@ export function RecipesBrowser({
     activeChips.push({
       key: `time-${maxTime}`,
       label: `≤${maxTime} min`,
-      remove: () => { setMaxTime(null); syncUrl({ maxTime: null }); },
+      remove: () => {
+        setMaxTime(null);
+        syncUrl({ maxTime: null });
+      },
     });
   if (minRating)
     activeChips.push({
       key: `rating-${minRating}`,
       label: `${minRating}★ & up`,
-      remove: () => { setMinRating(null); syncUrl({ minRating: null }); },
+      remove: () => {
+        setMinRating(null);
+        syncUrl({ minRating: null });
+      },
     });
   for (const s of sources)
     activeChips.push({
@@ -286,8 +338,7 @@ export function RecipesBrowser({
 
   // ─── Selection helpers (owner-only) ────────────────────────────
   const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
-  const allVisibleSelected =
-    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   // Only needs_review recipes can be published, so the Publish action is shown
   // only when at least one selected recipe is actually in review.
   const selectedReviewCount = useMemo(
@@ -340,9 +391,7 @@ export function RecipesBrowser({
       setSelectedIds(new Set());
       setConfirmBulkDeleteOpen(false);
       setSelectMode(false);
-      toast.success(
-        `Deleted ${result.deleted} ${result.deleted === 1 ? "recipe" : "recipes"}`,
-      );
+      toast.success(`Deleted ${result.deleted} ${result.deleted === 1 ? "recipe" : "recipes"}`);
       // Force a server round-trip so any planner entries that referenced
       // these recipes show their cascade deletion.
       router.refresh();
@@ -365,7 +414,9 @@ export function RecipesBrowser({
       );
       setSelectedIds(new Set());
       setSelectMode(false);
-      toast.success(`Published ${result.published} ${result.published === 1 ? "recipe" : "recipes"}`);
+      toast.success(
+        `Published ${result.published} ${result.published === 1 ? "recipe" : "recipes"}`,
+      );
       router.refresh();
     });
   }
@@ -387,7 +438,11 @@ export function RecipesBrowser({
         {reviewCount > 0 && (
           <button
             type="button"
-            onClick={() => { const n = !reviewOnly; setReviewOnly(n); syncUrl({ review: n }); }}
+            onClick={() => {
+              const n = !reviewOnly;
+              setReviewOnly(n);
+              syncUrl({ review: n });
+            }}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
               reviewOnly
@@ -430,21 +485,78 @@ export function RecipesBrowser({
           <div className="space-y-4 overflow-y-auto p-4 pb-8">
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground">Meal type</p>
-              <SegmentedControl value={meal} options={MEAL_TYPES as readonly string[]} onChange={(v) => { setMeal(v); syncUrl({ meal: v }); }} />
+              <SegmentedControl
+                value={meal}
+                options={MEAL_TYPES as readonly string[]}
+                onChange={(v) => {
+                  setMeal(v);
+                  syncUrl({ meal: v });
+                }}
+              />
             </div>
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground">More filters</p>
               <div className="flex flex-wrap gap-2">
-                <Button variant={favOnly ? "default" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => { const n = !favOnly; setFavOnly(n); syncUrl({ fav: n }); }}>
+                <Button
+                  variant={favOnly ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 gap-1.5"
+                  onClick={() => {
+                    const n = !favOnly;
+                    setFavOnly(n);
+                    syncUrl({ fav: n });
+                  }}
+                >
                   <Star className={cn("h-3.5 w-3.5", favOnly && "fill-current")} /> Favourites
                 </Button>
-                <MultiSelectPopover label="Diet" options={DIET_TYPES} selected={diets} onChange={(v) => { setDiets(v); syncUrl({ diets: v }); }} searchPlaceholder="Search diets..." />
-                <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={(v) => { setCuisines(v); syncUrl({ cuisines: v }); }} emptyMessage={allCuisines.length === 0 ? "No cuisines yet." : "No matches."} searchPlaceholder="Search cuisines..." />
-                <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={(v) => { setSources(v); syncUrl({ sources: v }); }} emptyMessage={allSources.length === 0 ? "No sources yet." : "No matches."} searchPlaceholder="Search sources..." />
+                <MultiSelectPopover
+                  label="Diet"
+                  options={DIET_TYPES}
+                  selected={diets}
+                  onChange={(v) => {
+                    setDiets(v);
+                    syncUrl({ diets: v });
+                  }}
+                  searchPlaceholder="Search diets..."
+                />
+                <MultiSelectPopover
+                  label="Cuisine"
+                  options={allCuisines}
+                  selected={cuisines}
+                  onChange={(v) => {
+                    setCuisines(v);
+                    syncUrl({ cuisines: v });
+                  }}
+                  emptyMessage={allCuisines.length === 0 ? "No cuisines yet." : "No matches."}
+                  searchPlaceholder="Search cuisines..."
+                />
+                <MultiSelectPopover
+                  label="Source"
+                  options={allSources}
+                  selected={sources}
+                  onChange={(v) => {
+                    setSources(v);
+                    syncUrl({ sources: v });
+                  }}
+                  emptyMessage={allSources.length === 0 ? "No sources yet." : "No matches."}
+                  searchPlaceholder="Search sources..."
+                />
               </div>
               <div className="mt-2 space-y-2">
-                <TimeFilter value={maxTime} onChange={(v) => { setMaxTime(v); syncUrl({ maxTime: v }); }} />
-                <RatingFilter value={minRating} onChange={(v) => { setMinRating(v); syncUrl({ minRating: v }); }} />
+                <TimeFilter
+                  value={maxTime}
+                  onChange={(v) => {
+                    setMaxTime(v);
+                    syncUrl({ maxTime: v });
+                  }}
+                />
+                <RatingFilter
+                  value={minRating}
+                  onChange={(v) => {
+                    setMinRating(v);
+                    syncUrl({ minRating: v });
+                  }}
+                />
               </div>
             </div>
             {activeChips.length > 0 && (
@@ -453,7 +565,12 @@ export function RecipesBrowser({
                 {activeChips.map((chip) => (
                   <Badge key={chip.key} variant="secondary" className="gap-1 pl-2 pr-1 capitalize">
                     <span>{chip.label}</span>
-                    <button type="button" onClick={chip.remove} className="rounded-full p-0.5 hover:bg-background/60" aria-label={`Remove ${chip.label}`}>
+                    <button
+                      type="button"
+                      onClick={chip.remove}
+                      className="rounded-full p-0.5 hover:bg-background/60"
+                      aria-label={`Remove ${chip.label}`}
+                    >
                       <X className="h-3 w-3" />
                     </button>
                   </Badge>
@@ -468,11 +585,15 @@ export function RecipesBrowser({
       </Sheet>
 
       {/* ── Desktop: inline filter rows (unchanged) ── */}
-      <div className="hidden sm:space-y-4 sm:block">
+      <div className="hidden sm:block sm:space-y-4">
         {reviewCount > 0 && (
           <button
             type="button"
-            onClick={() => { const n = !reviewOnly; setReviewOnly(n); syncUrl({ review: n }); }}
+            onClick={() => {
+              const n = !reviewOnly;
+              setReviewOnly(n);
+              syncUrl({ review: n });
+            }}
             className={cn(
               "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
               reviewOnly
@@ -487,16 +608,81 @@ export function RecipesBrowser({
             {reviewOnly && <X className="h-3 w-3 opacity-60" />}
           </button>
         )}
-        <SegmentedControl value={meal} options={MEAL_TYPES as readonly string[]} onChange={(v) => { setMeal(v); syncUrl({ meal: v }); }} />
+        <SegmentedControl
+          value={meal}
+          options={MEAL_TYPES as readonly string[]}
+          onChange={(v) => {
+            setMeal(v);
+            syncUrl({ meal: v });
+          }}
+        />
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant={favOnly ? "default" : "outline"} size="sm" className="h-8 gap-1.5" onClick={() => { const n = !favOnly; setFavOnly(n); syncUrl({ fav: n }); }}>
+          <Button
+            variant={favOnly ? "default" : "outline"}
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={() => {
+              const n = !favOnly;
+              setFavOnly(n);
+              syncUrl({ fav: n });
+            }}
+          >
             <Star className={cn("h-3.5 w-3.5", favOnly && "fill-current")} /> Favourites
           </Button>
-          <MultiSelectPopover label="Diet" options={DIET_TYPES} selected={diets} onChange={(v) => { setDiets(v); syncUrl({ diets: v }); }} searchPlaceholder="Search diets..." />
-          <MultiSelectPopover label="Cuisine" options={allCuisines} selected={cuisines} onChange={(v) => { setCuisines(v); syncUrl({ cuisines: v }); }} emptyMessage={allCuisines.length === 0 ? "No cuisines yet — add tags via the recipe editor." : "No matches."} searchPlaceholder="Search cuisines..." />
-          <MultiSelectPopover label="Source" options={allSources} selected={sources} onChange={(v) => { setSources(v); syncUrl({ sources: v }); }} emptyMessage={allSources.length === 0 ? "No sources yet — import a recipe from a URL to populate this." : "No matches."} searchPlaceholder="Search sources..." />
-          <TimeFilter value={maxTime} onChange={(v) => { setMaxTime(v); syncUrl({ maxTime: v }); }} />
-          <RatingFilter value={minRating} onChange={(v) => { setMinRating(v); syncUrl({ minRating: v }); }} />
+          <MultiSelectPopover
+            label="Diet"
+            options={DIET_TYPES}
+            selected={diets}
+            onChange={(v) => {
+              setDiets(v);
+              syncUrl({ diets: v });
+            }}
+            searchPlaceholder="Search diets..."
+          />
+          <MultiSelectPopover
+            label="Cuisine"
+            options={allCuisines}
+            selected={cuisines}
+            onChange={(v) => {
+              setCuisines(v);
+              syncUrl({ cuisines: v });
+            }}
+            emptyMessage={
+              allCuisines.length === 0
+                ? "No cuisines yet — add tags via the recipe editor."
+                : "No matches."
+            }
+            searchPlaceholder="Search cuisines..."
+          />
+          <MultiSelectPopover
+            label="Source"
+            options={allSources}
+            selected={sources}
+            onChange={(v) => {
+              setSources(v);
+              syncUrl({ sources: v });
+            }}
+            emptyMessage={
+              allSources.length === 0
+                ? "No sources yet — import a recipe from a URL to populate this."
+                : "No matches."
+            }
+            searchPlaceholder="Search sources..."
+          />
+          <TimeFilter
+            value={maxTime}
+            onChange={(v) => {
+              setMaxTime(v);
+              syncUrl({ maxTime: v });
+            }}
+          />
+          <RatingFilter
+            value={minRating}
+            onChange={(v) => {
+              setMinRating(v);
+              syncUrl({ minRating: v });
+            }}
+          />
         </div>
         {hasAny ? (
           <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
@@ -504,12 +690,23 @@ export function RecipesBrowser({
             {activeChips.map((chip) => (
               <Badge key={chip.key} variant="secondary" className="gap-1 pl-2 pr-1 capitalize">
                 <span>{chip.label}</span>
-                <button type="button" onClick={chip.remove} className="rounded-full p-0.5 hover:bg-background/60" aria-label={`Remove ${chip.label}`}>
+                <button
+                  type="button"
+                  onClick={chip.remove}
+                  className="rounded-full p-0.5 hover:bg-background/60"
+                  aria-label={`Remove ${chip.label}`}
+                >
                   <X className="h-3 w-3" />
                 </button>
               </Badge>
             ))}
-            <Button type="button" variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={clearAll}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-7 text-xs"
+              onClick={clearAll}
+            >
               Clear all
             </Button>
           </div>
@@ -521,8 +718,7 @@ export function RecipesBrowser({
       {isOwner ? (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
           <div className="text-xs text-muted-foreground">
-            {filtered.length} of {recipes.length}{" "}
-            {recipes.length === 1 ? "recipe" : "recipes"}
+            {filtered.length} of {recipes.length} {recipes.length === 1 ? "recipe" : "recipes"}
             {selectMode && selectedIds.size > 0 ? (
               <span className="ml-2 font-medium text-foreground">
                 · {selectedIds.size} selected
@@ -585,8 +781,7 @@ export function RecipesBrowser({
         </div>
       ) : (
         <div className="text-xs text-muted-foreground">
-          {filtered.length} of {recipes.length}{" "}
-          {recipes.length === 1 ? "recipe" : "recipes"}
+          {filtered.length} of {recipes.length} {recipes.length === 1 ? "recipe" : "recipes"}
         </div>
       )}
 
@@ -623,11 +818,10 @@ export function RecipesBrowser({
               Delete {selectedIds.size} {selectedIds.size === 1 ? "recipe" : "recipes"}?
             </DialogTitle>
             <DialogDescription>
-              This permanently removes the selected{" "}
-              {selectedIds.size === 1 ? "recipe" : "recipes"} from your household.
-              Planner entries and ratings tied to{" "}
-              {selectedIds.size === 1 ? "it" : "them"} will be removed too. This
-              can&apos;t be undone.
+              This permanently removes the selected {selectedIds.size === 1 ? "recipe" : "recipes"}{" "}
+              from your household. Planner entries and ratings tied to{" "}
+              {selectedIds.size === 1 ? "it" : "them"} will be removed too. This can&apos;t be
+              undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -675,7 +869,7 @@ function SelectableRecipeCard({
   onToggleSelect: () => void;
 }) {
   return (
-    <div className={cn("relative", selectMode && selected && "ring-2 ring-primary rounded-xl")}>
+    <div className={cn("relative", selectMode && selected && "rounded-xl ring-2 ring-primary")}>
       <RecipeCard recipe={recipe} rating={rating} />
       {selectMode ? (
         <button

@@ -1,4 +1,5 @@
 import "server-only";
+import { DEFAULT_SERVINGS } from "@/lib/recipes/servings";
 import { addDays, format, startOfWeek } from "date-fns";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { plannerEntries, recipes } from "@/lib/db/schema";
@@ -141,7 +142,9 @@ export const plannerService = {
           slot: args.slot,
           recipeId: args.recipeId ?? null,
           customTitle: args.customTitle ?? null,
-          servings: args.servings ?? null,
+          // A planned meal is for the household (DEFAULT_SERVINGS) unless told
+          // otherwise; the shopping-list RPC scales by servings / recipe yield.
+          servings: args.servings ?? (args.recipeId ? DEFAULT_SERVINGS : null),
           notes: args.notes ?? null,
           position: nextPos,
           createdBy: userId,

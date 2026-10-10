@@ -272,6 +272,11 @@ export function ReviewForm({
       servings: servings || null,
       prepTimeMin: prep || null,
       cookTimeMin: cook || null,
+      nutrition,
+      mealTypes,
+      dietTypes,
+      cuisines,
+      tags,
       ingredients: ingredients.map((i) => i.raw_text).filter(Boolean),
       instructions: instructions.map((s) => s.text).filter(Boolean),
     };
@@ -473,21 +478,68 @@ export function ReviewForm({
               <ImproveWithAI
                 getDraft={buildImproveDraft}
                 onApply={(s) => {
-                  // Taxonomy is replaced wholesale — it's the AI's job. Tags are
-                  // merged so anything the user typed by hand survives.
-                  setMealTypes(s.mealTypes);
-                  setCuisines(s.cuisines);
-                  setDietTypes(s.dietTypes);
-                  setCookingMethods(s.cookingMethods);
-                  setOccasions(s.occasions);
-                  if (s.difficulty) setDifficulty(s.difficulty);
-                  setTags((prev) => Array.from(new Set([...prev, ...s.tags])));
-                  // Plain fields: the action only ever returns these for fields
-                  // left blank, so this can't clobber the user's own words.
+                  if (s.classification) {
+                    // Taxonomy is replaced wholesale — it's the AI's job. Tags are
+                    // merged so anything the user typed by hand survives.
+                    const c = s.classification;
+                    setMealTypes(c.meal_types);
+                    setCuisines(c.cuisines);
+                    setDietTypes(c.diet_types);
+                    setCookingMethods(c.cooking_methods);
+                    setOccasions(c.occasions);
+                    if (c.difficulty) setDifficulty(c.difficulty);
+                    setTags((prev) => Array.from(new Set([...prev, ...c.tags])));
+                  }
+                  if (s.title) setTitle(s.title);
                   if (s.description) setDescription(s.description);
-                  if (s.servings) setServings(s.servings);
-                  if (s.prepTimeMin) setPrep(s.prepTimeMin);
-                  if (s.cookTimeMin) setCook(s.cookTimeMin);
+                  if (s.details?.servings) setServings(s.details.servings);
+                  if (s.details?.prep_time_min) setPrep(s.details.prep_time_min);
+                  if (s.details?.cook_time_min) setCook(s.details.cook_time_min);
+                  if (s.nutrition) {
+                    const n = s.nutrition as Record<string, number | null>;
+                    setNutrition((prev) => {
+                      const next = { ...prev };
+                      for (const f of NUTRITION_FIELDS) {
+                        const v = n[f.key];
+                        if (typeof v === "number") next[f.key] = Math.round(v);
+                      }
+                      return next;
+                    });
+                  }
+                  if (s.ingredients) {
+                    const now = new Date().toISOString();
+                    setIngredients(
+                      s.ingredients.map(
+                        (ing, i) =>
+                          ({
+                            id: `tmp-ai-${i}`,
+                            recipe_id: recipe.id,
+                            position: i,
+                            created_at: now,
+                            ...ing,
+                          }) as Ingredient,
+                      ),
+                    );
+                  }
+                  if (s.instructions) {
+                    const now = new Date().toISOString();
+                    setInstructions((prev) =>
+                      s.instructions!.map(
+                        (text, i) =>
+                          ({
+                            id: `tmp-ai-${i}`,
+                            recipe_id: recipe.id,
+                            position: i,
+                            // Keep the old step's section/timer when the count
+                            // still lines up; a reworded step is the same step.
+                            section: prev[i]?.section ?? null,
+                            duration_min: prev[i]?.duration_min ?? null,
+                            text,
+                            created_at: now,
+                          }) as Instruction,
+                      ),
+                    );
+                  }
                 }}
               />
             </CardContent>

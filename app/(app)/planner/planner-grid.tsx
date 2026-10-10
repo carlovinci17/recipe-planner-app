@@ -5,7 +5,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHouseholdRealtime } from "@/lib/realtime/use-household-realtime";
 import { useDebouncedRouterRefresh } from "@/lib/realtime/use-debounced-refresh";
-import { ArrowRight, ChefHat, ChevronLeft, ChevronRight, Copy, Heart, Plus, ShoppingBasket, Trash2 } from "lucide-react";
+import {
+  ArrowRight,
+  ChefHat,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Heart,
+  Plus,
+  ShoppingBasket,
+  Trash2,
+} from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -87,10 +97,11 @@ const EMPTY_MACROS: DayMacros = {
 /**
  * Roll up a day's macros across its planner entries.
  *
- * Each recipe's `nutrition` is for the whole recipe (yield = recipe.servings).
- * Per-entry portion = (entry.servings ?? recipe.servings) / recipe.servings.
- * Recipes without `servings` or without `nutrition` are skipped — better to
- * undercount than to surface garbage.
+ * Stored `nutrition` is PER SERVING (median 411 kcal across recipes that
+ * yield ~4), so a day's total is what one person eats: one serving of each
+ * planned recipe, whatever `entry.servings` the household cooks. Scaling by
+ * entry.servings / recipe.servings here undercounted every meal. Recipes
+ * without `nutrition` are skipped — better to undercount than to show garbage.
  */
 function computeDayMacros(
   dayEntries: EntryWithRecipe[],
@@ -100,27 +111,26 @@ function computeDayMacros(
   for (const entry of dayEntries) {
     if (!entry.recipe_id) continue;
     const r = recipesById.get(entry.recipe_id);
-    if (!r || !r.servings || r.servings <= 0) continue;
+    if (!r) continue;
     const n = (r.nutrition ?? {}) as Record<string, number | null | undefined>;
-    const portion = (entry.servings ?? r.servings) / r.servings;
     if (typeof n.calories === "number") {
-      totals.calories += n.calories * portion;
+      totals.calories += n.calories;
       totals.hasAny = true;
     }
     if (typeof n.protein_g === "number") {
-      totals.protein_g += n.protein_g * portion;
+      totals.protein_g += n.protein_g;
       totals.hasAny = true;
     }
     if (typeof n.carbs_g === "number") {
-      totals.carbs_g += n.carbs_g * portion;
+      totals.carbs_g += n.carbs_g;
       totals.hasAny = true;
     }
     if (typeof n.fat_g === "number") {
-      totals.fat_g += n.fat_g * portion;
+      totals.fat_g += n.fat_g;
       totals.hasAny = true;
     }
     if (typeof n.fiber_g === "number") {
-      totals.fiber_g += n.fiber_g * portion;
+      totals.fiber_g += n.fiber_g;
       totals.hasAny = true;
     }
   }
@@ -195,13 +205,26 @@ export function PlannerGrid({
     setPendingDrop(null);
     // Optimistic update
     setEntries((prev) =>
-      prev.map((e) => (e.id === entry.id ? { ...e, date: newDate, slot: newSlot as MealSlot, position: newPosition } : e)),
+      prev.map((e) =>
+        e.id === entry.id
+          ? { ...e, date: newDate, slot: newSlot as MealSlot, position: newPosition }
+          : e,
+      ),
     );
     start(async () => {
-      const result = await moveEntryAction({ entryId: entry.id, date: newDate, slot: newSlot, position: newPosition });
+      const result = await moveEntryAction({
+        entryId: entry.id,
+        date: newDate,
+        slot: newSlot,
+        position: newPosition,
+      });
       if (!result.ok) {
         setEntries((prev) =>
-          prev.map((e) => (e.id === entry.id ? { ...e, date: entry.date, slot: entry.slot, position: entry.position } : e)),
+          prev.map((e) =>
+            e.id === entry.id
+              ? { ...e, date: entry.date, slot: entry.slot, position: entry.position }
+              : e,
+          ),
         );
         toast.error("Couldn't move meal");
       }
@@ -256,10 +279,7 @@ export function PlannerGrid({
 
   // Indexed lookup: recipe id → full RecipeListItem (with nutrition + servings).
   // Built once per `recipes` prop change; used by the per-day macro rollup.
-  const recipesById = useMemo(
-    () => new Map(recipes.map((r) => [r.id, r])),
-    [recipes],
-  );
+  const recipesById = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
 
   // Per-day totals. Computed eagerly so the totals-row can be hidden when
   // every day is empty (no nutrition data at all).
@@ -343,15 +363,11 @@ export function PlannerGrid({
       // Empty list usually means nothing was planned in the chosen range —
       // tell the user instead of silently navigating to an empty shopping
       // page that looks like the action did nothing.
-      toast.warning(
-        "No ingredients to add — your planner has no recipes in that date range.",
-      );
+      toast.warning("No ingredients to add — your planner has no recipes in that date range.");
       return;
     }
     toast.success(
-      `Shopping list created with ${result.itemCount} ${
-        result.itemCount === 1 ? "item" : "items"
-      }`,
+      `Shopping list created with ${result.itemCount} ${result.itemCount === 1 ? "item" : "items"}`,
     );
     router.push("/shopping");
   }
@@ -377,7 +393,13 @@ export function PlannerGrid({
             </Link>
           </Button>
           {/* Icon-only on mobile, full label on sm+ */}
-          <Button variant="outline" size="icon" className="sm:hidden" aria-label="Ask AI Chef" onClick={() => setAiChefOpen(true)}>
+          <Button
+            variant="outline"
+            size="icon"
+            className="sm:hidden"
+            aria-label="Ask AI Chef"
+            onClick={() => setAiChefOpen(true)}
+          >
             <ChefHat className="h-4 w-4" />
           </Button>
           <Button variant="outline" className="hidden sm:flex" onClick={() => setAiChefOpen(true)}>
@@ -588,7 +610,11 @@ export function PlannerGrid({
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 pt-2">
-            <Button variant="outline" className="h-auto flex-col gap-1.5 px-4 py-4" onClick={confirmCopy}>
+            <Button
+              variant="outline"
+              className="h-auto flex-col gap-1.5 px-4 py-4"
+              onClick={confirmCopy}
+            >
               <Copy className="h-5 w-5" aria-hidden />
               <span className="font-medium">Copy</span>
               <span className="text-[10px] text-muted-foreground">Keep original</span>
@@ -640,11 +666,7 @@ export function PlannerGrid({
           <div className="space-y-3">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Start date</label>
-              <Input
-                type="date"
-                value={listStart}
-                onChange={(e) => setListStart(e.target.value)}
-              />
+              <Input type="date" value={listStart} onChange={(e) => setListStart(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Number of days</label>
@@ -778,10 +800,17 @@ function PlannerEntryTile({
   const wrapClass = cn("w-full", isDragOverlay && "rotate-1 opacity-90 shadow-lg");
 
   return (
-    <div title={title} className={cn(wrapClass, "group relative overflow-hidden rounded-md border bg-muted h-16")}>
+    <div
+      title={title}
+      className={cn(wrapClass, "group relative h-16 overflow-hidden rounded-md border bg-muted")}
+    >
       {/* Overlay link — navigates to recipe, sits beneath remove button */}
       {entry.recipe && !isDragOverlay ? (
-        <Link href={`/recipes/${entry.recipe.id}`} className="absolute inset-0 z-0" aria-label={title} />
+        <Link
+          href={`/recipes/${entry.recipe.id}`}
+          className="absolute inset-0 z-0"
+          aria-label={title}
+        />
       ) : null}
 
       {/* Cover image or placeholder */}
@@ -794,7 +823,7 @@ function PlannerEntryTile({
 
       {/* Title overlay — truncated by default, full on hover */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-1.5 pb-1 pt-4">
-        <p className="truncate text-[10px] font-medium leading-tight text-white group-hover:whitespace-normal group-hover:overflow-visible">
+        <p className="truncate text-[10px] font-medium leading-tight text-white group-hover:overflow-visible group-hover:whitespace-normal">
           {title}
         </p>
       </div>
@@ -843,7 +872,7 @@ function DayMacrosCell({ macros }: { macros: DayMacros }) {
             small caps "Calories" label so the unit stays explicit without
             stealing visual weight. */}
         <div className="flex items-baseline justify-between gap-1.5 border-b border-border/40 pb-1.5">
-          <span className="font-display text-lg font-bold leading-none text-foreground tabular-nums">
+          <span className="font-display text-lg font-bold tabular-nums leading-none text-foreground">
             {Math.round(macros.calories).toLocaleString()}
           </span>
           <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -887,9 +916,7 @@ function MacroRow({
     <div className="flex items-center gap-1.5">
       <span className={cn("h-2 w-2 shrink-0 rounded-full", dotClass)} aria-hidden="true" />
       <span className="text-muted-foreground">{label}</span>
-      <span className="ml-auto font-medium tabular-nums text-foreground">
-        {Math.round(grams)}g
-      </span>
+      <span className="ml-auto font-medium tabular-nums text-foreground">{Math.round(grams)}g</span>
     </div>
   );
 }
@@ -1066,12 +1093,7 @@ function RecipePicker({
           </div>
         ) : (
           filtered.map((r) => (
-            <PickerRow
-              key={r.id}
-              recipe={r}
-              disabled={pending}
-              onPick={() => onPick(r.id, null)}
-            />
+            <PickerRow key={r.id} recipe={r} disabled={pending} onPick={() => onPick(r.id, null)} />
           ))
         )}
       </div>

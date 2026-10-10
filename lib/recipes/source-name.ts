@@ -30,6 +30,8 @@ const KNOWN: Record<string, string> = {
   "tasty.co": "Tasty",
   "jamieoliver.com": "Jamie Oliver",
   "ottolenghi.co.uk": "Ottolenghi",
+  "healthwithbec.com.au": "Health with Bec",
+  "healthwithbec.com": "Health with Bec",
   "youtube.com": "YouTube",
   "m.youtube.com": "YouTube",
   "youtu.be": "YouTube",

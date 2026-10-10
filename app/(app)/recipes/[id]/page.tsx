@@ -29,6 +29,7 @@ import { DeleteRecipeButton } from "./delete-recipe-button";
 import { RecipeRatings } from "./recipe-ratings";
 import { BackLink } from "@/components/ui/back-link";
 import { AddToPlannerButton } from "./add-to-planner-button";
+import { ScaledIngredients } from "@/components/recipes/scaled-ingredients";
 
 /**
  * One column per nutrient, so the panel is a single row whatever the recipe
@@ -124,7 +125,7 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
         ) : null}
         {recipe.servings ? (
           <span className="flex items-center gap-1">
-            <Users className="h-4 w-4" /> {recipe.servings} servings
+            <Users className="h-4 w-4" /> Makes {recipe.servings}
           </span>
         ) : null}
         {ratings.length > 0 ? (
@@ -179,17 +180,7 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
       <Separator />
 
       <div className="grid gap-8 md:grid-cols-[280px_1fr]">
-        <section>
-          <h2 className="mb-3 font-display text-lg font-semibold">Ingredients</h2>
-          <ul className="space-y-2 text-sm">
-            {ingredients.map((ing) => (
-              <li key={ing.id} className="flex gap-2">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                <span>{ing.raw_text}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <ScaledIngredients ingredients={ingredients} recipeServings={recipe.servings} />
 
         <section>
           <h2 className="mb-3 font-display text-lg font-semibold">Instructions</h2>

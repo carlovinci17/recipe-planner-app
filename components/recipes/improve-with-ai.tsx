@@ -5,17 +5,18 @@ import { Check, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   improveRecipeAction,
   type RecipeSuggestions,
 } from "@/app/(app)/recipes/[id]/review/actions";
 
 /**
- * "Improve with AI" — reads the draft currently in the form, asks the model to
- * classify it and fill the blanks, and shows the result for the user to accept
- * or dismiss (propose → confirm → execute, per ADR-0010).
+ * "Improve with AI" — reads the draft currently in the form, asks the model for
+ * a full pass over the recipe, and shows the result section by section for the
+ * user to keep or drop (propose → confirm → execute, per ADR-0010).
  *
- * Nothing is written here. Accepting only updates the form's own state; the
+ * Nothing is written here. Applying only updates the form's own state; the
  * user still presses Save.
  */
 
@@ -26,24 +27,53 @@ export type ImproveDraftInput = {
   servings: number | null;
   prepTimeMin: number | null;
   cookTimeMin: number | null;
+  nutrition: Record<string, number | null>;
+  mealTypes: string[];
+  dietTypes: string[];
+  cuisines: string[];
+  tags: string[];
   ingredients: string[];
   instructions: string[];
 };
 
-/** Only the fields the form needs to merge in when the user accepts. */
+/** The suggestion with every section the user unticked set to null. */
 export type AppliedSuggestions = {
-  mealTypes: string[];
-  cuisines: string[];
-  dietTypes: string[];
-  cookingMethods: string[];
-  occasions: string[];
-  difficulty: "easy" | "medium" | "hard" | null;
-  tags: string[];
+  classification: Pick<
+    RecipeSuggestions,
+    | "meal_types"
+    | "cuisines"
+    | "diet_types"
+    | "cooking_methods"
+    | "occasions"
+    | "difficulty"
+    | "tags"
+  > | null;
+  title: string | null;
   description: string | null;
-  servings: number | null;
-  prepTimeMin: number | null;
-  cookTimeMin: number | null;
+  details: Pick<RecipeSuggestions, "servings" | "prep_time_min" | "cook_time_min"> | null;
+  nutrition: RecipeSuggestions["nutrition"];
+  ingredients: RecipeSuggestions["ingredients"];
+  instructions: RecipeSuggestions["instructions"];
 };
+
+type SectionKey =
+  | "classification"
+  | "title"
+  | "description"
+  | "details"
+  | "nutrition"
+  | "ingredients"
+  | "instructions";
+
+const NUTRITION_LABELS: [string, string, string][] = [
+  ["calories", "Calories", "kcal"],
+  ["protein_g", "Protein", "g"],
+  ["carbs_g", "Carbs", "g"],
+  ["fat_g", "Fat", "g"],
+  ["fiber_g", "Fiber", "g"],
+  ["sugar_g", "Sugar", "g"],
+  ["sodium_mg", "Sodium", "mg"],
+];
 
 function ChipRow({ label, values }: { label: string; values: string[] }) {
   if (values.length === 0) return null;
@@ -59,6 +89,28 @@ function ChipRow({ label, values }: { label: string; values: string[] }) {
   );
 }
 
+function Section({
+  label,
+  checked,
+  onCheckedChange,
+  children,
+}: {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (v: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5 rounded-lg border p-3">
+      <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+        <Checkbox checked={checked} onCheckedChange={(v) => onCheckedChange(v === true)} />
+        {label}
+      </label>
+      <div className={checked ? "" : "opacity-50"}>{children}</div>
+    </div>
+  );
+}
+
 export function ImproveWithAI({
   getDraft,
   onApply,
@@ -69,6 +121,15 @@ export function ImproveWithAI({
 }) {
   const [pending, start] = useTransition();
   const [suggestions, setSuggestions] = useState<RecipeSuggestions | null>(null);
+  const [selected, setSelected] = useState<Record<SectionKey, boolean>>({
+    classification: true,
+    title: true,
+    description: true,
+    details: true,
+    nutrition: true,
+    ingredients: true,
+    instructions: true,
+  });
 
   function run() {
     start(async () => {
@@ -81,36 +142,42 @@ export function ImproveWithAI({
     });
   }
 
+  const s = suggestions;
+  const hasDetails =
+    !!s && (s.servings !== null || s.prep_time_min !== null || s.cook_time_min !== null);
+  const toggle = (k: SectionKey) => (v: boolean) => setSelected((p) => ({ ...p, [k]: v }));
+
   function apply() {
-    if (!suggestions) return;
-    const s = suggestions;
+    if (!s) return;
     onApply({
-      mealTypes: s.meal_types,
-      cuisines: s.cuisines,
-      dietTypes: s.diet_types,
-      cookingMethods: s.cooking_methods,
-      occasions: s.occasions,
-      difficulty: (s.difficulty as "easy" | "medium" | "hard" | null) ?? null,
-      tags: s.tags,
-      description: s.description,
-      servings: s.servings,
-      prepTimeMin: s.prepTimeMin,
-      cookTimeMin: s.cookTimeMin,
+      classification: selected.classification
+        ? {
+            meal_types: s.meal_types,
+            cuisines: s.cuisines,
+            diet_types: s.diet_types,
+            cooking_methods: s.cooking_methods,
+            occasions: s.occasions,
+            difficulty: s.difficulty,
+            tags: s.tags,
+          }
+        : null,
+      title: selected.title ? s.title : null,
+      description: selected.description ? s.description : null,
+      details:
+        selected.details && hasDetails
+          ? {
+              servings: s.servings,
+              prep_time_min: s.prep_time_min,
+              cook_time_min: s.cook_time_min,
+            }
+          : null,
+      nutrition: selected.nutrition ? s.nutrition : null,
+      ingredients: selected.ingredients ? s.ingredients : null,
+      instructions: selected.instructions ? s.instructions : null,
     });
     setSuggestions(null);
     toast.success("Suggestions applied — review them, then save.");
   }
-
-  // Which blank fields the model offered to fill. Listed separately from the
-  // taxonomy because these change text the user can see in the form above.
-  const filled = suggestions
-    ? [
-        suggestions.description !== null ? "description" : null,
-        suggestions.servings !== null ? `serves ${suggestions.servings}` : null,
-        suggestions.prepTimeMin !== null ? `${suggestions.prepTimeMin} min prep` : null,
-        suggestions.cookTimeMin !== null ? `${suggestions.cookTimeMin} min cook` : null,
-      ].filter((v): v is string => v !== null)
-    : [];
 
   return (
     <div className="space-y-3">
@@ -120,17 +187,19 @@ export function ImproveWithAI({
           {pending ? "Thinking…" : "Improve with AI"}
         </Button>
         <p className="text-xs text-muted-foreground">
-          Suggests meal types, tags and anything you&apos;ve left blank. Nothing saves until you do.
+          Reviews the whole recipe — title, tags, nutrition, ingredients and method. Nothing saves
+          until you do.
         </p>
       </div>
 
-      {suggestions && (
+      {s && (
         <div className="space-y-3 rounded-xl border bg-card p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-medium">Suggestions</p>
               <p className="text-xs text-muted-foreground">
-                Applying fills the fields above — you can still edit everything before saving.
+                Untick anything you don&apos;t want. Applying fills the form — you can still edit
+                everything before saving.
               </p>
             </div>
             <Button
@@ -144,30 +213,111 @@ export function ImproveWithAI({
             </Button>
           </div>
 
-          <div className="space-y-1.5">
-            <ChipRow label="Meal" values={suggestions.meal_types} />
-            <ChipRow label="Cuisine" values={suggestions.cuisines} />
-            <ChipRow label="Diet" values={suggestions.diet_types} />
-            <ChipRow label="Method" values={suggestions.cooking_methods} />
-            <ChipRow label="Occasion" values={suggestions.occasions} />
-            <ChipRow
-              label="Difficulty"
-              values={suggestions.difficulty ? [suggestions.difficulty] : []}
-            />
-            <ChipRow label="Tags" values={suggestions.tags} />
-            <ChipRow label="Also filling" values={filled} />
-          </div>
+          {s.changes.length > 0 && (
+            <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+              {s.changes.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          )}
 
-          {suggestions.description && (
-            <p className="rounded-md bg-muted/50 p-2.5 text-sm text-muted-foreground">
-              {suggestions.description}
-            </p>
+          <Section
+            label="Meal types & tags"
+            checked={selected.classification}
+            onCheckedChange={toggle("classification")}
+          >
+            <div className="space-y-1.5">
+              <ChipRow label="Meal" values={s.meal_types} />
+              <ChipRow label="Cuisine" values={s.cuisines} />
+              <ChipRow label="Diet" values={s.diet_types} />
+              <ChipRow label="Method" values={s.cooking_methods} />
+              <ChipRow label="Occasion" values={s.occasions} />
+              <ChipRow label="Difficulty" values={s.difficulty ? [s.difficulty] : []} />
+              <ChipRow label="Tags" values={s.tags} />
+            </div>
+          </Section>
+
+          {s.title && (
+            <Section label="Title" checked={selected.title} onCheckedChange={toggle("title")}>
+              <p className="text-sm">{s.title}</p>
+            </Section>
+          )}
+
+          {s.description && (
+            <Section
+              label="Description"
+              checked={selected.description}
+              onCheckedChange={toggle("description")}
+            >
+              <p className="text-sm text-muted-foreground">{s.description}</p>
+            </Section>
+          )}
+
+          {hasDetails && (
+            <Section
+              label="Servings & times"
+              checked={selected.details}
+              onCheckedChange={toggle("details")}
+            >
+              <ChipRow
+                label="Set"
+                values={[
+                  s.servings !== null ? `serves ${s.servings}` : null,
+                  s.prep_time_min !== null ? `${s.prep_time_min} min prep` : null,
+                  s.cook_time_min !== null ? `${s.cook_time_min} min cook` : null,
+                ].filter((v): v is string => v !== null)}
+              />
+            </Section>
+          )}
+
+          {s.nutrition && (
+            <Section
+              label="Nutrition (per serving)"
+              checked={selected.nutrition}
+              onCheckedChange={toggle("nutrition")}
+            >
+              <ChipRow
+                label="Estimate"
+                values={NUTRITION_LABELS.flatMap(([key, label, unit]) => {
+                  const v = (s.nutrition as Record<string, number | null>)[key];
+                  return typeof v === "number" ? [`${label} ${Math.round(v)} ${unit}`] : [];
+                })}
+              />
+            </Section>
+          )}
+
+          {s.ingredients && (
+            <Section
+              label={`Ingredients (${s.ingredients.length})`}
+              checked={selected.ingredients}
+              onCheckedChange={toggle("ingredients")}
+            >
+              <ul className="list-disc space-y-0.5 pl-5 text-sm">
+                {s.ingredients.map((ing, i) => (
+                  <li key={i}>{ing.raw_text}</li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          {s.instructions && (
+            <Section
+              label={`Method (${s.instructions.length} steps)`}
+              checked={selected.instructions}
+              onCheckedChange={toggle("instructions")}
+            >
+              <ol className="list-decimal space-y-1 pl-5 text-sm">
+                {s.instructions.map((step, i) => (
+                  <li key={i}>{step}</li>
+                ))}
+              </ol>
+            </Section>
           )}
 
           <div className="flex gap-2">
             <Button type="button" size="sm" onClick={apply}>
               <Check className="mr-1.5 h-4 w-4" />
-              Apply
+              Apply selected
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => setSuggestions(null)}>
               Dismiss

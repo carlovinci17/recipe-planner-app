@@ -47,12 +47,17 @@ export default async function LoginPage({
           <p className="text-center text-xs text-muted-foreground">
             Continue with your email, password, or Google account.
           </p>
+          {/* Password reset is Entra's self-service password reset (SSPR), on the
+              hosted page: enter your email, then "Forgot password?". The app never
+              sees a password, so there is no reset flow of its own to build. */}
+          <p className="text-center text-xs text-muted-foreground">
+            Forgot your password? Enter your email on the next screen, then choose &ldquo;Forgot
+            password?&rdquo;.
+          </p>
         </div>
 
         {params.error ? (
-          <p className="text-center text-sm text-destructive">
-            Sign-in failed. Please try again.
-          </p>
+          <p className="text-center text-sm text-destructive">Sign-in failed. Please try again.</p>
         ) : null}
       </div>
     </div>

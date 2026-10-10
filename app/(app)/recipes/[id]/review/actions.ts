@@ -7,6 +7,7 @@ import { getRecipePermissions } from "@/lib/services/permissions";
 import { improveRecipe } from "@/lib/ai/recipe-extraction";
 import { ingestionService } from "@/lib/services/ingestion-service";
 import { logger } from "@/lib/logger";
+import type { RecipeImprovement } from "@/lib/ai/schemas";
 
 const ReviewPayload = z.object({
   recipeId: z.string().uuid(),
@@ -71,31 +72,25 @@ const ImproveDraft = z.object({
   servings: z.number().int().nullable(),
   prepTimeMin: z.number().int().nullable(),
   cookTimeMin: z.number().int().nullable(),
+  nutrition: z.record(z.string(), z.number().nullable()).default({}),
+  mealTypes: z.array(z.string().max(30)).max(10).default([]),
+  dietTypes: z.array(z.string().max(40)).max(10).default([]),
+  cuisines: z.array(z.string().max(40)).max(10).default([]),
+  tags: z.array(z.string().max(50)).max(30).default([]),
   ingredients: z.array(z.string().max(500)).max(200).default([]),
   instructions: z.array(z.string().max(4000)).max(100).default([]),
 });
 
-export type RecipeSuggestions = {
-  meal_types: string[];
-  cuisines: string[];
-  diet_types: string[];
-  cooking_methods: string[];
-  occasions: string[];
-  difficulty: string | null;
-  tags: string[];
-  description: string | null;
-  servings: number | null;
-  prepTimeMin: number | null;
-  cookTimeMin: number | null;
-};
+export type RecipeSuggestions = RecipeImprovement;
 
 /**
- * "Improve with AI" — classify the draft currently in the form and suggest the
- * plain fields left blank. Reads the draft off the client rather than the saved
- * row, because the user is normally still typing.
+ * "Improve with AI" — a full pass over the draft currently in the form:
+ * classification, title, description, yield and times, per-serving nutrition,
+ * and the ingredient and method lists. Reads the draft off the client rather
+ * than the saved row, because the user is normally still editing.
  *
- * Returns suggestions only; nothing is written. The form shows them for the user
- * to accept or dismiss, and the usual Save persists whatever they kept
+ * Returns suggestions only; nothing is written. The form shows them section by
+ * section for the user to keep or drop, and the usual Save persists the result
  * (propose → confirm → execute, per ADR-0010).
  */
 export async function improveRecipeAction(input: z.infer<typeof ImproveDraft>) {
@@ -123,38 +118,36 @@ export async function improveRecipeAction(input: z.infer<typeof ImproveDraft>) {
     };
   }
 
-  // Tell the model which plain fields are already the user's, so it returns null
-  // for them instead of offering to replace their wording.
-  const filledFields: string[] = [];
-  if (draft.description?.trim()) filledFields.push("description");
-  if (draft.servings && draft.servings > 0) filledFields.push("servings");
-  if (draft.prepTimeMin && draft.prepTimeMin > 0) filledFields.push("prep_time_min");
-  if (draft.cookTimeMin && draft.cookTimeMin > 0) filledFields.push("cook_time_min");
-
   try {
     const result = await improveRecipe({
       title: title || "Untitled recipe",
-      description: draft.description,
+      description: draft.description?.trim() || null,
+      servings: draft.servings,
+      prepTimeMin: draft.prepTimeMin,
+      cookTimeMin: draft.cookTimeMin,
+      nutrition: draft.nutrition,
+      mealTypes: draft.mealTypes,
+      dietTypes: draft.dietTypes,
+      cuisines: draft.cuisines,
+      tags: draft.tags,
       ingredients,
       instructions: draft.instructions.map((s) => s.trim()).filter(Boolean),
-      filledFields,
     });
     const d = result.data;
-
-    // Belt and braces: drop any plain-field suggestion for a field the user has
-    // already filled, even if the model ignored the instruction.
+    // A suggestion identical to what is already there is noise — drop it so the
+    // panel only lists real changes.
     const suggestions: RecipeSuggestions = {
-      meal_types: d.meal_types,
-      cuisines: d.cuisines,
-      diet_types: d.diet_types,
-      cooking_methods: d.cooking_methods,
-      occasions: d.occasions,
-      difficulty: d.difficulty,
-      tags: d.tags,
-      description: filledFields.includes("description") ? null : d.description,
-      servings: filledFields.includes("servings") ? null : d.servings,
-      prepTimeMin: filledFields.includes("prep_time_min") ? null : d.prep_time_min,
-      cookTimeMin: filledFields.includes("cook_time_min") ? null : d.cook_time_min,
+      ...d,
+      title: d.title && d.title.trim() !== title ? d.title.trim() : null,
+      description:
+        d.description && d.description.trim() !== (draft.description?.trim() ?? "")
+          ? d.description.trim()
+          : null,
+      servings: d.servings !== draft.servings ? d.servings : null,
+      prep_time_min: d.prep_time_min !== draft.prepTimeMin ? d.prep_time_min : null,
+      cook_time_min: d.cook_time_min !== draft.cookTimeMin ? d.cook_time_min : null,
+      ingredients: d.ingredients && d.ingredients.length > 0 ? d.ingredients : null,
+      instructions: d.instructions && d.instructions.length > 0 ? d.instructions : null,
     };
     return { ok: true as const, suggestions };
   } catch (err) {
