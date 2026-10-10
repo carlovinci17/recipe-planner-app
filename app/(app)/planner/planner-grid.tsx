@@ -480,7 +480,11 @@ export function PlannerGrid({
                   {SLOTS.map((slot) => {
                     const cellEntries = grouped.get(`${d}|${slot.id}`) ?? [];
                     return (
-                      <MobileDroppableSlot key={slot.id} id={`mob:${d}|${slot.id}`}>
+                      <MobileDroppableSlot
+                        key={slot.id}
+                        id={`mob:${d}|${slot.id}`}
+                        isToday={d === todayIso}
+                      >
                         {cellEntries.map((entry) => (
                           <DraggableEntry
                             key={entry.id}
@@ -539,7 +543,11 @@ export function PlannerGrid({
                 {dates.map((d) => {
                   const cellEntries = grouped.get(`${d}|${slot.id}`) ?? [];
                   return (
-                    <DroppableCell key={`${d}-${slot.id}`} id={`${d}|${slot.id}`}>
+                    <DroppableCell
+                      key={`${d}-${slot.id}`}
+                      id={`${d}|${slot.id}`}
+                      isToday={d === todayIso}
+                    >
                       {cellEntries.map((entry) => (
                         <DraggableEntry
                           key={entry.id}
@@ -725,25 +733,48 @@ export function PlannerGrid({
 
 // ── Drag & Drop wrappers ─────────────────────────────────────────────────────
 
-function DroppableCell({ id, children }: { id: string; children: React.ReactNode }) {
+// Today's slots carry a primary-coloured border so the current day reads at a
+// glance in every meal row, not just in its column header.
+function DroppableCell({
+  id,
+  isToday,
+  children,
+}: {
+  id: string;
+  isToday?: boolean;
+  children: React.ReactNode;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
     <Card
       ref={setNodeRef}
-      className={cn("min-h-[72px] transition-colors", isOver && "border-primary/60 bg-primary/5")}
+      className={cn(
+        "min-h-[72px] transition-colors",
+        isToday && "border-primary/70 ring-1 ring-primary/20",
+        isOver && "border-primary/60 bg-primary/5",
+      )}
     >
       <CardContent className="flex flex-col gap-1 p-1.5">{children}</CardContent>
     </Card>
   );
 }
 
-function MobileDroppableSlot({ id, children }: { id: string; children?: React.ReactNode }) {
+function MobileDroppableSlot({
+  id,
+  isToday,
+  children,
+}: {
+  id: string;
+  isToday?: boolean;
+  children?: React.ReactNode;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
     <div
       ref={setNodeRef}
       className={cn(
-        "min-h-[3rem] space-y-0.5 rounded-md transition-colors",
+        "min-h-[3rem] space-y-0.5 rounded-md border border-transparent transition-colors",
+        isToday && "border-primary/70",
         isOver && "bg-primary/5",
       )}
     >

@@ -9,16 +9,43 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 ## Open
 
+- [ ] **App name + custom domain + short Drive share address** (raised 2026-10-11) — the app runs on
+      `recipe-planner.delightfulrock-67fe0b09.australiaeast.azurecontainerapps.io` and the Drive share
+      address is `bitebuddy-drive@recipe-planner-ai-app.iam.gserviceaccount.com`. Decide the name
+      FIRST (it may change soon), then: buy the domain → add it to the container app (CNAME + TXT,
+      free managed certificate) → update `appPublicUrl` in `infra/main.bicep`, the Entra redirect +
+      post-logout URIs, and re-run the smoke test. Share address: a Google service-account email
+      can't be renamed or put on your own domain; the short option is a Google Group on the new
+      domain (e.g. `recipes@<domain>`, via free Cloud Identity) with the service account as its only
+      member, so households share with the group.
+
+- [ ] **Kitchen Assistant voice input — fix or remove (TBC)** — v1 (browser Web Speech API) was
+      clunky to use in practice. Decide: polish it (push-to-talk, auto-send after a pause, clearer
+      listening state) or remove it. If kept and quality is the problem, Azure AI Speech is the
+      upgrade path (also enables spoken replies).
+
+- [ ] **Kitchen Assistant: results are not actionable** — the Finder found meals but gave no
+      details about them, and they couldn't be used from the chat (e.g. added to the planner).
+      Replies should carry the recipes themselves: small recipe cards in the chat (title, time,
+      photo, link to the recipe) with an "Add to planner" action through the existing
+      propose → confirm flow.
+
+- [ ] **Agent personas + test scenarios** — every agent (coordinator, Finder, Planner, Shopping,
+      AI Chef) needs a written persona (role, tone, what it may and may not do) and a set of
+      scenarios — user prompts with expected behaviour — so changes can be tested and tuned
+      instead of judged by feel. Run them as an eval suite (Langfuse datasets or a golden-set
+      style vitest) and re-run on every prompt/model change.
+
+- [ ] **Redo the agent faces** — the 2026-10-10 SVG set (`components/assistant/agent-avatar.tsx`)
+      didn't land visually; redesign. Do it after the personas above, so each face matches its
+      character.
+
 - [ ] **Google Drive sync — first real run** — built and deployed 2026-10-11 (see Done). Still to
       do with a real folder: share it with
       `bitebuddy-drive@recipe-planner-ai-app.iam.gserviceaccount.com`, paste the link on Add Recipes →
       Google Drive, check the preview, Start import, and watch the first files land. This is also
       the first production test of the Azure → Google federation. Locally, Drive needs
       `gcloud auth application-default login` once.
-
-- [ ] **Voice input v2 — Azure AI Speech** (only if v1 falls short) — v1 uses the browser's Web
-      Speech API, which Firefox lacks and iOS Safari only offers with Siri enabled. Upgrade path:
-      Azure AI Speech (keyless via managed identity), which would also let the assistant reply aloud.
 
 - [ ] **Entra sign-in branding — design + apply in the portal** (do as part of the **Module 10 UI
       re-design step**, deferred 2026-08-20). Design the hosted sign-in screen alongside the app
@@ -62,6 +89,10 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 Kept for the detail — what was actually wrong is usually more useful than the fact that
 it is fixed. Newest first.
+
+- [x] **Planner: highlight today** — DONE (2026-10-11). Today's meal slots get a primary-colour
+      border on desktop (each Breakfast/Lunch/Dinner/Snack box) and mobile, not only the column
+      header.
 
 - [x] **Google Drive folder sync, multi-section recipes, embeddings, Functions CI, tips** — DONE
       (2026-10-11).
