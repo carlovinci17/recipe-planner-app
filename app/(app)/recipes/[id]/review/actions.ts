@@ -8,6 +8,7 @@ import { improveRecipe } from "@/lib/ai/recipe-extraction";
 import { ingestionService } from "@/lib/services/ingestion-service";
 import { logger } from "@/lib/logger";
 import type { RecipeImprovement } from "@/lib/ai/schemas";
+import { normalizeList } from "@/lib/recipes/normalize";
 
 const ReviewPayload = z.object({
   recipeId: z.string().uuid(),
@@ -138,6 +139,12 @@ export async function improveRecipeAction(input: z.infer<typeof ImproveDraft>) {
     // panel only lists real changes.
     const suggestions: RecipeSuggestions = {
       ...d,
+      // Same token rules as import tagging ("Moroccan" → "moroccan").
+      cuisines: normalizeList(d.cuisines),
+      diet_types: normalizeList(d.diet_types),
+      cooking_methods: normalizeList(d.cooking_methods),
+      occasions: normalizeList(d.occasions),
+      tags: normalizeList(d.tags),
       title: d.title && d.title.trim() !== title ? d.title.trim() : null,
       description:
         d.description && d.description.trim() !== (draft.description?.trim() ?? "")

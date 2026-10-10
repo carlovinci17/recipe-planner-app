@@ -1,11 +1,18 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, Sparkles, X } from "lucide-react";
+import { Check, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   improveRecipeAction,
   type RecipeSuggestions,
@@ -180,151 +187,146 @@ export function ImproveWithAI({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <Button type="button" variant="outline" onClick={run} disabled={pending}>
-          <Sparkles className="mr-1.5 h-4 w-4" />
-          {pending ? "Thinking…" : "Improve with AI"}
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          Reviews the whole recipe — title, tags, nutrition, ingredients and method. Nothing saves
-          until you do.
-        </p>
-      </div>
+    <>
+      {/* Sits beside Save in the sticky bar; icon-only on phones so Delete,
+          Improve and Save still fit one row at 375px. */}
+      <Button
+        type="button"
+        variant="outline"
+        size="lg"
+        onClick={run}
+        disabled={pending}
+        aria-label="Improve with AI"
+        className="px-3 sm:px-6"
+      >
+        <Sparkles className="h-4 w-4 sm:mr-1.5" />
+        <span className="hidden sm:inline">{pending ? "Thinking…" : "Improve with AI"}</span>
+      </Button>
 
-      {s && (
-        <div className="space-y-3 rounded-xl border bg-card p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium">Suggestions</p>
-              <p className="text-xs text-muted-foreground">
-                Untick anything you don&apos;t want. Applying fills the form — you can still edit
-                everything before saving.
-              </p>
+      <Dialog open={s !== null} onOpenChange={(open) => !open && setSuggestions(null)}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Suggestions</DialogTitle>
+            <DialogDescription>
+              Untick anything you don&apos;t want. Applying fills the form — nothing saves until you
+              press Save.
+            </DialogDescription>
+          </DialogHeader>
+          {s && (
+            <div className="space-y-3">
+              {s.changes.length > 0 && (
+                <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+                  {s.changes.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+              )}
+
+              <Section
+                label="Meal types & tags"
+                checked={selected.classification}
+                onCheckedChange={toggle("classification")}
+              >
+                <div className="space-y-1.5">
+                  <ChipRow label="Meal" values={s.meal_types} />
+                  <ChipRow label="Cuisine" values={s.cuisines} />
+                  <ChipRow label="Diet" values={s.diet_types} />
+                  <ChipRow label="Method" values={s.cooking_methods} />
+                  <ChipRow label="Occasion" values={s.occasions} />
+                  <ChipRow label="Difficulty" values={s.difficulty ? [s.difficulty] : []} />
+                  <ChipRow label="Tags" values={s.tags} />
+                </div>
+              </Section>
+
+              {s.title && (
+                <Section label="Title" checked={selected.title} onCheckedChange={toggle("title")}>
+                  <p className="text-sm">{s.title}</p>
+                </Section>
+              )}
+
+              {s.description && (
+                <Section
+                  label="Description"
+                  checked={selected.description}
+                  onCheckedChange={toggle("description")}
+                >
+                  <p className="text-sm text-muted-foreground">{s.description}</p>
+                </Section>
+              )}
+
+              {hasDetails && (
+                <Section
+                  label="Servings & times"
+                  checked={selected.details}
+                  onCheckedChange={toggle("details")}
+                >
+                  <ChipRow
+                    label="Set"
+                    values={[
+                      s.servings !== null ? `serves ${s.servings}` : null,
+                      s.prep_time_min !== null ? `${s.prep_time_min} min prep` : null,
+                      s.cook_time_min !== null ? `${s.cook_time_min} min cook` : null,
+                    ].filter((v): v is string => v !== null)}
+                  />
+                </Section>
+              )}
+
+              {s.nutrition && (
+                <Section
+                  label="Nutrition (per serving)"
+                  checked={selected.nutrition}
+                  onCheckedChange={toggle("nutrition")}
+                >
+                  <ChipRow
+                    label="Estimate"
+                    values={NUTRITION_LABELS.flatMap(([key, label, unit]) => {
+                      const v = (s.nutrition as Record<string, number | null>)[key];
+                      return typeof v === "number" ? [`${label} ${Math.round(v)} ${unit}`] : [];
+                    })}
+                  />
+                </Section>
+              )}
+
+              {s.ingredients && (
+                <Section
+                  label={`Ingredients (${s.ingredients.length})`}
+                  checked={selected.ingredients}
+                  onCheckedChange={toggle("ingredients")}
+                >
+                  <ul className="list-disc space-y-0.5 pl-5 text-sm">
+                    {s.ingredients.map((ing, i) => (
+                      <li key={i}>{ing.raw_text}</li>
+                    ))}
+                  </ul>
+                </Section>
+              )}
+
+              {s.instructions && (
+                <Section
+                  label={`Method (${s.instructions.length} steps)`}
+                  checked={selected.instructions}
+                  onCheckedChange={toggle("instructions")}
+                >
+                  <ol className="list-decimal space-y-1 pl-5 text-sm">
+                    {s.instructions.map((step, i) => (
+                      <li key={i}>{step}</li>
+                    ))}
+                  </ol>
+                </Section>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setSuggestions(null)}>
+                  Dismiss
+                </Button>
+                <Button type="button" onClick={apply}>
+                  <Check className="mr-1.5 h-4 w-4" />
+                  Apply selected
+                </Button>
+              </div>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setSuggestions(null)}
-              aria-label="Dismiss suggestions"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {s.changes.length > 0 && (
-            <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
-              {s.changes.map((c) => (
-                <li key={c}>{c}</li>
-              ))}
-            </ul>
           )}
-
-          <Section
-            label="Meal types & tags"
-            checked={selected.classification}
-            onCheckedChange={toggle("classification")}
-          >
-            <div className="space-y-1.5">
-              <ChipRow label="Meal" values={s.meal_types} />
-              <ChipRow label="Cuisine" values={s.cuisines} />
-              <ChipRow label="Diet" values={s.diet_types} />
-              <ChipRow label="Method" values={s.cooking_methods} />
-              <ChipRow label="Occasion" values={s.occasions} />
-              <ChipRow label="Difficulty" values={s.difficulty ? [s.difficulty] : []} />
-              <ChipRow label="Tags" values={s.tags} />
-            </div>
-          </Section>
-
-          {s.title && (
-            <Section label="Title" checked={selected.title} onCheckedChange={toggle("title")}>
-              <p className="text-sm">{s.title}</p>
-            </Section>
-          )}
-
-          {s.description && (
-            <Section
-              label="Description"
-              checked={selected.description}
-              onCheckedChange={toggle("description")}
-            >
-              <p className="text-sm text-muted-foreground">{s.description}</p>
-            </Section>
-          )}
-
-          {hasDetails && (
-            <Section
-              label="Servings & times"
-              checked={selected.details}
-              onCheckedChange={toggle("details")}
-            >
-              <ChipRow
-                label="Set"
-                values={[
-                  s.servings !== null ? `serves ${s.servings}` : null,
-                  s.prep_time_min !== null ? `${s.prep_time_min} min prep` : null,
-                  s.cook_time_min !== null ? `${s.cook_time_min} min cook` : null,
-                ].filter((v): v is string => v !== null)}
-              />
-            </Section>
-          )}
-
-          {s.nutrition && (
-            <Section
-              label="Nutrition (per serving)"
-              checked={selected.nutrition}
-              onCheckedChange={toggle("nutrition")}
-            >
-              <ChipRow
-                label="Estimate"
-                values={NUTRITION_LABELS.flatMap(([key, label, unit]) => {
-                  const v = (s.nutrition as Record<string, number | null>)[key];
-                  return typeof v === "number" ? [`${label} ${Math.round(v)} ${unit}`] : [];
-                })}
-              />
-            </Section>
-          )}
-
-          {s.ingredients && (
-            <Section
-              label={`Ingredients (${s.ingredients.length})`}
-              checked={selected.ingredients}
-              onCheckedChange={toggle("ingredients")}
-            >
-              <ul className="list-disc space-y-0.5 pl-5 text-sm">
-                {s.ingredients.map((ing, i) => (
-                  <li key={i}>{ing.raw_text}</li>
-                ))}
-              </ul>
-            </Section>
-          )}
-
-          {s.instructions && (
-            <Section
-              label={`Method (${s.instructions.length} steps)`}
-              checked={selected.instructions}
-              onCheckedChange={toggle("instructions")}
-            >
-              <ol className="list-decimal space-y-1 pl-5 text-sm">
-                {s.instructions.map((step, i) => (
-                  <li key={i}>{step}</li>
-                ))}
-              </ol>
-            </Section>
-          )}
-
-          <div className="flex gap-2">
-            <Button type="button" size="sm" onClick={apply}>
-              <Check className="mr-1.5 h-4 w-4" />
-              Apply selected
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setSuggestions(null)}>
-              Dismiss
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

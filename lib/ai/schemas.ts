@@ -158,7 +158,16 @@ export const RecipeImprovementSchema = z.object({
   /** PER SERVING, matching how `recipes.nutrition` is stored and shown. */
   nutrition: ExtractedNutritionSchema.nullable().default(null),
   /** The whole list, in order, when any line should change; null otherwise. */
-  ingredients: z.array(ExtractedIngredientSchema).max(80).nullable().default(null),
+  // A bare string is accepted and lifted to `{ raw_text }`: prompt-described
+  // JSON (the Foundry path) sometimes returns the lines as plain strings, and
+  // failing the whole suggestion over that shape is worse than a thinner row.
+  ingredients: z
+    .array(
+      z.preprocess((v) => (typeof v === "string" ? { raw_text: v } : v), ExtractedIngredientSchema),
+    )
+    .max(80)
+    .nullable()
+    .default(null),
   /** The whole method, in order, when any step should change; null otherwise. */
   instructions: z.array(z.string().min(1).max(2000)).max(40).nullable().default(null),
   /** Short, plain-English reasons for each change, shown to the user. */

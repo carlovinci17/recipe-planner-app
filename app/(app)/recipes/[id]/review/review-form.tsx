@@ -34,7 +34,7 @@ import { deleteRecipeAction } from "../actions";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
 import { RecipeImageUploader } from "@/components/recipes/recipe-image-uploader";
 import { TagEditor } from "@/components/recipes/tag-editor";
-import { ImproveWithAI } from "@/components/recipes/improve-with-ai";
+import { ImproveWithAI, type AppliedSuggestions } from "@/components/recipes/improve-with-ai";
 import { DeleteRecipeButton } from "../delete-recipe-button";
 import { useUnsavedChangesGuard } from "@/lib/recipes/use-unsaved-changes-guard";
 import { CoverPicker } from "./cover-picker";
@@ -282,6 +282,73 @@ export function ReviewForm({
     };
   }
 
+  // Merge an accepted "Improve with AI" suggestion into the form. Only the
+  // sections the user left ticked arrive non-null; Save still persists.
+  function applyImprovement(s: AppliedSuggestions) {
+    if (s.classification) {
+      // Taxonomy is replaced wholesale — it's the AI's job. Tags are
+      // merged so anything the user typed by hand survives.
+      const c = s.classification;
+      setMealTypes(c.meal_types);
+      setCuisines(c.cuisines);
+      setDietTypes(c.diet_types);
+      setCookingMethods(c.cooking_methods);
+      setOccasions(c.occasions);
+      if (c.difficulty) setDifficulty(c.difficulty);
+      setTags((prev) => Array.from(new Set([...prev, ...c.tags])));
+    }
+    if (s.title) setTitle(s.title);
+    if (s.description) setDescription(s.description);
+    if (s.details?.servings) setServings(s.details.servings);
+    if (s.details?.prep_time_min) setPrep(s.details.prep_time_min);
+    if (s.details?.cook_time_min) setCook(s.details.cook_time_min);
+    if (s.nutrition) {
+      const n = s.nutrition as Record<string, number | null>;
+      setNutrition((prev) => {
+        const next = { ...prev };
+        for (const f of NUTRITION_FIELDS) {
+          const v = n[f.key];
+          if (typeof v === "number") next[f.key] = Math.round(v);
+        }
+        return next;
+      });
+    }
+    if (s.ingredients) {
+      const now = new Date().toISOString();
+      setIngredients(
+        s.ingredients.map(
+          (ing, i) =>
+            ({
+              id: `tmp-ai-${i}`,
+              recipe_id: recipe.id,
+              position: i,
+              created_at: now,
+              ...ing,
+            }) as Ingredient,
+        ),
+      );
+    }
+    if (s.instructions) {
+      const now = new Date().toISOString();
+      setInstructions((prev) =>
+        s.instructions!.map(
+          (text, i) =>
+            ({
+              id: `tmp-ai-${i}`,
+              recipe_id: recipe.id,
+              position: i,
+              // Keep the old step's section/timer when the count
+              // still lines up; a reworded step is the same step.
+              section: prev[i]?.section ?? null,
+              duration_min: prev[i]?.duration_min ?? null,
+              text,
+              created_at: now,
+            }) as Instruction,
+        ),
+      );
+    }
+  }
+
   // Save the current form state, then run a follow-up callback (used by the
   // unsaved-changes dialog to navigate after a successful save).
   async function saveAndThen(after?: () => void) {
@@ -472,76 +539,6 @@ export function ReviewForm({
                   breakfast/lunch/dinner filters. Pick one, or let AI suggest it.
                 </p>
               )}
-
-              <Separator />
-
-              <ImproveWithAI
-                getDraft={buildImproveDraft}
-                onApply={(s) => {
-                  if (s.classification) {
-                    // Taxonomy is replaced wholesale — it's the AI's job. Tags are
-                    // merged so anything the user typed by hand survives.
-                    const c = s.classification;
-                    setMealTypes(c.meal_types);
-                    setCuisines(c.cuisines);
-                    setDietTypes(c.diet_types);
-                    setCookingMethods(c.cooking_methods);
-                    setOccasions(c.occasions);
-                    if (c.difficulty) setDifficulty(c.difficulty);
-                    setTags((prev) => Array.from(new Set([...prev, ...c.tags])));
-                  }
-                  if (s.title) setTitle(s.title);
-                  if (s.description) setDescription(s.description);
-                  if (s.details?.servings) setServings(s.details.servings);
-                  if (s.details?.prep_time_min) setPrep(s.details.prep_time_min);
-                  if (s.details?.cook_time_min) setCook(s.details.cook_time_min);
-                  if (s.nutrition) {
-                    const n = s.nutrition as Record<string, number | null>;
-                    setNutrition((prev) => {
-                      const next = { ...prev };
-                      for (const f of NUTRITION_FIELDS) {
-                        const v = n[f.key];
-                        if (typeof v === "number") next[f.key] = Math.round(v);
-                      }
-                      return next;
-                    });
-                  }
-                  if (s.ingredients) {
-                    const now = new Date().toISOString();
-                    setIngredients(
-                      s.ingredients.map(
-                        (ing, i) =>
-                          ({
-                            id: `tmp-ai-${i}`,
-                            recipe_id: recipe.id,
-                            position: i,
-                            created_at: now,
-                            ...ing,
-                          }) as Ingredient,
-                      ),
-                    );
-                  }
-                  if (s.instructions) {
-                    const now = new Date().toISOString();
-                    setInstructions((prev) =>
-                      s.instructions!.map(
-                        (text, i) =>
-                          ({
-                            id: `tmp-ai-${i}`,
-                            recipe_id: recipe.id,
-                            position: i,
-                            // Keep the old step's section/timer when the count
-                            // still lines up; a reworded step is the same step.
-                            section: prev[i]?.section ?? null,
-                            duration_min: prev[i]?.duration_min ?? null,
-                            text,
-                            created_at: now,
-                          }) as Instruction,
-                      ),
-                    );
-                  }
-                }}
-              />
             </CardContent>
           </Card>
 
@@ -758,9 +755,12 @@ export function ReviewForm({
             ) : (
               <span />
             )}
-            <Button onClick={save} disabled={pending} size="lg" className="min-w-32">
-              {pending ? "Saving..." : "Save recipe"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <ImproveWithAI getDraft={buildImproveDraft} onApply={applyImprovement} />
+              <Button onClick={save} disabled={pending} size="lg" className="min-w-32">
+                {pending ? "Saving..." : "Save recipe"}
+              </Button>
+            </div>
           </div>
         </div>
       </div>

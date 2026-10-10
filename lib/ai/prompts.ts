@@ -137,6 +137,23 @@ Rules:
 - changes: one short line per change you made and why ("Swapped butter for vegan butter to match
   the vegan tag"). Empty when you changed nothing but the classification.
 
+Return EXACTLY this JSON shape (null where you suggest no change):
+{
+  "meal_types": string[], "cuisines": string[], "diet_types": string[],
+  "cooking_methods": string[], "occasions": string[],
+  "difficulty": "easy" | "medium" | "hard" | null, "tags": string[],
+  "title": string | null, "description": string | null,
+  "servings": integer | null, "prep_time_min": integer | null, "cook_time_min": integer | null,
+  "nutrition": { "calories": number | null, "protein_g": number | null, "carbs_g": number | null,
+    "fat_g": number | null, "fiber_g": number | null, "sugar_g": number | null,
+    "sodium_mg": number | null } | null,
+  "ingredients": [{ "raw_text": string, "quantity": number | null, "unit": string | null,
+    "ingredient": string | null, "notes": string | null, "section": string | null,
+    "optional": boolean }] | null,
+  "instructions": string[] | null,
+  "changes": string[]
+}
+
 Respond with VALID JSON ONLY.`;
 
 export const RECIPE_SKIM_SYSTEM = `You are a fast recipe scout.
