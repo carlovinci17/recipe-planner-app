@@ -232,14 +232,14 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
                   the list, not five squashed columns. */}
               <div
                 className={cn(
-                  "flex flex-col divide-y md:grid md:gap-3 md:divide-y-0",
+                  "flex flex-col md:grid md:gap-3",
                   NUTRITION_COLS[present.length] ?? "md:grid-cols-5",
                 )}
               >
                 {present.map((f) => (
                   <div
                     key={f.key}
-                    className="flex items-center justify-between gap-3 py-2 md:flex-col md:items-center md:justify-center md:gap-0 md:rounded-lg md:border md:bg-card md:p-3 md:text-center"
+                    className="flex items-center justify-between gap-3 border-b py-2 last:border-b-0 md:flex-col md:items-center md:justify-center md:gap-0 md:rounded-lg md:border md:bg-card md:last:border-b md:p-3 md:text-center"
                   >
                     <span className="flex items-center gap-2 text-xs text-muted-foreground md:flex-col md:gap-0">
                       <f.Icon className="h-3.5 w-3.5 shrink-0 md:mb-1 md:h-4 md:w-4" aria-hidden />

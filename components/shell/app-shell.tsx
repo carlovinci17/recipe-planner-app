@@ -239,7 +239,9 @@ export function AppShell({
         })}
       </nav>
 
-      <KitchenAssistant />
+      {/* Hidden while editing a recipe: its floating button sits over the
+          sticky Save bar, and Improve with AI covers that page's AI needs. */}
+      {/^\/recipes\/[^/]+\/(edit|review)$/.test(pathname) ? null : <KitchenAssistant />}
     </div>
   );
 }
