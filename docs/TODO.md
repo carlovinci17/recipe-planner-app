@@ -9,24 +9,6 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 ## Open
 
-- [ ] **Decide who owns the container app's config — bicep or `az containerapp update`** (found
-      2026-10-09). The template is now reconciled and safe to apply, but the underlying problem
-      is that two things write to one resource: CI sets the image on every deploy, and eight
-      modules of `az containerapp update` set everything else. That is why the template had
-      drifted to 3 env vars against production's 18 in the first place. Either bicep becomes the
-      sole owner (and CI stops using `az containerapp update`), or the container app is declared
-      out of scope for the template and managed by a checked-in script. Pick one; the current
-      state only *looks* settled because someone reconciled it by hand.
-      - **Reading a `what-if` on this template:** three diffs are permanent noise and are
-        documented inline in `infra/main.bicep` — the whole `configuration.secrets` array
-        (what-if diffs arrays positionally and the live order differs), `AZURE_CLIENT_ID` (an
-        unresolvable `reference()` at plan time), and `runningStatus` / `ingress.exposedPort`
-        (read-only). Anything else is real.
-      - Also expect **2 `Create` role assignments** on every run: bicep derives its names with
-        `guid()`, and the live assignments were created imperatively under different names.
-        Applying adds duplicates — harmless (same principal, role and scope) but untidy.
-        Hardcoding the existing GUIDs to silence it would be worse.
-
 - [ ] **Make serving size adjustable** — default 2 for all recipes.
 
 - [ ] **Entra sign-in branding — design + apply in the portal** (do as part of the **Module 10 UI
@@ -118,12 +100,6 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
       every recipe added since has none). Fix: embed at persist time (or on publish), then backfill
       the current 8.
 
-- [ ] **Docs audit follow-ups (2026-09-04)** — README.md and architecture.md were rewritten for
-      the Azure/Neon stack. Still to check: `docs/database-features.md` and
-      `docs/tooling-decisions.md` each mention Supabase/Vercel in passing (likely historical
-      context, not yet verified line by line), and `CLAUDE.md` still documents the Supabase
-      architecture sections that go away at decommission.
-
 - [ ] **Household switcher UI was never built** — `app/(app)/layout.tsx` passes `activeHousehold`
       and `households` into `AppShell`, and `switchHouseholdAction` exists in
       `components/shell/actions.ts`, but nothing renders a picker. The dead local wrapper
@@ -154,6 +130,27 @@ Add a line here whenever something small surfaces mid-task so it isn't forgotten
 
 Kept for the detail — what was actually wrong is usually more useful than the fact that
 it is fixed. Newest first.
+
+- [x] **Docs audit follow-ups (2026-09-04)** — DONE (2026-10-10). `CLAUDE.md` was rewritten
+      for the Azure stack at cutover. The two remaining files only mention Supabase/Vercel as
+      history: `docs/database-features.md` (why RLS uses `app.user_id` instead of `auth.uid()`)
+      and `docs/tooling-decisions.md` (what `func` and `drizzle-kit` replaced). Both kept as-is.
+
+- [x] **Who owns the container app's config** — DECIDED (2026-10-10): **bicep owns every
+      setting; CI owns only the image tag.** `build.yml` already calls `az containerapp update`
+      with `--image` and nothing else, and `infra/main.bicep` already takes `containerImage` as a
+      required, default-less param, so the split needed no code change — only the rule. Change
+      env vars, secrets, probes or scale in `infra/main.bicep` and apply it; never with a
+      hand-typed `az containerapp update --set-env-vars`, which is how the template drifted to 3
+      env vars against production's 18.
+      - **Reading a `what-if` on this template:** three diffs are permanent noise and are
+        documented inline in `infra/main.bicep` — the whole `configuration.secrets` array
+        (what-if diffs arrays positionally and the live order differs), `AZURE_CLIENT_ID` (an
+        unresolvable `reference()` at plan time), and `runningStatus` / `ingress.exposedPort`
+        (read-only). Anything else is real.
+      - Also expect **2 `Create` role assignments** on every run: bicep derives its names with
+        `guid()`, and the live assignments were created imperatively under different names.
+        Applying adds duplicates — harmless (same principal, role and scope) but untidy.
 
 - [x] **Meal-type / diet-type / cuisine filters built a malformed array literal** — DONE
       (2026-10-09), found by the rebuilt integration suite on its first run.

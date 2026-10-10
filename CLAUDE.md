@@ -239,6 +239,11 @@ Two properties worth knowing:
 
 ### Env
 
+**`infra/main.bicep` owns the container app's settings; CI owns only the image tag.** Change an
+env var, secret, probe or scale rule in the template and apply it — never with a hand-typed
+`az containerapp update --set-env-vars`. Two writers on one resource is how the template once
+drifted to 3 env vars against production's 18.
+
 All env vars are validated at boot by Zod in `lib/env.ts`; empty strings are coerced to
 undefined. Import `env` from there rather than reading `process.env` directly.
 
