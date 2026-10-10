@@ -81,6 +81,19 @@ export async function listFolder(folder: FolderRow): Promise<{
         });
     }
 
+    // A file whose job was deleted (e.g. removed from Recent imports) would sit
+    // as "queued" forever and never be looked at again — put it back in line.
+    await d
+      .update(driveFiles)
+      .set({ status: "pending", error: null, updatedAt: sql`now()` })
+      .where(
+        and(
+          eq(driveFiles.folderId, folder.id),
+          eq(driveFiles.status, "queued"),
+          isNull(driveFiles.jobId),
+        ),
+      );
+
     await d
       .update(driveFolders)
       .set({ lastListedAt: sql`now()`, lastError: null, updatedAt: sql`now()` })
@@ -122,7 +135,11 @@ async function inFlightCount(): Promise<number> {
   return row?.n ?? 0;
 }
 
-async function queueOne(file: typeof driveFiles.$inferSelect, folder: FolderRow): Promise<void> {
+async function queueOne(
+  file: typeof driveFiles.$inferSelect,
+  folder: FolderRow,
+  opts: { forcePicker?: boolean } = {},
+): Promise<void> {
   const d = await db();
   const fmt = SUPPORTED_MIME[file.mimeType];
   if (!fmt) return;
@@ -170,6 +187,7 @@ async function queueOne(file: typeof driveFiles.$inferSelect, folder: FolderRow)
       householdId: folder.householdId,
       sourceKind: "google_drive",
       source: "drive",
+      ...(opts.forcePicker ? { forcePicker: true } : {}),
     });
   } catch (err) {
     const message = (err as Error).message.slice(0, 500);
@@ -243,4 +261,76 @@ export async function driveSyncTick(): Promise<{ listed: number; queued: number;
   }
   const { queued, failed } = await queueFiles();
   return { listed, queued, failed };
+}
+
+/**
+ * "Import again" for files that were skipped, cancelled or failed. Never
+ * automatic — a broken file would otherwise be re-read (and paid for) every
+ * 30 minutes. Scoped to the household explicitly; the caller has checked
+ * membership.
+ *
+ * One file: queued straight away and ALWAYS opens the recipe picker, even for a
+ * short file whose recipes all look like duplicates, so the user can pick the
+ * one they want. "Retry all failed": back in the queue for the timer.
+ */
+export async function retryDriveFiles(args: {
+  householdId: string;
+  folderRowId: string;
+  fileRowId?: string;
+}): Promise<number> {
+  const d = await db();
+  const [folder] = await d
+    .select()
+    .from(driveFolders)
+    .where(
+      and(eq(driveFolders.id, args.folderRowId), eq(driveFolders.householdId, args.householdId)),
+    );
+  if (!folder) return 0;
+
+  if (args.fileRowId) {
+    const [file] = await d
+      .select()
+      .from(driveFiles)
+      .where(
+        and(
+          eq(driveFiles.id, args.fileRowId),
+          eq(driveFiles.folderId, folder.id),
+          eq(driveFiles.householdId, args.householdId),
+        ),
+      );
+    if (!file || file.status === "unsupported") return 0;
+    await queueOne(file, folder, { forcePicker: true });
+    return 1;
+  }
+
+  const failed = await d
+    .select({ id: driveFiles.id })
+    .from(driveFiles)
+    .leftJoin(ingestionJobs, eq(ingestionJobs.id, driveFiles.jobId))
+    .where(
+      and(
+        eq(driveFiles.folderId, folder.id),
+        eq(driveFiles.householdId, args.householdId),
+        or(
+          eq(driveFiles.status, "failed"),
+          and(
+            eq(ingestionJobs.status, "failed"),
+            sql`coalesce(${ingestionJobs.error}, '') not like 'Skipped%'`,
+            sql`coalesce(${ingestionJobs.error}, '') not like 'Cancelled%'`,
+          ),
+        ),
+      ),
+    );
+  if (failed.length === 0) return 0;
+  await d
+    .update(driveFiles)
+    .set({ status: "pending", jobId: null, error: null, updatedAt: sql`now()` })
+    .where(
+      inArray(
+        driveFiles.id,
+        failed.map((f) => f.id),
+      ),
+    );
+  await queueFiles();
+  return failed.length;
 }

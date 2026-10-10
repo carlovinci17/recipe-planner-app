@@ -10,6 +10,7 @@ import {
   confirmDriveFolderAction,
   connectDriveFolderAction,
   removeDriveFolderAction,
+  retryDriveFilesAction,
   syncDriveFolderAction,
 } from "./actions";
 
@@ -80,6 +81,16 @@ export function ImportDrive({
       const r = await syncDriveFolderAction({ householdId, folderRowId });
       if (!r.ok) toast.error(r.error);
       else toast.success(`Checked — ${r.preview.pending} new file(s) found.`);
+    });
+  }
+
+  function retry(folderRowId: string, fileRowId?: string) {
+    start(async () => {
+      const r = await retryDriveFilesAction({ householdId, folderRowId, fileRowId });
+      if (!r.ok) toast.error(r.error);
+      else if (fileRowId)
+        toast.success("Importing again — pick the recipes you want when it's ready.");
+      else toast.success(r.count ? `${r.count} file(s) queued again.` : "Nothing to retry.");
     });
   }
 
@@ -210,6 +221,47 @@ export function ImportDrive({
             {f.counts.unsupported > 0 && <span>{f.counts.unsupported} unsupported</span>}
           </div>
           {f.lastError && <p className="text-xs text-destructive">{f.lastError}</p>}
+          {f.notImported.length > 0 && (
+            <details className="rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                Not imported ({f.notImported.length}) — skipped, cancelled or failed
+              </summary>
+              <div className="mt-2 flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => retry(f.id)}
+                  disabled={pending}
+                >
+                  <RefreshCw className="mr-1 h-3.5 w-3.5" /> Retry all failed
+                </Button>
+              </div>
+              <ul className="mt-2 divide-y">
+                {f.notImported.map((n) => (
+                  <li key={n.id} className="flex items-center justify-between gap-2 py-1.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium">
+                        {n.path ? `${n.path}/` : ""}
+                        {n.name}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">{n.reason}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => retry(f.id, n.id)}
+                      disabled={pending}
+                    >
+                      Import again
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       ))}
     </div>

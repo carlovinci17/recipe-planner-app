@@ -18,6 +18,8 @@ type StartInput = {
   pageNumbers?: number[];
   /** "drive" for the Google Drive folder sync: no one is watching, see the mix rule below. */
   source?: "drive";
+  /** Drive "Import again": the user asked, so always wait on the picker. */
+  forcePicker?: boolean;
 };
 
 // Drive files up to this many pages import their new recipes without asking;
@@ -43,7 +45,9 @@ function chunkPages(pages: string[]): string[][] {
 // ── Activities: each is a thin call to an internal endpoint on the Next app. ──
 df.app.activity("prepare", { handler: (i: StartInput) => callApp("prepare", i) });
 df.app.activity("extractChunk", { handler: (i: unknown) => callApp("extract-chunk", i) });
-df.app.activity("finalizeExtraction", { handler: (i: unknown) => callApp("finalize-extraction", i) });
+df.app.activity("finalizeExtraction", {
+  handler: (i: unknown) => callApp("finalize-extraction", i),
+});
 df.app.activity("persistRecipe", { handler: (i: unknown) => callApp("persist-recipe", i) });
 df.app.activity("finalizeJob", { handler: (i: unknown) => callApp("finalize-job", i) });
 df.app.activity("cleanup", { handler: (i: unknown) => callApp("cleanup", i) });
@@ -96,12 +100,13 @@ const ingestionOrchestrator: OrchestrationHandler = function* (context: Orchestr
   //   - ≤ DRIVE_AUTO_SELECT_MAX_PAGES → import every new recipe, no picker
   //   - longer                        → wait on the picker, duplicates unticked
   const isDrive = input.source === "drive";
+  const autoPick = isDrive && !input.forcePicker;
   if ((pages.length >= 3 && !input.bulkMode) || isDrive) {
     const skimmed = (yield context.df.callActivity("skim", { jobId, pages })) as {
       count: number;
       newIndices: number[];
     };
-    if (isDrive && skimmed.newIndices.length === 0) {
+    if (autoPick && skimmed.newIndices.length === 0) {
       yield context.df.callActivity("applySelection", {
         jobId,
         selectedIndices: [],
@@ -109,7 +114,7 @@ const ingestionOrchestrator: OrchestrationHandler = function* (context: Orchestr
       });
       return { jobId, recipesFound: 0 };
     }
-    if (isDrive && pages.length <= DRIVE_AUTO_SELECT_MAX_PAGES) {
+    if (autoPick && pages.length <= DRIVE_AUTO_SELECT_MAX_PAGES) {
       const applied = (yield context.df.callActivity("applySelection", {
         jobId,
         selectedIndices: skimmed.newIndices,
@@ -137,7 +142,10 @@ const ingestionOrchestrator: OrchestrationHandler = function* (context: Orchestr
         sourceName: string | null;
         sourceUrl: string | null;
       };
-      const applied = (yield context.df.callActivity("applySelection", { jobId, ...selection })) as {
+      const applied = (yield context.df.callActivity("applySelection", {
+        jobId,
+        ...selection,
+      })) as {
         cancelled: boolean;
         pagesToExtract?: string[];
       };
@@ -157,7 +165,9 @@ const ingestionOrchestrator: OrchestrationHandler = function* (context: Orchestr
       totalChunks: chunks.length,
       bulkMode: input.bulkMode,
       useOpus: input.useOpus,
-    })) as { usage: { model: string; promptTokens: number; completionTokens: number; costCents: number } };
+    })) as {
+      usage: { model: string; promptTokens: number; completionTokens: number; costCents: number };
+    };
     usage.model = r.usage.model;
     usage.promptTokens += r.usage.promptTokens;
     usage.completionTokens += r.usage.completionTokens;
@@ -182,7 +192,9 @@ const ingestionOrchestrator: OrchestrationHandler = function* (context: Orchestr
   const results = (yield context.df.Task.all(persistTasks)) as Array<
     { ok: true; id: string; title: string } | { ok: false; error: string; title?: string }
   >;
-  const persisted = results.filter((r): r is { ok: true; id: string; title: string } => r.ok).map((r) => r.id);
+  const persisted = results
+    .filter((r): r is { ok: true; id: string; title: string } => r.ok)
+    .map((r) => r.id);
   const failed = results.filter((r) => !r.ok);
 
   if (persisted.length === 0) {
@@ -224,7 +236,10 @@ app.http("ingestionStart", {
     const client = df.getClient(context);
     const body = (await req.json()) as StartInput;
     // instanceId = jobId, so the app can raiseEvent (skim selection) by jobId.
-    const instanceId = await client.startNew("ingestionOrchestrator", { instanceId: body.jobId, input: body });
+    const instanceId = await client.startNew("ingestionOrchestrator", {
+      instanceId: body.jobId,
+      input: body,
+    });
     context.log(`Started ingestion orchestration '${instanceId}' for job ${body.jobId}`);
     return client.createCheckStatusResponse(req, instanceId);
   },

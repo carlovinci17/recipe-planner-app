@@ -143,10 +143,15 @@ export async function createPhotoJobAction(input: z.infer<typeof CreatePhotoJobS
 
 const CreateMultiPhotoJobSchema = z.object({
   householdId: z.string().uuid(),
-  photos: z.array(z.object({
-    fileName: z.string().min(1).max(255),
-    contentType: z.string().min(1).max(100),
-  })).min(1).max(20),
+  photos: z
+    .array(
+      z.object({
+        fileName: z.string().min(1).max(255),
+        contentType: z.string().min(1).max(100),
+      }),
+    )
+    .min(1)
+    .max(20),
 });
 
 export async function createMultiPhotoJobAction(input: z.infer<typeof CreateMultiPhotoJobSchema>) {
@@ -168,7 +173,9 @@ const CompleteMultiPhotoUploadSchema = z.object({
   pageImagePaths: z.array(z.string().min(1)).min(1).max(20),
 });
 
-export async function completeMultiPhotoUploadAction(input: z.infer<typeof CompleteMultiPhotoUploadSchema>) {
+export async function completeMultiPhotoUploadAction(
+  input: z.infer<typeof CompleteMultiPhotoUploadSchema>,
+) {
   const parsed = CompleteMultiPhotoUploadSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Invalid input" };
   try {
@@ -188,10 +195,7 @@ const CompletePhotoUploadSchema = z.object({
   // "2, 5-8, 13-15". Absent or empty means the whole document. Re-checked
   // here rather than trusted: the browser parsed it, but the browser is not
   // the gate.
-  pageNumbers: z
-    .array(z.number().int().min(1))
-    .max(MAX_SELECTED_PAGES)
-    .optional(),
+  pageNumbers: z.array(z.number().int().min(1)).max(MAX_SELECTED_PAGES).optional(),
 });
 
 export async function completePhotoUploadAction(input: z.infer<typeof CompletePhotoUploadSchema>) {
@@ -303,7 +307,10 @@ export async function connectDriveFolderAction(input: z.infer<typeof DriveConnec
     return result;
   } catch (err) {
     logger.error({ err }, "connectDriveFolderAction failed");
-    return { ok: false as const, error: "Couldn't reach Google Drive just now. Try again in a moment." };
+    return {
+      ok: false as const,
+      error: "Couldn't reach Google Drive just now. Try again in a moment.",
+    };
   }
 }
 
@@ -333,7 +340,9 @@ export async function syncDriveFolderAction(input: z.infer<typeof DriveFolderSch
     await assertMembership(parsed.data.householdId);
     const preview = await driveService.syncNow(parsed.data);
     revalidatePath("/recipes/import");
-    return preview ? { ok: true as const, preview } : { ok: false as const, error: "Folder not found" };
+    return preview
+      ? { ok: true as const, preview }
+      : { ok: false as const, error: "Folder not found" };
   } catch (err) {
     logger.error({ err }, "syncDriveFolderAction failed");
     return {
@@ -354,5 +363,25 @@ export async function removeDriveFolderAction(input: z.infer<typeof DriveFolderS
   } catch (err) {
     logger.error({ err }, "removeDriveFolderAction failed");
     return { ok: false as const, error: "Couldn't remove that folder." };
+  }
+}
+
+const DriveRetrySchema = z.object({
+  householdId: z.string().uuid(),
+  folderRowId: z.string().uuid(),
+  fileRowId: z.string().uuid().optional(),
+});
+
+export async function retryDriveFilesAction(input: z.infer<typeof DriveRetrySchema>) {
+  const parsed = DriveRetrySchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid file" };
+  try {
+    await assertMembership(parsed.data.householdId);
+    const count = await driveService.retry(parsed.data);
+    revalidatePath("/recipes/import");
+    return { ok: true as const, count };
+  } catch (err) {
+    logger.error({ err }, "retryDriveFilesAction failed");
+    return { ok: false as const, error: "Couldn't restart that import. Try again in a moment." };
   }
 }

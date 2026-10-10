@@ -16,6 +16,8 @@ type FileUploadedData = {
   allowedTitles?: string[];
   /** "drive" for the folder sync — the orchestrator then skims and auto-selects. */
   source?: "drive";
+  /** Drive "Import again": always show the picker, even for a short file. */
+  forcePicker?: boolean;
 };
 
 /**

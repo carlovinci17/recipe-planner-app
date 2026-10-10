@@ -13,7 +13,7 @@ import {
   getFolder,
   parseFolderId,
 } from "@/lib/integrations/google-drive";
-import { listFolder, queueFiles } from "@/lib/ingestion/drive-sync";
+import { listFolder, queueFiles, retryDriveFiles } from "@/lib/ingestion/drive-sync";
 import { runInUserTx } from "./user-tx";
 
 export type DriveFolderSummary = {
@@ -31,6 +31,8 @@ export type DriveFolderSummary = {
     failed: number;
     unsupported: number;
   };
+  /** Files that did not import (skipped, cancelled, failed), newest first, capped. */
+  notImported: { id: string; name: string; path: string | null; reason: string }[];
 };
 
 export type DrivePreview = {
@@ -74,6 +76,24 @@ export const driveService = {
         .leftJoin(ingestionJobs, eq(ingestionJobs.id, driveFiles.jobId))
         .where(eq(driveFiles.householdId, householdId))
         .groupBy(driveFiles.folderId, sql`2`);
+      const notImported = await tx
+        .select({
+          id: driveFiles.id,
+          folderId: driveFiles.folderId,
+          name: driveFiles.name,
+          path: driveFiles.path,
+          reason: sql<string>`coalesce(${ingestionJobs.error}, ${driveFiles.error}, 'Failed')`,
+        })
+        .from(driveFiles)
+        .leftJoin(ingestionJobs, eq(ingestionJobs.id, driveFiles.jobId))
+        .where(
+          and(
+            eq(driveFiles.householdId, householdId),
+            sql`(${driveFiles.status} = 'failed' or ${ingestionJobs.status} = 'failed')`,
+          ),
+        )
+        .orderBy(sql`${driveFiles.updatedAt} desc`)
+        .limit(200);
       return folders.map((f) => {
         const c = {
           total: 0,
@@ -95,6 +115,9 @@ export const driveService = {
           lastListedAt: f.lastListedAt,
           lastError: f.lastError,
           counts: c,
+          notImported: notImported
+            .filter((n) => n.folderId === f.id)
+            .map(({ id, name, path, reason }) => ({ id, name, path, reason })),
         };
       });
     });
@@ -196,6 +219,9 @@ export const driveService = {
     if (row.confirmedAt) await queueFiles();
     return preview;
   },
+
+  /** "Import again" for one file (always opens the picker) or every failed one. */
+  retry: retryDriveFiles,
 
   async remove(args: { householdId: string; folderRowId: string }): Promise<void> {
     await runInUserTx((tx) =>
