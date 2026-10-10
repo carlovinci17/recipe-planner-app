@@ -126,8 +126,9 @@ when its service is replaced:
   - ⚠️ **PARTIALLY.** supabase/migrations/ STAYS — 36 files, the live schema history, read by db:migrate. Only the directory name is historical. config.toml and seed.sql were dead Supabase-CLI artefacts and were deleted 2026-10-09.
 - [x] Vercel config & `VERCEL_*` env references (e.g. `next.config.ts` uses `VERCEL_GIT_COMMIT_SHA`) → Azure build metadata.
   - ✅ next.config.ts no longer reads VERCEL_GIT_COMMIT_SHA; the footer SHA now comes from a GIT_SHA build arg filled by CI.
-- [ ] Delete the Vercel project, Supabase project, Inngest app, n8n at final cutover (Module 11).
-  - ⚠️ Supabase project confirmed deleted (its disappearance is what broke the dev server on 2026-10-04). Vercel / Inngest / n8n are dashboard actions **still outstanding** — cannot be verified from the CLI.
+- [x] Delete the Vercel project, Supabase project, Inngest app, n8n at final cutover (Module 11).
+  - ✅ confirmed by Carlo 2026-10-10: Supabase project deleted and account deletion requested; Inngest event types archived, no activity; Vercel has no recipe-planner project left (only the unrelated carlovinci.com.au).
+  - ✅ n8n: nothing to delete. `N8N_WEBHOOK_URL` / `N8N_WEBHOOK_SECRET` were empty in every committed env file since the initial commit, so the n8n flow (`docs/n8n-drive-flow.md`) was documented but never wired up.
 
 ## Docs
 - [x] `CLAUDE.md` — remove Supabase/Inngest/n8n architecture sections as each goes away (a stale CLAUDE.md is worse than none).
