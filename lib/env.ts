@@ -61,6 +61,8 @@ const serverSchema = z.object({
   // Azure AI Foundry, keyless via DefaultAzureCredential.
   AZURE_FOUNDRY_ENDPOINT: optionalUrl,
   AZURE_FOUNDRY_DEPLOYMENT: z.string().default("gpt-4o-mini"),
+  // Embedding deployment for recipes.embedding (1536 dims = text-embedding-3-small).
+  AZURE_FOUNDRY_EMBED_DEPLOYMENT: z.string().default("text-embedding-3-small"),
   // OpenAI — provider file kept on disk as a reference, not wired.
   OPENAI_API_KEY: optional(10),
   OPENAI_MODEL_VISION: z.string().default("gpt-5.5"),

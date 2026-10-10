@@ -8,11 +8,16 @@
  * + AZURE_FOUNDRY_ENDPOINT/EMBED_DEPLOYMENT from .env.local.
  *
  *   npx tsx scripts/backfill-embeddings.ts            # dry-run (counts + a sample text)
- *   npx tsx scripts/backfill-embeddings.ts --apply    # embed + store
+ *   npx tsx scripts/backfill-embeddings.ts --apply    # embed + store every recipe
+ *   npx tsx scripts/backfill-embeddings.ts --apply --missing  # only recipes with none
+ *
+ * New recipes are embedded by the pipeline (tag step) and on save; this is for
+ * repairs and for re-embedding everything after the embed text changes.
  */
 import { config as dotenv } from "dotenv";
 dotenv({ path: ".env.local" });
 import postgres from "postgres";
+import { recipeEmbedText } from "../lib/recipes/embed-text";
 import { AzureOpenAI } from "openai";
 import { DefaultAzureCredential, getBearerTokenProvider } from "@azure/identity";
 
@@ -23,6 +28,7 @@ if (!neonUrl) throw new Error("NEON_DATABASE_URL / DATABASE_URL not set");
 if (!endpoint) throw new Error("AZURE_FOUNDRY_ENDPOINT not set");
 
 const APPLY = process.argv.includes("--apply");
+const MISSING = process.argv.includes("--missing");
 const BATCH = 64;
 
 const sql = postgres(neonUrl, { ssl: "require", prepare: false });
@@ -46,25 +52,15 @@ type Row = {
   ingredients: string[] | null;
 };
 
-const embedText = (r: Row): string =>
-  [
-    r.title,
-    r.description ?? "",
-    (r.cuisines ?? []).join(" "),
-    (r.meal_types ?? []).join(" "),
-    (r.diet_types ?? []).join(" "),
-    (r.tags ?? []).join(" "),
-    (r.ingredients ?? []).join(", "),
-  ]
-    .filter((s) => s && s.trim())
-    .join("\n");
+const embedText = recipeEmbedText;
 
 async function main(): Promise<void> {
   const rows = await sql<Row[]>`
     select r.id, r.title, r.description, r.cuisines, r.meal_types, r.diet_types, r.tags,
-      coalesce(array_agg(ri.raw_text) filter (where ri.raw_text is not null), '{}') as ingredients
+      coalesce(array_agg(ri.raw_text order by ri.position) filter (where ri.raw_text is not null), '{}') as ingredients
     from recipes r
     left join recipe_ingredients ri on ri.recipe_id = r.id
+    where ${MISSING ? sql`r.embedding is null` : sql`true`}
     group by r.id`;
 
   console.log(`Recipes: ${rows.length}   Mode: ${APPLY ? "APPLY" : "DRY-RUN"}   Model: ${deployment}\n`);
@@ -89,9 +85,10 @@ async function main(): Promise<void> {
     console.log(`  embedded ${done}/${rows.length}`);
   }
 
-  const [c] = await sql<{ n: number }[]>`select count(*)::int n from recipes where embedding is not null`;
+  const [c] = await sql<{ n: number; total: number }[]>`
+    select count(*) filter (where embedding is not null)::int n, count(*)::int total from recipes`;
   await sql.end();
-  console.log(`\n✅ ${c!.n}/${rows.length} recipes have embeddings.`);
+  console.log(`\n✅ Embedded ${rows.length}. ${c!.n}/${c!.total} recipes now have embeddings.`);
 }
 
 main().catch((e) => {

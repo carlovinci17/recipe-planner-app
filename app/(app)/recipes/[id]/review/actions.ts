@@ -1,12 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { recipeService } from "@/lib/services/recipe-service";
 import { getRecipePermissions } from "@/lib/services/permissions";
 import { improveRecipe } from "@/lib/ai/recipe-extraction";
 import { ingestionService } from "@/lib/services/ingestion-service";
 import { logger } from "@/lib/logger";
+import { embedRecipe } from "@/lib/agents/embeddings";
 import type { RecipeImprovement } from "@/lib/ai/schemas";
 import { normalizeList } from "@/lib/recipes/normalize";
 
@@ -188,6 +190,17 @@ export async function saveReviewAction(input: z.infer<typeof ReviewPayload>) {
   });
   await recipeService.replaceIngredients(parsed.data.recipeId, parsed.data.ingredients);
   await recipeService.replaceInstructions(parsed.data.recipeId, parsed.data.instructions);
+
+  // Re-embed after the response is sent: a manual recipe has no tagging step to
+  // do it, and an edit changes the text the vector was built from.
+  const recipeId = parsed.data.recipeId;
+  after(async () => {
+    try {
+      await embedRecipe(recipeId);
+    } catch (err) {
+      logger.warn({ err, recipeId }, "embedRecipe failed after save");
+    }
+  });
 
   // Bump the originating ingestion job so the Recent imports list shows
   // "Saved" instead of "Ready for review" once the user has actually
