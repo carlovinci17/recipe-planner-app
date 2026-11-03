@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logger";
 import { MAX_SELECTED_PAGES } from "@/lib/ingestion/page-range";
 import { driveService } from "@/lib/services/drive-service";
+import { importIgnoreService } from "@/lib/services/import-ignore-service";
 
 /**
  * Authorization for every action in this file: the caller must belong to the
@@ -228,15 +229,21 @@ const CommitSkimSchema = z.object({
   // Null/absent leaves the per-recipe AI/URL-derived defaults intact.
   sourceName: z.string().min(1).max(100).nullable().optional(),
   sourceUrl: z.string().url().max(2000).nullable().optional(),
+  // Recipes the user chose "Don't import again" for (indices, like selectedIndices).
+  ignoreIndices: z.array(z.number().int().min(0)).max(200).optional(),
+  // Nothing to import because every recipe was set to Skip / Don't import again —
+  // recorded as a skip, not a cancel.
+  allSkipped: z.boolean().optional(),
 });
 
 /**
- * Resume a processUpload that's parked on `step.waitForEvent` after a skim.
- * The user picks which recipes (by index into skim_results.recipes) to
- * deep-extract; we fire the matching Inngest event to unblock the function.
+ * Resume an import parked on the recipe picker (waitForExternalEvent after the
+ * skim). The user chose, per recipe (by index into skim_results.recipes):
+ * Import (`selectedIndices`), Skip (left out; asked again next time the file is
+ * read) or Don't import again (`ignoreIndices`, remembered for the household).
  *
- * Passing an empty `selectedIndices` is interpreted as "cancel" — the
- * pipeline will mark the job failed cleanly rather than extract anything.
+ * An empty `selectedIndices` ends the import without extracting anything —
+ * as "skipped" when `allSkipped`, otherwise as "cancelled".
  */
 export async function commitSkimSelectionAction(input: z.infer<typeof CommitSkimSchema>) {
   const parsed = CommitSkimSchema.safeParse(input);
@@ -253,11 +260,28 @@ export async function commitSkimSelectionAction(input: z.infer<typeof CommitSkim
       return { ok: false as const, error: "Not a member of this household" };
     }
 
+    // Titles come from the job's own skim, never from the client.
+    const skimmed = ((job.skim_results as { recipes?: { title?: string }[] } | null)?.recipes ??
+      []) as { title?: string }[];
+    const ignoreTitles = (parsed.data.ignoreIndices ?? [])
+      .map((i) => skimmed[i]?.title)
+      .filter((t): t is string => typeof t === "string" && t.trim().length > 0);
+    if (ignoreTitles.length > 0) {
+      await importIgnoreService.add({
+        householdId: job.household_id,
+        titles: ignoreTitles,
+        jobId: job.id,
+        storagePath: job.storage_path,
+      });
+    }
+
     // Resume the orchestration parked on waitForExternalEvent (instanceId = jobId).
+    const nothingChosen = parsed.data.selectedIndices.length === 0;
     await raiseIngestionEvent(parsed.data.jobId, "skimSelection", {
       selectedIndices: parsed.data.selectedIndices,
       sourceName: parsed.data.sourceName ?? null,
       sourceUrl: parsed.data.sourceUrl ?? null,
+      ...(nothingChosen && parsed.data.allSkipped ? { emptyReason: "user_skipped" } : {}),
     });
     revalidatePath("/recipes/import");
     return {
@@ -383,5 +407,27 @@ export async function retryDriveFilesAction(input: z.infer<typeof DriveRetrySche
   } catch (err) {
     logger.error({ err }, "retryDriveFilesAction failed");
     return { ok: false as const, error: "Couldn't restart that import. Try again in a moment." };
+  }
+}
+
+// ── "Don't import again" ─────────────────────────────────────────────────────
+
+const UndoIgnoreSchema = z.object({
+  householdId: z.string().uuid(),
+  id: z.string().uuid(),
+});
+
+/** Undo "Don't import again": the recipe is offered in the picker again next time. */
+export async function undoIgnoredRecipeAction(input: z.infer<typeof UndoIgnoreSchema>) {
+  const parsed = UndoIgnoreSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid recipe" };
+  try {
+    await assertMembership(parsed.data.householdId);
+    await importIgnoreService.remove(parsed.data);
+    revalidatePath("/recipes/import");
+    return { ok: true as const };
+  } catch (err) {
+    logger.error({ err }, "undoIgnoredRecipeAction failed");
+    return { ok: false as const, error: "Couldn't undo that. Try again in a moment." };
   }
 }

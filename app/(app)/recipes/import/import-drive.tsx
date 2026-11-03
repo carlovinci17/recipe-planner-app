@@ -151,8 +151,8 @@ export function ImportDrive({
             )}
           </ul>
           <p className="text-xs text-muted-foreground">
-            Recipes already in your library are skipped by title. Files of up to 10 pages import
-            automatically; longer cookbooks ask you which recipes to keep.
+            Nothing is imported until you choose it: each file with new recipes shows a
+            picker where you can Import, Skip or choose Don&apos;t import again.
           </p>
           <div className="flex gap-2">
             <Button type="button" onClick={() => confirm(preview.folderRowId)} disabled={pending}>

@@ -22,7 +22,7 @@ export async function sweepStuckJobs(): Promise<{ cleared: number }> {
   const cutoff = new Date(Date.now() - NO_PROGRESS_MIN * 60 * 1000).toISOString();
 
   const { db } = await import("@/lib/db");
-  const { and, desc, eq, lt } = await import("drizzle-orm");
+  const { and, desc, eq, lt, sql } = await import("drizzle-orm");
   const { ingestionEvents, ingestionJobs } = await import("@/lib/db/schema");
   const stuck = await db
     .select({
@@ -31,7 +31,17 @@ export async function sweepStuckJobs(): Promise<{ cleared: number }> {
       sourceKind: ingestionJobs.sourceKind,
     })
     .from(ingestionJobs)
-    .where(and(eq(ingestionJobs.status, "processing"), lt(ingestionJobs.updatedAt, cutoff)));
+    .where(
+      and(
+        eq(ingestionJobs.status, "processing"),
+        lt(ingestionJobs.updatedAt, cutoff),
+        // A job parked on the recipe picker isn't stuck — it's waiting for the
+        // user, and its orchestration times it out itself (24h, Drive 7 days).
+        // Same test as drive-sync's inFlightCount.
+        sql`not (${ingestionJobs.skimResults} is not null
+              and ${ingestionJobs.skimResults} -> 'selected_titles' is null)`,
+      ),
+    );
   if (stuck.length === 0) return { cleared: 0 };
 
   let updated = 0;

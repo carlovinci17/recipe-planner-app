@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +17,11 @@ import { Label } from "@/components/ui/label";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
 import { commitSkimSelectionAction } from "./actions";
 import { resolveBookPages, bookPageForImage } from "@/lib/ingestion/page-mapping";
+import {
+  choicesToCommit,
+  defaultChoices,
+  type SkimChoice,
+} from "@/lib/ingestion/skim-choices";
 
 type SkimRecipe = {
   title: string;
@@ -25,25 +29,33 @@ type SkimRecipe = {
   source_page_index: number | null;
   /** Set by the skim step when the household already has a recipe with this title. */
   in_library?: boolean;
+  /** Set by the skim step when the household chose "Don't import again" for it. */
+  ignored?: boolean;
 };
 
-/** Everything not already in the library starts ticked. */
-const defaultSelection = (recipes: SkimRecipe[]) =>
-  new Set(recipes.flatMap((r, i) => (r.in_library ? [] : [i])));
+const CHOICES: { value: SkimChoice; label: string }[] = [
+  { value: "import", label: "Import" },
+  { value: "skip", label: "Skip" },
+  { value: "ignore", label: "Don't import again" },
+];
 
 /**
  * Two-phase import: Phase 1 (skim) returns this list of recipe candidates.
- * The dialog lets the user uncheck false positives / unwanted recipes
- * before Phase 2 (deep extract) commits expensive Opus tokens.
+ * The dialog lets the user decide, per recipe, before Phase 2 (deep extract)
+ * spends the expensive tokens. Every Drive file with anything new lands here —
+ * nothing is imported without being chosen.
  *
  * UX notes:
- *   - Recipes default-checked, except ones already in the library (skim marks
- *     them `in_library`), so re-importing a cookbook doesn't duplicate. The expected interaction is "scan,
- *     uncheck a few, hit Import".
+ *   - Three choices per recipe (lib/ingestion/skim-choices): Import, Skip (asked
+ *     again next time the file is read) and Don't import again (remembered;
+ *     undone from the import page). New recipes start as Import, ones already
+ *     in the library as Skip, and ones already on the Don't-import-again list
+ *     are hidden, with a count.
  *   - Cancel is *not* a "close the dialog" — it commits an empty selection
- *     and marks the job failed. The dialog dismisses without choosing
+ *     and marks the job cancelled. Dismissing the dialog without choosing
  *     keeps the pipeline parked (the user can come back later).
- *   - "Import all" is a quick reset button for users who skipped through.
+ *   - With nothing set to Import, the main button becomes "Done": the file is
+ *     recorded as skipped (not cancelled) and any Don't-import-again choices kept.
  */
 export function SkimPreviewDialog({
   jobId,
@@ -81,9 +93,9 @@ export function SkimPreviewDialog({
   open: boolean;
   onOpenChange: (next: boolean) => void;
 }) {
-  // Selection is by index in the recipes array — same indices the server
-  // action consumes, so no name-matching ambiguity.
-  const [selected, setSelected] = useState<Set<number>>(() => defaultSelection(recipes));
+  // One choice per recipe, by index in the recipes array — same indices the
+  // server action consumes, so no name-matching ambiguity. null = hidden.
+  const [choices, setChoices] = useState<(SkimChoice | null)[]>(() => defaultChoices(recipes));
   // Batch source override. Pre-filled from the AI/job-derived defaults; the
   // user can type to rebrand the whole import (e.g. "Health with Bec").
   const [sourceName, setSourceName] = useState<string>(defaultSourceName ?? "");
@@ -95,23 +107,19 @@ export function SkimPreviewDialog({
   // mid-edit by an incidental re-render.
   useEffect(() => {
     if (open) {
-      setSelected(defaultSelection(recipes));
+      setChoices(defaultChoices(recipes));
       setSourceName(defaultSourceName ?? "");
       setSourceUrl(defaultSourceUrl ?? "");
     }
   }, [open, recipes, defaultSourceName, defaultSourceUrl]);
 
-  function toggle(idx: number) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
+  function choose(idx: number, choice: SkimChoice) {
+    setChoices((prev) => prev.map((c, i) => (i === idx ? choice : c)));
   }
 
-  const total = recipes.length;
-  const count = selected.size;
+  const hidden = choices.filter((c) => c === null).length;
+  const total = recipes.length - hidden;
+  const count = choices.filter((c) => c === "import").length;
 
   // Real book page behind each rasterized image. Without this the picker
   // labels a recipe on book page 14 as "page 2", because the model counts the
@@ -123,12 +131,15 @@ export function SkimPreviewDialog({
 
   const grouped = useMemo(() => {
     // Sort by source_page_index so a multi-recipe document scans top-to-bottom.
-    const indexed = recipes.map((r, i) => ({ r, i }));
+    const indexed = recipes.map((r, i) => ({ r, i })).filter(({ r }) => !r.ignored);
     indexed.sort((a, b) => (a.r.source_page_index ?? 999) - (b.r.source_page_index ?? 999));
     return indexed;
   }, [recipes]);
 
-  function commit(indices: number[]) {
+  /** "cancel" throws away the import; "choices" sends what the user picked. */
+  function commit(mode: "choices" | "cancel") {
+    const { selectedIndices, ignoreIndices } =
+      mode === "cancel" ? { selectedIndices: [], ignoreIndices: [] } : choicesToCommit(choices);
     startCommit(async () => {
       // Trim before forwarding so an empty-string source falls back to the
       // per-recipe AI default rather than overwriting it with whitespace.
@@ -136,7 +147,9 @@ export function SkimPreviewDialog({
       const trimmedUrl = sourceUrl.trim();
       const result = await commitSkimSelectionAction({
         jobId,
-        selectedIndices: indices,
+        selectedIndices,
+        ignoreIndices,
+        allSkipped: mode === "choices" && selectedIndices.length === 0,
         sourceName: trimmedName.length > 0 ? trimmedName : null,
         sourceUrl: trimmedUrl.length > 0 ? trimmedUrl : null,
       });
@@ -144,11 +157,17 @@ export function SkimPreviewDialog({
         toast.error(result.error ?? "Couldn't submit selection");
         return;
       }
-      if (indices.length === 0) {
+      const remembered =
+        ignoreIndices.length > 0
+          ? ` ${ignoreIndices.length} won't be offered again.`
+          : "";
+      if (mode === "cancel") {
         toast.info("Import cancelled");
+      } else if (selectedIndices.length === 0) {
+        toast.info(`Nothing imported from this file.${remembered}`);
       } else {
         toast.success(
-          `Importing ${indices.length} ${indices.length === 1 ? "recipe" : "recipes"}…`,
+          `Importing ${selectedIndices.length} ${selectedIndices.length === 1 ? "recipe" : "recipes"}…${remembered}`,
         );
       }
       onOpenChange(false);
@@ -161,11 +180,13 @@ export function SkimPreviewDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
-            {total} {total === 1 ? "recipe" : "recipes"} found — pick what to import
+            {total} {total === 1 ? "recipe" : "recipes"} found — choose what to import
           </DialogTitle>
           <DialogDescription>
-            We did a quick skim. Uncheck anything you don&apos;t want before we
-            do the slower, detailed extraction.
+            We did a quick skim. For each recipe choose Import, Skip (we&apos;ll ask
+            again next time this file is read) or Don&apos;t import again (we&apos;ll
+            remember; undo it in the Recent imports tab of the same name) before the
+            slower, detailed extraction.
           </DialogDescription>
         </DialogHeader>
 
@@ -216,7 +237,7 @@ export function SkimPreviewDialog({
 
         <ul className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
           {grouped.map(({ r, i }) => {
-            const isSelected = selected.has(i);
+            const choice = choices[i];
             const pagePath =
               r.source_page_index && r.source_page_index >= 1
                 ? sourcePages[r.source_page_index - 1] ?? null
@@ -227,21 +248,11 @@ export function SkimPreviewDialog({
               <li
                 key={i}
                 className={`flex items-start gap-3 rounded-md border bg-background p-2 transition-colors ${
-                  isSelected ? "" : "opacity-50"
+                  choice === "import" ? "" : "opacity-60"
                 }`}
               >
-                <Checkbox
-                  checked={isSelected}
-                  onCheckedChange={() => toggle(i)}
-                  className="mt-1.5"
-                  aria-label={`Toggle ${r.title}`}
-                />
                 <SkimRowThumb path={pagePath} />
-                <button
-                  type="button"
-                  onClick={() => toggle(i)}
-                  className="min-w-0 flex-1 cursor-pointer self-stretch text-left"
-                >
+                <div className="min-w-0 flex-1 space-y-1.5">
                   <div className="flex items-baseline gap-2">
                     <span className="truncate font-medium">{r.title}</span>
                     {bookPage ? (
@@ -256,22 +267,49 @@ export function SkimPreviewDialog({
                     ) : null}
                   </div>
                   {r.summary ? (
-                    <div className="mt-0.5 text-xs leading-snug text-muted-foreground">
-                      {r.summary}
-                    </div>
+                    <div className="text-xs leading-snug text-muted-foreground">{r.summary}</div>
                   ) : null}
-                </button>
+                  <div
+                    role="radiogroup"
+                    aria-label={`What to do with ${r.title}`}
+                    className="inline-flex flex-wrap gap-1"
+                  >
+                    {CHOICES.map((c) => (
+                      <Button
+                        key={c.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={choice === c.value}
+                        size="sm"
+                        variant={choice === c.value ? (c.value === "import" ? "default" : "secondary") : "outline"}
+                        className="h-7 px-2.5 text-xs"
+                        onClick={() => choose(i, c.value)}
+                        disabled={committing}
+                      >
+                        {c.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
               </li>
             );
           })}
         </ul>
+
+        {hidden > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {hidden} more {hidden === 1 ? "recipe is" : "recipes are"} hidden because you chose
+            Don&apos;t import again. Undo that in the &ldquo;Don&apos;t import again&rdquo; tab of
+            Recent imports.
+          </p>
+        ) : null}
 
         <DialogFooter className="flex flex-row items-center justify-between gap-2 sm:justify-between">
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => commit([])}
+            onClick={() => commit("cancel")}
             disabled={committing}
             className="text-destructive hover:bg-destructive/10"
           >
@@ -282,20 +320,22 @@ export function SkimPreviewDialog({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setSelected(new Set(recipes.map((_, i) => i)))}
+              onClick={() => setChoices((prev) => prev.map((c) => (c === null ? null : "import")))}
               disabled={committing || count === total}
             >
-              Select all
+              Import all
             </Button>
             <Button
               type="button"
               size="sm"
-              onClick={() => commit(Array.from(selected))}
-              disabled={committing || count === 0}
+              onClick={() => commit("choices")}
+              disabled={committing}
             >
               {committing
                 ? "Submitting…"
-                : `Import ${count} of ${total}`}
+                : count === 0
+                  ? "Done — import nothing"
+                  : `Import ${count} of ${total}`}
             </Button>
           </div>
         </DialogFooter>

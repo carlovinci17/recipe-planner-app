@@ -8,6 +8,7 @@ import { ImportPhoto } from "./import-photo";
 import { ImportDrive } from "./import-drive";
 import { driveService } from "@/lib/services/drive-service";
 import { ActiveJobs } from "./active-jobs";
+import { importIgnoreService } from "@/lib/services/import-ignore-service";
 import { BackLink } from "@/components/ui/back-link";
 
 export const metadata = { title: "Add Recipes" };
@@ -15,7 +16,10 @@ export const metadata = { title: "Add Recipes" };
 export default async function ImportPage() {
   const household = await getActiveHousehold();
   const shareAddress = driveService.shareAddress();
-  const driveFolders = shareAddress ? await driveService.listFolders(household.id) : [];
+  const [driveFolders, ignoredRecipes] = await Promise.all([
+    shareAddress ? driveService.listFolders(household.id) : Promise.resolve([]),
+    importIgnoreService.list(household.id),
+  ]);
 
   return (
     <div className="container max-w-3xl space-y-6 py-6">
@@ -73,7 +77,7 @@ export default async function ImportPage() {
         </TabsContent>
       </Tabs>
 
-      <ActiveJobs householdId={household.id} />
+      <ActiveJobs householdId={household.id} ignoredRecipes={ignoredRecipes} />
     </div>
   );
 }

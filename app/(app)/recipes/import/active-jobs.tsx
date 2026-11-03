@@ -18,12 +18,17 @@ import { loadActiveJobsAction } from "./actions";
 import type { ActiveJobRecipe } from "@/lib/services/ingestion-service";
 import { ImportDetails } from "./import-details";
 import {
+  importTab,
   jobFileName,
   jobOutcome,
   OUTCOME_LABEL,
+  type ImportTab,
   type JobOutcome,
 } from "@/lib/ingestion/job-outcome";
+import type { IgnoredRecipe } from "@/lib/services/import-ignore-service";
+import { IgnoredRecipes } from "./ignored-recipes";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -296,7 +301,40 @@ function assembleBundle(bundle: {
   };
 }
 
-export function ActiveJobs({ householdId }: { householdId: string }) {
+type ListTab = "all" | ImportTab | "ignored";
+
+const LIST_TABS: { value: ListTab; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "waiting", label: "Waiting for you" },
+  { value: "in_progress", label: "In progress" },
+  { value: "imported", label: "Imported" },
+  { value: "skipped", label: "Skipped" },
+  { value: "failed", label: "Failed" },
+  { value: "ignored", label: "Don't import again" },
+];
+
+const EMPTY_TAB: Record<Exclude<ListTab, "ignored">, string> = {
+  all: "No imports yet — import a recipe above and it'll show up here.",
+  waiting: "Nothing is waiting for you — every import has its recipes chosen.",
+  in_progress: "Nothing is importing right now.",
+  imported: "No imported files in the loaded list.",
+  skipped: "No skipped files in the loaded list.",
+  failed: "Nothing has failed.",
+};
+
+/**
+ * Recent imports, split into tabs by where each import stands (see importTab).
+ * The counts and tabs cover the imports loaded so far; "Show more" loads older
+ * ones. "Don't import again" lists the recipes the household turned down.
+ */
+export function ActiveJobs({
+  householdId,
+  ignoredRecipes,
+}: {
+  householdId: string;
+  ignoredRecipes: IgnoredRecipe[];
+}) {
+  const [tab, setTab] = useState<ListTab>("all");
   const [jobs, setJobs] = useState<Job[]>([]);
   // First-load flag so the box shows a spinner instead of popping in whole once
   // the initial fetch resolves (Import #2).
@@ -572,7 +610,7 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
 
   // The box is always present (Import #1): a spinner while the first fetch runs,
   // and an empty-state message when there are no imports — never disappearing.
-  if (jobs.length === 0) {
+  if (jobs.length === 0 && ignoredRecipes.length === 0) {
     return (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -592,6 +630,19 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
   }
 
   const failedCount = jobs.filter((j) => j.status === "failed").length;
+  const tabOf = (j: Job) => importTab(j, readSkimState(j).awaitingSelection);
+  const tabCounts: Record<ListTab, number> = {
+    all: jobs.length,
+    waiting: 0,
+    in_progress: 0,
+    imported: 0,
+    skipped: 0,
+    failed: 0,
+    ignored: ignoredRecipes.length,
+  };
+  for (const j of jobs) tabCounts[tabOf(j)]++;
+  const shown =
+    tab === "all" ? jobs : tab === "ignored" ? [] : jobs.filter((j) => tabOf(j) === tab);
   const inFlightCount = jobs.filter(
     (j) => j.status === "processing" || j.status === "draft",
   ).length;
@@ -626,7 +677,33 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
-        {jobs.slice(0, visibleCount).map((j) => (
+        <Tabs value={tab} onValueChange={(v) => setTab(v as ListTab)}>
+          <TabsList className="h-auto flex-wrap justify-start gap-1">
+            {LIST_TABS.map((t) => (
+              <TabsTrigger key={t.value} value={t.value} className="text-xs">
+                {t.label}
+                {tabCounts[t.value] > 0 ? (
+                  <span
+                    className={cn(
+                      "ml-1.5 rounded-full px-1.5 text-[10px] tabular-nums",
+                      t.value === "waiting"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {tabCounts[t.value]}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        {tab === "ignored" ? (
+          <IgnoredRecipes householdId={householdId} recipes={ignoredRecipes} />
+        ) : shown.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">{EMPTY_TAB[tab]}</p>
+        ) : null}
+        {shown.slice(0, visibleCount).map((j) => (
           <JobRow
             key={j.id}
             job={j}
@@ -645,7 +722,8 @@ export function ActiveJobs({ householdId }: { householdId: string }) {
             onOpenCoverPicker={(recipeId) => setCoverPickerTarget({ recipeId, jobId: j.id })}
           />
         ))}
-        {(visibleCount < jobs.length || jobs.length === totalLoaded) &&
+        {tab !== "ignored" &&
+          (visibleCount < shown.length || jobs.length === totalLoaded) &&
           totalLoaded >= PAGE_SIZE && (
             <div className="flex justify-center pt-1">
               <Button

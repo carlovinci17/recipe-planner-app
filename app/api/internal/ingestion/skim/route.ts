@@ -18,6 +18,18 @@ async function householdTitleKeys(householdId: string): Promise<Set<string>> {
   return new Set(rows.map((r) => normalizeTitle(r.title)));
 }
 
+/** Titles the household chose "Don't import again" for (owner connection, scoped). */
+async function ignoredTitleKeys(householdId: string): Promise<Set<string>> {
+  const { db } = await import("@/lib/db");
+  const { importIgnoredRecipes } = await import("@/lib/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const rows = await db
+    .select({ key: importIgnoredRecipes.titleKey })
+    .from(importIgnoredRecipes)
+    .where(eq(importIgnoredRecipes.householdId, householdId));
+  return new Set(rows.map((r) => r.key));
+}
+
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
@@ -39,14 +51,17 @@ export async function POST(req: NextRequest) {
   });
   const result = await skimRecipesFromImages({ imageUrls: urls });
   const job = await ingestionStore.getJob(jobId);
-  const existing = job ? await householdTitleKeys(job.household_id) : new Set<string>();
-  // Mark recipes the household already has, so the picker unticks them and an
-  // automatic (Drive) import skips them — re-importing a cookbook never duplicates.
-  const skim = result.data.recipes.map((r) => ({
-    ...r,
-    in_library: existing.has(normalizeTitle(r.title)),
-  }));
-  const newIndices = skim.flatMap((r, i) => (r.in_library ? [] : [i]));
+  const [existing, ignored] = job
+    ? await Promise.all([householdTitleKeys(job.household_id), ignoredTitleKeys(job.household_id)])
+    : [new Set<string>(), new Set<string>()];
+  // Mark recipes the household already has (the picker defaults them to Skip, so
+  // re-importing a cookbook never duplicates) and ones it said "Don't import
+  // again" to (the picker hides them). A Drive file with nothing else is skipped.
+  const skim = result.data.recipes.map((r) => {
+    const key = normalizeTitle(r.title);
+    return { ...r, in_library: existing.has(key), ignored: ignored.has(key) };
+  });
+  const newIndices = skim.flatMap((r, i) => (r.in_library || r.ignored ? [] : [i]));
 
   await ingestionStore.updateJob(jobId, {
     skim_results: { recipes: skim },
@@ -55,7 +70,8 @@ export async function POST(req: NextRequest) {
   await ingestionStore.insertEvent(jobId, "extraction_completed", {
     phase: "skim",
     recipes_found: skim.length,
-    already_in_library: skim.length - newIndices.length,
+    already_in_library: skim.filter((r) => r.in_library).length,
+    not_imported_again: skim.filter((r) => r.ignored).length,
   });
 
   // A job waiting on the recipe picker doesn't hold a Drive slot (see inFlightCount).

@@ -327,6 +327,31 @@ export const driveFolders = pgTable("drive_folders", {
 	pgPolicy("drive_folders household delete", { as: "permissive", for: "delete", to: ["public"] }),
 ]);
 
+export const importIgnoredRecipes = pgTable("import_ignored_recipes", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	householdId: uuid("household_id").notNull(),
+	createdBy: uuid("created_by").notNull(),
+	title: text().notNull(),
+	titleKey: text("title_key").notNull(),
+	sourceLabel: text("source_label"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.householdId],
+			foreignColumns: [households.id],
+			name: "import_ignored_recipes_household_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [profiles.id],
+			name: "import_ignored_recipes_created_by_fkey"
+		}),
+	unique("import_ignored_recipes_household_id_title_key_key").on(table.householdId, table.titleKey),
+	pgPolicy("import_ignored_recipes household read", { as: "permissive", for: "select", to: ["public"], using: sql`is_household_member(household_id, app_uid())` }),
+	pgPolicy("import_ignored_recipes household insert", { as: "permissive", for: "insert", to: ["public"] }),
+	pgPolicy("import_ignored_recipes household delete", { as: "permissive", for: "delete", to: ["public"] }),
+]);
+
 export const driveFiles = pgTable("drive_files", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	householdId: uuid("household_id").notNull(),

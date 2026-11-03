@@ -47,3 +47,27 @@ export function jobFileName(
   const last = job.storage_path.split("/").pop() ?? "";
   return last.replace(/^source-/, "") || null;
 }
+
+/**
+ * The Recent imports tab a job belongs to. "waiting" = the recipe picker is
+ * open for it and nothing happens until the user chooses; skipped, cancelled
+ * and nothing-to-import all count as "skipped" — none of them are errors.
+ */
+export type ImportTab = "waiting" | "in_progress" | "imported" | "skipped" | "failed";
+
+export function importTab(
+  job: { status: string; error: string | null },
+  awaitingSelection: boolean,
+): ImportTab {
+  if (awaitingSelection) return "waiting";
+  switch (jobOutcome(job)) {
+    case "in_progress":
+      return "in_progress";
+    case "ok":
+      return "imported";
+    case "failed":
+      return "failed";
+    default:
+      return "skipped";
+  }
+}

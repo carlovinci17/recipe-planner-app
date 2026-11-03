@@ -187,8 +187,13 @@ Application Default Credentials impersonate the same service account. Sync is **
 time; each pipeline step that frees a slot (finish, fail, skip, park on the picker, sweep) calls
 `startNextDriveFiles()` to start the next one. There is no Drive timer — a 5-minute one kept Neon
 and the container awake all month — so don't add one back. Drive jobs (`source: "drive"`) **always skim**, and the skim marks titles the household
-already has (`in_library`), so a re-synced folder never duplicates: nothing new → skipped;
-≤ 10 pages → new recipes import without the picker; longer → the picker, duplicates unticked.
+already has (`in_library`) or said "Don't import again" to (`ignored`, from the
+`import_ignored_recipes` table), so a re-synced folder never duplicates: nothing new → skipped
+without asking; anything new → **always** the picker. Nothing from Drive imports unchosen.
+The picker offers Import / Skip / Don't import again per recipe (`lib/ingestion/skim-choices.ts`);
+Skip is asked again next time the file is read, Don't import again is listed (with Undo) in
+the "Don't import again" tab of Recent imports, whose tabs come from `importTab()` in
+`lib/ingestion/job-outcome.ts`.
 The folder's Drive owner must be a household member.
 
 `recipe_status`: `draft → processing → needs_review → published`, plus terminal `failed`.

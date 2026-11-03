@@ -18,13 +18,9 @@ type StartInput = {
   pageNumbers?: number[];
   /** "drive" for the Google Drive folder sync: no one is watching, see the mix rule below. */
   source?: "drive";
-  /** Drive "Import again": the user asked, so always wait on the picker. */
+  /** Drive "Import again": the user asked, so wait on the picker even if nothing is new. */
   forcePicker?: boolean;
 };
-
-// Drive files up to this many pages import their new recipes without asking;
-// longer ones (cookbooks) wait on the picker like an upload does.
-const DRIVE_AUTO_SELECT_MAX_PAGES = 10;
 
 // ── Chunking (pure, deterministic — safe in the orchestrator). Mirrors the
 //    app's lib/ingestion/pipeline-helpers.ts (duplicated: the thin Functions
@@ -91,67 +87,61 @@ const ingestionOrchestrator: OrchestrationHandler = function* (context: Orchestr
 
   // 6.3: interactive skim — for multi-recipe docs (>= 3 pages, non-bulk), skim the
   // titles, then PAUSE for the user to pick which to deep-extract. Durable Functions
-  // dehydrates the orchestration while it waits (up to 24h) — no compute, no tokens.
+  // dehydrates the orchestration while it waits — no compute, no tokens — so the
+  // wait itself is free. Uploads wait 24h; Drive files 7 days, because one
+  // "Sync now" can queue many pickers and a timed-out one costs a re-skim to retry.
   //
   // Drive imports ALWAYS skim, even a one-page file: the skim marks recipes the
-  // household already has, which is how a re-synced folder skips duplicates
-  // before any full extraction is paid for. Then the mix rule:
-  //   - nothing new in the file      → skip it (no extraction at all)
-  //   - ≤ DRIVE_AUTO_SELECT_MAX_PAGES → import every new recipe, no picker
-  //   - longer                        → wait on the picker, duplicates unticked
+  // household already has or said "Don't import again" to, so a re-synced folder
+  // never duplicates and no full extraction is paid for before the user decides.
+  //   - nothing new in the file → skip it without asking (no extraction at all)
+  //   - otherwise               → wait on the picker: Import / Skip / Don't import again
+  // Nothing from Drive is imported without the user choosing it in the picker.
   const isDrive = input.source === "drive";
-  const autoPick = isDrive && !input.forcePicker;
+  const skipIfNothingNew = isDrive && !input.forcePicker;
   if ((pages.length >= 3 && !input.bulkMode) || isDrive) {
     const skimmed = (yield context.df.callActivity("skim", { jobId, pages })) as {
       count: number;
       newIndices: number[];
     };
-    if (autoPick && skimmed.newIndices.length === 0) {
+    if (skipIfNothingNew && skimmed.newIndices.length === 0) {
       yield context.df.callActivity("applySelection", {
         jobId,
         selectedIndices: [],
-        emptyReason: skimmed.count === 0 ? "no_recipes" : "all_in_library",
+        emptyReason: skimmed.count === 0 ? "no_recipes" : "nothing_new",
       });
       return { jobId, recipesFound: 0 };
     }
-    if (autoPick && pages.length <= DRIVE_AUTO_SELECT_MAX_PAGES) {
-      const applied = (yield context.df.callActivity("applySelection", {
+    const waitDays = isDrive ? 7 : 1;
+    const deadline = new Date(
+      context.df.currentUtcDateTime.getTime() + waitDays * 24 * 60 * 60 * 1000,
+    );
+    const timeoutTask = context.df.createTimer(deadline);
+    const selectionTask = context.df.waitForExternalEvent("skimSelection");
+    const winner = yield context.df.Task.any([selectionTask, timeoutTask]);
+    if (winner === timeoutTask) {
+      yield context.df.callActivity("markFailed", {
         jobId,
-        selectedIndices: skimmed.newIndices,
-        sourceName: null,
-        sourceUrl: null,
-      })) as { cancelled: boolean; pagesToExtract?: string[] };
-      if (applied.cancelled) return { jobId, recipesFound: 0 };
-      pagesToExtract = applied.pagesToExtract ?? pagesToExtract;
-    } else {
-      const deadline = new Date(context.df.currentUtcDateTime.getTime() + 24 * 60 * 60 * 1000);
-      const timeoutTask = context.df.createTimer(deadline);
-      const selectionTask = context.df.waitForExternalEvent("skimSelection");
-      const winner = yield context.df.Task.any([selectionTask, timeoutTask]);
-      if (winner === timeoutTask) {
-        yield context.df.callActivity("markFailed", {
-          jobId,
-          error: "Skim preview wasn't acted on within 24 hours.",
-          reason: "skim_timeout",
-        });
-        return { jobId, recipesFound: 0 };
-      }
-      timeoutTask.cancel(); // selection arrived — stop the 24h timer keeping the instance alive
-      const selection = selectionTask.result as {
-        selectedIndices: number[];
-        sourceName: string | null;
-        sourceUrl: string | null;
-      };
-      const applied = (yield context.df.callActivity("applySelection", {
-        jobId,
-        ...selection,
-      })) as {
-        cancelled: boolean;
-        pagesToExtract?: string[];
-      };
-      if (applied.cancelled) return { jobId, recipesFound: 0 };
-      pagesToExtract = applied.pagesToExtract ?? pagesToExtract;
+        error: `Skim preview wasn't acted on within ${isDrive ? "7 days" : "24 hours"}.`,
+        reason: "skim_timeout",
+      });
+      return { jobId, recipesFound: 0 };
     }
+    timeoutTask.cancel(); // selection arrived — stop the timer keeping the instance alive
+    const selection = selectionTask.result as {
+      selectedIndices: number[];
+      sourceName: string | null;
+      sourceUrl: string | null;
+    };
+    const applied = (yield context.df.callActivity("applySelection", {
+      jobId,
+      ...selection,
+    })) as {
+      cancelled: boolean;
+      pagesToExtract?: string[];
+    };
+    if (applied.cancelled) return { jobId, recipesFound: 0 };
+    pagesToExtract = applied.pagesToExtract ?? pagesToExtract;
   }
 
   // 2. Vision extraction — one activity per chunk (per-chunk checkpointing).

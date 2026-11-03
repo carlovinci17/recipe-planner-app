@@ -23,8 +23,13 @@ export async function POST(req: NextRequest) {
     selectedIndices: number[];
     sourceName?: string | null;
     sourceUrl?: string | null;
-    /** Automatic (Drive) imports: why nothing was selected. */
-    emptyReason?: "all_in_library" | "no_recipes";
+    /**
+     * Why nothing was selected. Drive's automatic skip sends "nothing_new" or
+     * "no_recipes" ("all_in_library" is the older name for "nothing_new", kept for
+     * orchestrations started before it); the picker sends "user_skipped" when every
+     * recipe was set to Skip or Don't import again. Absent = the user cancelled.
+     */
+    emptyReason?: "nothing_new" | "all_in_library" | "no_recipes" | "user_skipped";
   };
   const job = await ingestionStore.getJob(jobId);
   const skim = ((job?.skim_results as { recipes?: SkimRecipe[] } | null)?.recipes ?? []) as SkimRecipe[];
@@ -37,11 +42,13 @@ export async function POST(req: NextRequest) {
     await ingestionStore.updateJob(jobId, {
       status: "failed",
       error:
-        emptyReason === "all_in_library"
-          ? "Skipped — every recipe in this file is already in your library."
+        emptyReason === "nothing_new" || emptyReason === "all_in_library"
+          ? "Skipped — every recipe in this file is already in your library or marked “Don't import again”."
           : emptyReason === "no_recipes"
             ? "Skipped — no recipes found in this file."
-            : "Cancelled at the recipe selection step.",
+            : emptyReason === "user_skipped"
+              ? "Skipped — you chose not to import any recipes from this file."
+              : "Cancelled at the recipe selection step.",
     });
     after(startNextDriveFiles); // this job's Drive slot is free — start the next file
     return Response.json({ cancelled: true });
