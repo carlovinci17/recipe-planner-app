@@ -55,3 +55,49 @@ export function resolveCoverImage(recipe: {
   }
   return null;
 }
+
+/**
+ * Every image a recipe has, in display order: user photos (`image_paths`,
+ * recipe-images; the first one is the cover), then the kept import page
+ * (`cover_image_path`, recipe-uploads). The gallery and the cover editor both
+ * list images this way, so "the cover" is always the first entry.
+ */
+export function listRecipeImages(recipe: {
+  image_paths: string[] | null;
+  cover_image_path: string | null;
+}): CoverImageRef[] {
+  const cover = recipe.cover_image_path;
+  const seen = new Set<string>();
+  const list: CoverImageRef[] = [];
+  for (const p of recipe.image_paths ?? []) {
+    // Legacy rows seeded image_paths with the page path itself (see
+    // resolveCoverImage); that entry belongs to recipe-uploads, listed below.
+    if (!p || seen.has(p) || p === cover) continue;
+    seen.add(p);
+    list.push({ path: p, bucket: "recipe-images" });
+  }
+  if (cover && !seen.has(cover)) list.push({ path: cover, bucket: "recipe-uploads" });
+  return list;
+}
+
+/** A crop selection as percentages (0–100) of the image's width and height. */
+export type CropPercent = { x: number; y: number; width: number; height: number };
+
+/**
+ * Turn a percentage crop into whole pixels for an image of `width` × `height`,
+ * kept inside the image and at least 1px each way.
+ */
+export function cropRegionPx(
+  width: number,
+  height: number,
+  crop: CropPercent,
+): { left: number; top: number; width: number; height: number } {
+  const left = Math.min(width - 1, Math.max(0, Math.round((crop.x / 100) * width)));
+  const top = Math.min(height - 1, Math.max(0, Math.round((crop.y / 100) * height)));
+  return {
+    left,
+    top,
+    width: Math.min(width - left, Math.max(1, Math.round((crop.width / 100) * width))),
+    height: Math.min(height - top, Math.max(1, Math.round((crop.height / 100) * height))),
+  };
+}

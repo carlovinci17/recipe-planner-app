@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
 import { ingestionStore } from "@/lib/ingestion/store";
 import { ingestionStorage } from "@/lib/ingestion/storage";
-import { pdfBufferToPageImages } from "@/lib/ingestion/pdf-to-images";
+import { PAGE_IMAGE_WIDTH, pdfBufferToPageImages } from "@/lib/ingestion/pdf-to-images";
 import { logger } from "@/lib/logger";
 
 // Rasterizing a PDF can take a while; Node runtime + long budget (mirrors the Inngest route).
@@ -111,12 +111,12 @@ export async function POST(req: NextRequest) {
         );
       }
     } else {
-      // Already an image — normalize to a 1200px JPEG (mirrors process-upload).
+      // Already an image — normalize to a JPEG the same width as a PDF page.
       try {
         const sharp = (await import("sharp")).default;
         const optimised = await sharp(buf)
           .rotate()
-          .resize({ width: 1200, withoutEnlargement: true })
+          .resize({ width: PAGE_IMAGE_WIDTH, withoutEnlargement: true })
           .jpeg({ quality: 82, mozjpeg: true })
           .toBuffer();
         pageImagePaths = [

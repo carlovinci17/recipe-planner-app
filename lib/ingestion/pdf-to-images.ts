@@ -2,12 +2,21 @@ import "server-only";
 import sharp from "sharp";
 
 /**
+ * Width of each stored page image. A page is what a recipe's cover gets cropped
+ * from, so it needs room: a photo covering half the page still crops to ~1000px.
+ * This costs no extra AI tokens — Azure OpenAI and Claude both scale an image
+ * down to the same working size before reading it — and only the cover page is
+ * kept once an import finishes (the cleanup step deletes the rest).
+ */
+export const PAGE_IMAGE_WIDTH = 2000;
+
+/**
  * Convert a PDF buffer into one JPEG image per page.
  *
  * Strategy: use pdfjs-dist's `getDocument` to render each page to a canvas,
  * then encode through Sharp at a target DPI suitable for vision models.
  *
- * Output format is JPEG (q85, mozjpeg) at 1600px max width. PNG output was
+ * Output format is JPEG (q82, mozjpeg) at PAGE_IMAGE_WIDTH max width. PNG output was
  * 5–10× larger with no real benefit — JPEG at this quality is visually
  * indistinguishable to human eyes and Claude vision reads text equally well.
  * Smaller files = faster signed-URL fetches by Anthropic + faster cover
@@ -41,7 +50,8 @@ export async function pdfBufferToPageImages(args: {
   /** Called after each page is rendered. pageNum is the 1-based source page. */
   onPageRendered?: (pageNum: number, totalPages: number) => void | Promise<void>;
 }): Promise<Buffer[]> {
-  const dpi = args.dpi ?? 200;
+  // 240 DPI renders a Letter/A4 page ~2000px wide, so PAGE_IMAGE_WIDTH is reached.
+  const dpi = args.dpi ?? 240;
   const maxPages = args.maxPages ?? 25;
 
   // pdfjs-dist legacy build is the safest one for server contexts
@@ -99,11 +109,9 @@ export async function pdfBufferToPageImages(args: {
     // bare `toBuffer()` throws StringExpected. We round-trip PNG → sharp →
     // JPEG (mozjpeg q82) because that's lossless on the rasterized output
     // and lets sharp do both the resize and the perceptual encode in one
-    // pipeline. 1200px is still plenty for OCR (Claude vision tested
-    // accurate down to ~800px on typeset cookbook text) and saves ~30%
-    // vs 1600. Final files are ~80–200KB per page (vs 0.5–2MB as PNG).
+    // pipeline. See PAGE_IMAGE_WIDTH for the size.
     const jpeg = await sharp(canvas.toBuffer("image/png"))
-      .resize({ width: 1200, withoutEnlargement: true })
+      .resize({ width: PAGE_IMAGE_WIDTH, withoutEnlargement: true })
       .jpeg({ quality: 82, mozjpeg: true })
       .toBuffer();
 

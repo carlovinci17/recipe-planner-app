@@ -62,6 +62,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
   let contentType = typeFor(blobPath);
   if (w || h) {
     body = await sharp(buffer)
+      .rotate() // honour EXIF orientation, matching the crop (recipeService.cropCover)
       .resize({ width: w, height: h, fit, withoutEnlargement: true })
       .webp({ quality: q })
       .toBuffer();
@@ -73,8 +74,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
       "Content-Type": contentType,
       // Never let the browser MIME-sniff a stored blob into something executable.
       "X-Content-Type-Options": "nosniff",
-      // Per-user, per-size; the underlying blob at a path is immutable.
-      "Cache-Control": "private, max-age=3600",
+      // Private (it's behind a membership check), and safe to keep for a year:
+      // every stored path carries a timestamp or a job id and is never
+      // overwritten — a new crop or upload is a new path, so a cached copy can't
+      // go stale. Saves re-downloading and re-resizing the same image.
+      "Cache-Control": "private, max-age=31536000, immutable",
     },
   });
 }

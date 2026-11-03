@@ -6,7 +6,10 @@ import { Clock, Star, Users } from "lucide-react";
 import type { RecipeListItem } from "@/lib/services/recipe-service";
 import { Badge } from "@/components/ui/badge";
 import { formatMinutes, cn } from "@/lib/utils";
-import { useSignedImage } from "@/components/recipes/use-signed-image";
+import { useSignedImage, useSignedImageSet } from "@/components/recipes/use-signed-image";
+
+/** Desktop card image widths; the browser picks one for the screen. */
+const CARD_WIDTHS = [320, 480, 640, 960, 1280] as const;
 import { resolveCoverImage, coverObjectPositionStyle } from "@/lib/recipes/cover-image";
 import { SourcePill } from "@/components/recipes/source-pill";
 import { setRecipeFavoriteAction } from "@/app/(app)/recipes/[id]/actions";
@@ -22,10 +25,18 @@ export function RecipeCard({
   const [isFavorite, setIsFavorite] = useState(recipe.is_favorite);
   const [, startFav] = useTransition();
   const coverRef = resolveCoverImage(recipe);
-  const cover = useSignedImage(coverRef?.path ?? null, coverRef?.bucket ?? "recipe-uploads", {
-    width: 640,
-    resize: "cover",
-    quality: 75,
+  // Desktop card: several widths, the browser picks per screen (grid is 2–4
+  // columns). Phone list: a 64px square, so a small square file is plenty.
+  const cover = useSignedImageSet(
+    coverRef?.path ?? null,
+    coverRef?.bucket ?? "recipe-uploads",
+    CARD_WIDTHS,
+    { quality: 75 },
+  );
+  const thumb = useSignedImage(coverRef?.path ?? null, coverRef?.bucket ?? "recipe-uploads", {
+    width: 192,
+    height: 192,
+    quality: 70,
   });
   const totalMin = (recipe.prep_time_min ?? 0) + (recipe.cook_time_min ?? 0);
   const focalStyle = coverObjectPositionStyle(recipe);
@@ -67,7 +78,9 @@ export function RecipeCard({
           {cover ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={cover}
+              src={cover.src}
+              srcSet={cover.srcSet}
+              sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, 50vw"
               alt={recipe.title}
               loading="lazy"
               style={focalStyle}
@@ -139,10 +152,10 @@ export function RecipeCard({
 
         {/* Mobile thumbnail */}
         <div className="relative order-last m-2.5 h-16 w-16 shrink-0 self-center overflow-hidden rounded-lg bg-muted sm:hidden">
-          {cover ? (
+          {thumb ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={cover}
+              src={thumb ?? undefined}
               alt={recipe.title}
               loading="lazy"
               style={focalStyle}

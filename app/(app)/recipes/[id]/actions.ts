@@ -5,7 +5,6 @@ import { z } from "zod";
 import { recipeService } from "@/lib/services/recipe-service";
 import { ratingService } from "@/lib/services/rating-service";
 import { plannerService } from "@/lib/services/planner-service";
-import { ingestionStorage } from "@/lib/ingestion/storage";
 import { logger } from "@/lib/logger";
 import type { MealSlot } from "@/types/database.types";
 
@@ -119,67 +118,6 @@ export async function setRecipeCoverAction(input: z.infer<typeof PathSchema>) {
   }
 }
 
-const SourcePageCoverSchema = z.object({
-  recipeId: z.string().uuid(),
-  sourcePath: z.string().min(1),
-});
-
-const CoverFocalSchema = z.object({
-  recipeId: z.string().uuid(),
-  focalX: z.number().int().min(0).max(100),
-  focalY: z.number().int().min(0).max(100),
-});
-
-/**
- * Manual override for the cover image's focal point. AI sets this at
- * extraction time; this action lets the user nudge framing on the review
- * page or import dialog when the AI's guess missed the food.
- */
-export async function setRecipeCoverFocalAction(input: z.infer<typeof CoverFocalSchema>) {
-  const parsed = CoverFocalSchema.safeParse(input);
-  if (!parsed.success) return { ok: false as const, error: "Invalid input" };
-  try {
-    await recipeService.update(parsed.data.recipeId, {
-      cover_focal_x: parsed.data.focalX,
-      cover_focal_y: parsed.data.focalY,
-    });
-    revalidatePath(`/recipes/${parsed.data.recipeId}`);
-    return { ok: true as const };
-  } catch (err) {
-    logger.error({ err }, "setRecipeCoverFocalAction failed");
-    return { ok: false as const, error: (err as Error).message };
-  }
-}
-
-/**
- * Set `cover_image_path` (the AI source page in the recipe-uploads bucket)
- * to a different source page. Used by the CoverPicker on the review page so
- * users can correct the AI's per-recipe page attribution when it picked the
- * wrong page from a multi-recipe document. Distinct from `setRecipeCoverAction`
- * which reorders user-uploaded photos in image_paths.
- *
- * Note: if the recipe has user-uploaded photos in image_paths, those still
- * take precedence over cover_image_path (per resolveCoverImage). The picker
- * UI surfaces this so the user knows to clear user-uploads first if they
- * want the source page to be visible.
- */
-export async function setRecipeSourcePageCoverAction(
-  input: z.infer<typeof SourcePageCoverSchema>,
-) {
-  const parsed = SourcePageCoverSchema.safeParse(input);
-  if (!parsed.success) return { ok: false as const, error: "Invalid input" };
-  try {
-    await recipeService.update(parsed.data.recipeId, {
-      cover_image_path: parsed.data.sourcePath,
-    });
-    revalidatePath(`/recipes/${parsed.data.recipeId}`);
-    return { ok: true as const };
-  } catch (err) {
-    logger.error({ err }, "setRecipeSourcePageCoverAction failed");
-    return { ok: false as const, error: (err as Error).message };
-  }
-}
-
 export async function clearRecipeCoverAction(recipeId: string) {
   try {
     await recipeService.update(recipeId, { cover_image_path: null });
@@ -204,72 +142,57 @@ export async function removeRecipeImageAction(input: z.infer<typeof PathSchema>)
   }
 }
 
+const CoverSourceSchema = z.object({
+  bucket: z.enum(["recipe-images", "recipe-uploads"]),
+  path: z.string().min(1).max(500),
+});
+
 const CropCoverSchema = z.object({
   recipeId: z.string().uuid(),
-  sourcePath: z.string().min(1),
-  /** Crop region as percentages (0–100) of the source image dimensions. */
-  cropX: z.number().min(0).max(100),
-  cropY: z.number().min(0).max(100),
-  cropWidth: z.number().min(1).max(100),
-  cropHeight: z.number().min(1).max(100),
+  source: CoverSourceSchema,
+  /** Crop region as percentages (0–100) of the source image. */
+  crop: z.object({
+    x: z.number().min(0).max(100),
+    y: z.number().min(0).max(100),
+    width: z.number().min(1).max(100),
+    height: z.number().min(1).max(100),
+  }),
 });
 
 /**
- * Crop a region from a source page image, optimise it via Sharp, store it
- * in recipe-uploads, and set it as the recipe's cover.
+ * Crop one of the recipe's images into a new cover. The original stays on the
+ * recipe as another image (see recipeService.cropCover).
  */
-export async function cropAndSaveCoverAction(input: z.infer<typeof CropCoverSchema>) {
+export async function cropRecipeCoverAction(input: z.infer<typeof CropCoverSchema>) {
   const parsed = CropCoverSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Invalid input" };
-  const { recipeId, sourcePath, cropX, cropY, cropWidth, cropHeight } = parsed.data;
-
   try {
-    const sharp = (await import("sharp")).default;
-
-    // Download source page image from Storage
-    const buffer = await ingestionStorage.downloadFile({
-      bucket: ingestionStorage.uploadsBucket,
-      path: sourcePath,
-    });
-
-    // Get actual pixel dimensions so we can convert % → px
-    const meta = await sharp(buffer).metadata();
-    const W = meta.width ?? 1200;
-    const H = meta.height ?? 1600;
-
-    const left = Math.max(0, Math.round((cropX / 100) * W));
-    const top = Math.max(0, Math.round((cropY / 100) * H));
-    const width = Math.min(W - left, Math.max(1, Math.round((cropWidth / 100) * W)));
-    const height = Math.min(H - top, Math.max(1, Math.round((cropHeight / 100) * H)));
-
-    const cropped = await sharp(buffer)
-      .extract({ left, top, width, height })
-      .resize({ width: 1200, withoutEnlargement: true })
-      .jpeg({ quality: 82, mozjpeg: true })
-      .toBuffer();
-
-    // Upload the cropped image alongside the source pages. Must go through the
-    // storage seam: writing straight to Supabase here while /api/images reads
-    // from Azure Blob meant the new cover saved but never rendered.
-    const croppedPath = sourcePath.replace(/\/[^/]+$/, `/cover-crop-${Date.now()}.jpg`);
-    await ingestionStorage.uploadTo({
-      bucket: ingestionStorage.uploadsBucket,
-      path: croppedPath,
-      buffer: cropped,
-      contentType: "image/jpeg",
-    });
-
-    // Point the recipe's cover at the new cropped image, reset focal to center
-    await recipeService.update(recipeId, {
-      cover_image_path: croppedPath,
-      cover_focal_x: 50,
-      cover_focal_y: 50,
-    });
-
-    revalidatePath(`/recipes/${recipeId}`);
-    return { ok: true as const, croppedPath };
+    const path = await recipeService.cropCover(parsed.data);
+    revalidatePath(`/recipes/${parsed.data.recipeId}`);
+    revalidatePath("/recipes");
+    return { ok: true as const, path };
   } catch (err) {
-    logger.error({ err }, "cropAndSaveCoverAction failed");
+    logger.error({ err }, "cropRecipeCoverAction failed");
+    return { ok: false as const, error: (err as Error).message };
+  }
+}
+
+const MakeCoverSchema = z.object({
+  recipeId: z.string().uuid(),
+  source: CoverSourceSchema,
+});
+
+/** Make one of the recipe's images the cover as it is, without cropping. */
+export async function makeRecipeCoverAction(input: z.infer<typeof MakeCoverSchema>) {
+  const parsed = MakeCoverSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid input" };
+  try {
+    await recipeService.makeCover(parsed.data);
+    revalidatePath(`/recipes/${parsed.data.recipeId}`);
+    revalidatePath("/recipes");
+    return { ok: true as const };
+  } catch (err) {
+    logger.error({ err }, "makeRecipeCoverAction failed");
     return { ok: false as const, error: (err as Error).message };
   }
 }

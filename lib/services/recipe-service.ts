@@ -5,6 +5,18 @@ import type { Tx } from "@/lib/db";
 import { ingestionStorage } from "@/lib/ingestion/storage";
 import { runInUserTx } from "./user-tx";
 import type { Tables, UpdateTables } from "@/types/database.types";
+import {
+  cropRegionPx,
+  listRecipeImages,
+  type CoverImageRef,
+  type CropPercent,
+} from "@/lib/recipes/cover-image";
+
+/**
+ * Longest edge of a cropped cover. Covers show at up to ~1600px on desktop (and
+ * on 2–3× phone screens), so 2000 keeps them sharp without storing originals.
+ */
+const COVER_CROP_MAX_EDGE = 2000;
 
 /** Read a recipe's `image_paths` inside an RLS-scoped tx (Neon path). */
 async function readImagePaths(tx: Tx, recipeId: string): Promise<string[]> {
@@ -269,6 +281,80 @@ export const recipeService = {
     });
     // Storage delete goes through the seam, which lands on Azure Blob.
     await ingestionStorage.remove({ bucket: "recipe-images", paths: [args.path] });
+  },
+
+  /**
+   * Make a new cover from part of one of the recipe's own images (a photo or
+   * the kept import page). The crop is saved as a new photo at the front of
+   * `image_paths`, so it becomes the cover; the image it came from is left
+   * untouched and stays on the recipe as another image.
+   *
+   * The source must belong to this recipe — checked against the recipe row,
+   * which is read under RLS, so a caller can't crop another household's blob.
+   */
+  async cropCover(args: {
+    recipeId: string;
+    source: CoverImageRef;
+    crop: CropPercent;
+  }): Promise<string> {
+    const { recipe } = await getRecipeById(args.recipeId);
+    const own = listRecipeImages(recipe).some(
+      (img) => img.path === args.source.path && img.bucket === args.source.bucket,
+    );
+    if (!own) throw new Error("That image isn't part of this recipe.");
+
+    const sharp = (await import("sharp")).default;
+    const original = await ingestionStorage.downloadFile({
+      bucket: args.source.bucket,
+      path: args.source.path,
+    });
+    // Apply EXIF orientation first, so the crop matches what the user saw.
+    const upright = await sharp(original).rotate().toBuffer();
+    const meta = await sharp(upright).metadata();
+    const region = cropRegionPx(meta.width ?? 1, meta.height ?? 1, args.crop);
+    const cropped = await sharp(upright)
+      .extract(region)
+      .resize(COVER_CROP_MAX_EDGE, COVER_CROP_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toBuffer();
+
+    const path = `${recipe.household_id}/${recipe.id}/cover-crop-${Date.now()}.webp`;
+    await ingestionStorage.uploadTo({
+      bucket: "recipe-images",
+      path,
+      buffer: cropped,
+      contentType: "image/webp",
+    });
+    await runInUserTx(async (tx) => {
+      const existing = await readImagePaths(tx, args.recipeId);
+      await tx
+        .update(recipes)
+        // The crop is already framed, so the focal point goes back to centre.
+        .set({ imagePaths: [path, ...existing], coverFocalX: 50, coverFocalY: 50 })
+        .where(eq(recipes.id, args.recipeId));
+    });
+    return path;
+  },
+
+  /**
+   * Make one of the recipe's images the cover as it is. A photo moves to the
+   * front of `image_paths`; the import page (a different bucket) is copied in
+   * as a full-size "crop", since photos always win over it as the cover.
+   */
+  async makeCover(args: { recipeId: string; source: CoverImageRef }): Promise<void> {
+    if (args.source.bucket === "recipe-images") {
+      const { recipe } = await getRecipeById(args.recipeId);
+      if (!(recipe.image_paths ?? []).includes(args.source.path)) {
+        throw new Error("That image isn't part of this recipe.");
+      }
+      await recipeService.setCoverImage({ recipeId: args.recipeId, path: args.source.path });
+      return;
+    }
+    await recipeService.cropCover({
+      recipeId: args.recipeId,
+      source: args.source,
+      crop: { x: 0, y: 0, width: 100, height: 100 },
+    });
   },
 
   async replaceIngredients(

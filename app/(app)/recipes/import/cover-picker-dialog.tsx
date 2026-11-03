@@ -10,43 +10,31 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { CoverPickerGrid } from "../[id]/review/cover-picker";
+import { CoverEditor } from "@/components/recipes/cover-editor";
 
 /**
- * Dialog wrapper around the same grid used inline on the review page. Used
- * from the Recent imports row when a user clicks a recipe's thumbnail —
- * lets them re-pick the source page without leaving the imports list.
+ * The cover editor in a dialog. Opened from a recipe thumbnail in Recent
+ * imports and from "Change cover" on the recipe page, so the cover can be
+ * picked and cropped without going into Edit.
  */
 export function CoverPickerDialog({
-  recipeId,
+  recipe,
   recipeTitle,
-  currentCoverPath,
-  sourcePages,
-  hasUserUploads,
-  initialFocalX = 50,
-  initialFocalY = 50,
   open,
   onOpenChange,
+  onChanged,
 }: {
-  recipeId: string;
+  recipe: { id: string; image_paths: string[] | null; cover_image_path: string | null } | null;
   recipeTitle: string;
-  currentCoverPath: string | null;
-  sourcePages: string[];
-  hasUserUploads: boolean;
-  initialFocalX?: number;
-  initialFocalY?: number;
   open: boolean;
   onOpenChange: (next: boolean) => void;
+  /** After a change, for callers that load their own recipe data. */
+  onChanged?: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Cap to viewport height and scroll the body, not the page. Without
-          this, a multi-page PDF (25+ source pages) blows past the bottom of
-          the screen — and because Radix locks body scroll while open, the
-          user can't reach the Save button or the focal-point picker.
-          Pattern: header + footer pinned, middle region scrolls. The grid
-          override on DialogContent disables its default `gap-4` so the
-          flex column lays out without phantom rows. */}
+    <Dialog open={open && recipe !== null} onOpenChange={onOpenChange}>
+      {/* Header and footer pinned, middle scrolls, so a tall image never pushes
+          the buttons off screen (Radix locks page scroll while open). */}
       <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col gap-0 p-0">
         <DialogHeader className="shrink-0 border-b p-6">
           <DialogTitle className="flex items-center gap-2">
@@ -54,27 +42,17 @@ export function CoverPickerDialog({
             Cover image — {recipeTitle}
           </DialogTitle>
           <DialogDescription>
-            Pick the source page and nudge the framing if the food isn&apos;t
-            centered. Changes save instantly.
+            Pick one of the recipe&apos;s images, then crop it or use it as it is. Changes save
+            straight away.
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto p-6">
-          <CoverPickerGrid
-            recipeId={recipeId}
-            currentCoverPath={currentCoverPath}
-            sourcePages={sourcePages}
-            hasUserUploads={hasUserUploads}
-            initialFocalX={initialFocalX}
-            initialFocalY={initialFocalY}
-          />
+          {recipe ? <CoverEditor recipe={recipe} onChanged={onChanged} /> : null}
         </div>
         <DialogFooter className="shrink-0 border-t p-4">
-          {/* Auto-save already commits each click; the button is an
-              explicit "done" so users know their change took and have a
-              clean way to dismiss without hunting for the X. */}
           <Button type="button" onClick={() => onOpenChange(false)}>
             <Check className="mr-1.5 h-4 w-4" />
-            Save
+            Done
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -11,7 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,14 +31,12 @@ import { Badge } from "@/components/ui/badge";
 import type { Tables } from "@/types/database.types";
 import { saveReviewAction } from "./actions";
 import { deleteRecipeAction } from "../actions";
-import { useSignedImage } from "@/components/recipes/use-signed-image";
 import { RecipeImageUploader } from "@/components/recipes/recipe-image-uploader";
 import { TagEditor } from "@/components/recipes/tag-editor";
 import { ImproveWithAI, type AppliedSuggestions } from "@/components/recipes/improve-with-ai";
 import { DeleteRecipeButton } from "../delete-recipe-button";
 import { useUnsavedChangesGuard } from "@/lib/recipes/use-unsaved-changes-guard";
-import { CoverPicker } from "./cover-picker";
-import { clearRecipeCoverAction } from "../actions";
+import { CoverEditor } from "@/components/recipes/cover-editor";
 
 type Recipe = Tables<"recipes">;
 type Ingredient = Tables<"recipe_ingredients">;
@@ -65,7 +63,6 @@ export function ReviewForm({
   instructions: initialInstructions,
   canDelete = false,
   plannerEntryCount = 0,
-  sourcePages = [],
   duplicates = [],
 }: {
   recipe: Recipe;
@@ -73,8 +70,6 @@ export function ReviewForm({
   instructions: Instruction[];
   canDelete?: boolean;
   plannerEntryCount?: number;
-  /** Every source page path from the originating ingestion_jobs row. */
-  sourcePages?: string[];
   /** Existing published recipes whose title matches this one. */
   duplicates?: { id: string; title: string }[];
 }) {
@@ -121,14 +116,6 @@ export function ReviewForm({
   const [sourceUrl, setSourceUrl] = useState(recipe.source_url ?? "");
   const [ingredients, setIngredients] = useState(initialIngredients);
   const [instructions, setInstructions] = useState(initialInstructions);
-  const [coverCleared, setCoverCleared] = useState(false);
-  const [clearingCover, startClearCover] = useTransition();
-  // Review form hero is medium-sized; 1200px wide is plenty.
-  const cover = useSignedImage(coverCleared ? null : recipe.cover_image_path, "recipe-uploads", {
-    width: 1200,
-    resize: "cover",
-    quality: 80,
-  });
 
   function patchIngredient(idx: number, patch: Partial<Ingredient>) {
     setIngredients((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
@@ -669,56 +656,19 @@ export function ReviewForm({
           <div className="rounded-xl border bg-card p-4">
             <h3 className="mb-2 text-sm font-medium">Recipe photos</h3>
             <RecipeImageUploader
+              // Remount when the server's list changes (e.g. a crop added a
+              // photo), since the uploader keeps its own copy of the paths.
+              key={(recipe.image_paths ?? []).join("|")}
               recipeId={recipe.id}
               householdId={recipe.household_id}
               initialPaths={recipe.image_paths ?? []}
             />
           </div>
 
-          {sourcePages.length > 0 ? (
-            <CoverPicker
-              recipeId={recipe.id}
-              currentCoverPath={recipe.cover_image_path}
-              sourcePages={sourcePages}
-              hasUserUploads={(recipe.image_paths ?? []).length > 0}
-              initialFocalX={recipe.cover_focal_x}
-              initialFocalY={recipe.cover_focal_y}
-            />
-          ) : recipe.cover_image_path && !coverCleared ? (
-            // Single-image / URL imports: show cover with option to clear it.
-            <div className="overflow-hidden rounded-xl border bg-card">
-              <div className="flex items-center justify-between p-3">
-                <span className="text-sm font-medium">Cover image</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-muted-foreground hover:text-destructive"
-                  disabled={clearingCover}
-                  onClick={() =>
-                    startClearCover(async () => {
-                      const result = await clearRecipeCoverAction(recipe.id);
-                      if (result.ok) {
-                        setCoverCleared(true);
-                        toast.success("Cover removed");
-                      } else {
-                        toast.error(result.error ?? "Couldn't remove cover");
-                      }
-                    })
-                  }
-                >
-                  <X className="mr-1 h-3 w-3" />
-                  Remove
-                </Button>
-              </div>
-              {cover && (
-                <div className="bg-muted">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={cover} alt="Cover" className="h-auto w-full" />
-                </div>
-              )}
-            </div>
-          ) : null}
+          <div className="rounded-xl border bg-card p-4">
+            <h3 className="mb-2 text-sm font-medium">Cover image</h3>
+            <CoverEditor recipe={recipe} />
+          </div>
 
           <div className="rounded-xl border bg-card p-4 text-sm">
             <div className="flex items-center justify-between">

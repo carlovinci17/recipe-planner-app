@@ -37,6 +37,24 @@ export type SignedImageOptions = {
   resize?: "cover" | "contain" | "fill";
 };
 
+/** The image route URL for `path` with these options. Pure — no fetch. */
+export function signedImageUrl(
+  path: string,
+  bucket: "recipe-uploads" | "recipe-images",
+  options?: SignedImageOptions,
+): string {
+  const qs = new URLSearchParams();
+  if (options?.width) qs.set("w", String(options.width));
+  if (options?.height) qs.set("h", String(options.height));
+  if (options?.quality) qs.set("q", String(options.quality));
+  // Only worth sending when it differs from the route's default.
+  if (options?.resize && options.resize !== "cover") qs.set("fit", options.resize);
+  const query = qs.toString();
+  // Blob paths already begin with the household id, which the route
+  // re-checks against the caller's memberships before serving anything.
+  return `/api/images/${bucket}/${path}${query ? `?${query}` : ""}`;
+}
+
 export function useSignedImage(
   path: string | null,
   bucket: "recipe-uploads" | "recipe-images" = "recipe-uploads",
@@ -49,17 +67,35 @@ export function useSignedImage(
   const quality = options?.quality;
   const resize = options?.resize;
 
+  return useMemo(
+    () => (path ? signedImageUrl(path, bucket, { width, height, quality, resize }) : null),
+    [path, bucket, width, height, quality, resize],
+  );
+}
+
+/**
+ * The same image at several widths, for `<img srcSet sizes>`: the browser picks
+ * the smallest one that is still sharp for the slot on that screen (a phone gets
+ * a small file, a large or high-density screen a big one). `src` is the middle
+ * width, for browsers that ignore srcSet.
+ */
+export function useSignedImageSet(
+  path: string | null,
+  bucket: "recipe-uploads" | "recipe-images",
+  widths: readonly number[],
+  options?: Omit<SignedImageOptions, "width" | "height">,
+): { src: string; srcSet: string } | null {
+  const quality = options?.quality;
+  const resize = options?.resize;
+  const key = widths.join(",");
   return useMemo(() => {
-    if (!path) return null;
-    const qs = new URLSearchParams();
-    if (width) qs.set("w", String(width));
-    if (height) qs.set("h", String(height));
-    if (quality) qs.set("q", String(quality));
-    // Only worth sending when it differs from the route's default.
-    if (resize && resize !== "cover") qs.set("fit", resize);
-    const query = qs.toString();
-    // Blob paths already begin with the household id, which the route
-    // re-checks against the caller's memberships before serving anything.
-    return `/api/images/${bucket}/${path}${query ? `?${query}` : ""}`;
-  }, [path, bucket, width, height, quality, resize]);
+    if (!path || widths.length === 0) return null;
+    const url = (w: number) => signedImageUrl(path, bucket, { width: w, quality, resize });
+    return {
+      src: url(widths[Math.floor(widths.length / 2)]!),
+      srcSet: widths.map((w) => `${url(w)} ${w}w`).join(", "),
+    };
+    // `key` stands in for `widths`, which callers pass as a fresh array literal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, bucket, key, quality, resize]);
 }

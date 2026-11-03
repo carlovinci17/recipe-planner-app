@@ -738,39 +738,19 @@ export function ActiveJobs({
           )}
       </CardContent>
 
-      {/* Cover-picker dialog — opens when a recipe thumbnail in a sub-row
-          is clicked. Looks up the target recipe + its job's source pages
-          and hands them to the shared CoverPickerGrid. */}
+      {/* Cover dialog — opens when a recipe thumbnail in a sub-row is clicked. */}
       {(() => {
-        if (!coverPickerTarget) {
-          return (
-            <CoverPickerDialog
-              recipeId=""
-              recipeTitle=""
-              currentCoverPath={null}
-              sourcePages={[]}
-              hasUserUploads={false}
-              open={false}
-              onOpenChange={() => {}}
-            />
-          );
-        }
-        const job = jobs.find((j) => j.id === coverPickerTarget.jobId);
-        const list = recipesByJob[coverPickerTarget.jobId] ?? [];
-        const recipe = list.find((r) => r.id === coverPickerTarget.recipeId);
+        const list = coverPickerTarget ? (recipesByJob[coverPickerTarget.jobId] ?? []) : [];
+        const recipe = list.find((r) => r.id === coverPickerTarget?.recipeId) ?? null;
         return (
           <CoverPickerDialog
-            recipeId={coverPickerTarget.recipeId}
+            recipe={recipe}
             recipeTitle={recipe?.title ?? "Recipe"}
-            currentCoverPath={recipe?.cover_image_path ?? null}
-            sourcePages={job?.page_image_paths ?? []}
-            hasUserUploads={(recipe?.image_paths ?? []).length > 0}
-            initialFocalX={recipe?.cover_focal_x ?? 50}
-            initialFocalY={recipe?.cover_focal_y ?? 50}
-            open={true}
+            open={coverPickerTarget !== null}
             onOpenChange={(next) => {
               if (!next) setCoverPickerTarget(null);
             }}
+            onChanged={() => void refetchAll()}
           />
         );
       })()}

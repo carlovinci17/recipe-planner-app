@@ -1,0 +1,129 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import ReactCrop, {
+  type Crop,
+  type PercentCrop,
+  centerCrop,
+  makeAspectCrop,
+} from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
+import { Check, Loader2, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { useSignedImage } from "@/components/recipes/use-signed-image";
+import type { CoverImageRef } from "@/lib/recipes/cover-image";
+import { cropRecipeCoverAction } from "@/app/(app)/recipes/[id]/actions";
+
+/** Starts as a centred 4:3 box (the shape of recipe cards); any handle resizes freely. */
+function startingCrop(width: number, height: number): Crop {
+  return centerCrop(makeAspectCrop({ unit: "%", width: 80 }, 4 / 3, width, height), width, height);
+}
+
+/**
+ * Drag a box over one of the recipe's images and save it as the new cover.
+ * The selection travels as percentages, so it doesn't matter that the image
+ * shown here is a resized copy: the server crops the full-size original.
+ */
+export function CoverCropTool({
+  recipeId,
+  source,
+  onSaved,
+  onCancel,
+}: {
+  recipeId: string;
+  source: CoverImageRef;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [crop, setCrop] = useState<Crop>();
+  const [percent, setPercent] = useState<PercentCrop>();
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [saving, startSave] = useTransition();
+  const url = useSignedImage(source.path, source.bucket, { width: 1600, resize: "contain" });
+
+  function reset() {
+    if (!size) return;
+    const c = startingCrop(size.w, size.h);
+    setCrop(c);
+    setPercent(c as PercentCrop);
+  }
+
+  function save() {
+    if (!percent || percent.width < 1 || percent.height < 1) {
+      toast.error("Drag a box over the part you want as the cover.");
+      return;
+    }
+    startSave(async () => {
+      const result = await cropRecipeCoverAction({
+        recipeId,
+        source,
+        crop: { x: percent.x, y: percent.y, width: percent.width, height: percent.height },
+      });
+      if (!result.ok) {
+        toast.error(result.error ?? "Couldn't save the crop");
+        return;
+      }
+      toast.success("New cover saved. The original image is still on the recipe.");
+      onSaved();
+    });
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Drag the box over the food. It starts at the shape of a recipe card; drag any corner to
+        change it.
+      </p>
+      <div className="flex justify-center overflow-hidden rounded-md border bg-muted/30">
+        {url ? (
+          <ReactCrop
+            crop={crop}
+            onChange={(c, pc) => {
+              setCrop(c);
+              setPercent(pc);
+            }}
+            keepSelection
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={url}
+              alt="Image to crop"
+              className="max-h-[60vh] w-auto max-w-full"
+              onLoad={(e) => {
+                const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                setSize({ w, h });
+                const c = startingCrop(w, h);
+                setCrop(c);
+                setPercent(c as PercentCrop);
+              }}
+            />
+          </ReactCrop>
+        ) : (
+          <div className="flex h-40 w-full items-center justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={reset} disabled={saving || !size}>
+          <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+          Reset
+        </Button>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="button" size="sm" onClick={save} disabled={saving || !percent}>
+            {saving ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Save as cover
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

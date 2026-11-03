@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { recipeService } from "@/lib/services/recipe-service";
 import { getRecipePermissions } from "@/lib/services/permissions";
-import { ingestionStore } from "@/lib/ingestion/store";
 import { logger } from "@/lib/logger";
 import { ReviewForm } from "./review-form";
 import { BackLink } from "@/components/ui/back-link";
@@ -26,24 +25,6 @@ export default async function RecipeReviewPage({ params }: { params: Promise<{ i
   const plannerEntryCount = perms.canDelete
     ? await recipeService.countPlannerEntries(bundle.recipe.id)
     : 0;
-
-  // For multi-recipe imports: the originating ingestion job stores the full
-  // list of source pages. Surface them to the form so the CoverPicker can
-  // offer them as cover-image candidates. Single-recipe / non-PDF imports
-  // typically have a 1-element list (or none).
-  //
-  // This and the duplicate lookup below are both advisory, so neither may block
-  // saving a reviewed recipe — a failure degrades to "no candidates" / "no
-  // duplicates" rather than taking the page down.
-  let sourcePages: string[] = [];
-  if (bundle.recipe.ingestion_job_id) {
-    try {
-      const job = await ingestionStore.getJob(bundle.recipe.ingestion_job_id);
-      sourcePages = job?.page_image_paths ?? [];
-    } catch (err) {
-      logger.error({ err }, "review page: source-page lookup failed");
-    }
-  }
 
   // Published recipes in the same household with the same title — catches the
   // common case where one recipe is extracted from two different files.
@@ -82,7 +63,6 @@ export default async function RecipeReviewPage({ params }: { params: Promise<{ i
         instructions={bundle.instructions}
         canDelete={perms.canDelete}
         plannerEntryCount={plannerEntryCount}
-        sourcePages={sourcePages}
         duplicates={duplicates ?? []}
       />
     </div>

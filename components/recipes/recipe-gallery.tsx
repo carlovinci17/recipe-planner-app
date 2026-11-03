@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
-import { useSignedImage } from "@/components/recipes/use-signed-image";
+import { useSignedImage, useSignedImageSet } from "@/components/recipes/use-signed-image";
+
+/** Widths offered for the recipe page's main image and the fullscreen view. */
+const HERO_WIDTHS = [640, 960, 1280, 1600, 2000] as const;
+const LIGHTBOX_WIDTHS = [960, 1600, 2400] as const;
 import { cn } from "@/lib/utils";
+import { listRecipeImages } from "@/lib/recipes/cover-image";
 
 /**
  * Recipe gallery — hero + thumbnail strip + lightbox.
@@ -40,28 +45,13 @@ export function RecipeGallery({
    */
   heroOverlay?: React.ReactNode;
 }) {
-  const items = useMemo<RecipeGalleryItem[]>(() => {
-    const userImages = recipe.image_paths ?? [];
-    const cover = recipe.cover_image_path;
-    const seen = new Set<string>();
-    const list: RecipeGalleryItem[] = [];
-    for (const p of userImages) {
-      if (!p || seen.has(p)) continue;
-      // Skip user-images entries that collide with the cover path. The
-      // cover entry below carries the correct bucket (recipe-uploads),
-      // and `image_paths` claims the recipe-images bucket — keeping both
-      // would duplicate the React key and load the wrong bucket for one
-      // of them. Past versions of the import pipeline seeded image_paths
-      // with the page-image path, which is exactly the collision case.
-      if (cover && p === cover) continue;
-      seen.add(p);
-      list.push({ path: p, bucket: "recipe-images" });
-    }
-    if (cover && !seen.has(cover)) {
-      list.push({ path: cover, bucket: "recipe-uploads" });
-    }
-    return list;
-  }, [recipe.image_paths, recipe.cover_image_path]);
+  // Photos first (the first is the cover), then the kept import page — the same
+  // order the cover editor uses (listRecipeImages).
+  const items = useMemo<RecipeGalleryItem[]>(
+    () => listRecipeImages(recipe),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the image fields matter
+    [recipe.image_paths, recipe.cover_image_path],
+  );
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -143,13 +133,10 @@ function GalleryHero({
   focalStyle?: React.CSSProperties;
   onClick: () => void;
 }) {
-  // Hero is 16:9 inside a container that can hit ~900px wide; 1600
-  // covers retina without serving the original raster every page load.
-  const url = useSignedImage(item.path, item.bucket, {
-    width: 1600,
-    resize: "cover",
-    quality: 80,
-  });
+  // Hero is 16:9 in a container up to 56rem (~900px) wide. The browser picks
+  // a width for the screen: ~640–960 on a phone, up to 2000 on a high-density
+  // desktop, instead of everyone getting 1600.
+  const img = useSignedImageSet(item.path, item.bucket, HERO_WIDTHS, { quality: 80 });
   return (
     <button
       type="button"
@@ -157,10 +144,12 @@ function GalleryHero({
       className="group relative aspect-[16/9] w-full overflow-hidden rounded-xl bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       aria-label="Open image in fullscreen"
     >
-      {url ? (
+      {img ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={url}
+          src={img.src}
+          srcSet={img.srcSet}
+          sizes="(min-width: 56rem) 56rem, 100vw"
           alt={title}
           style={focalStyle}
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
@@ -375,23 +364,24 @@ function Lightbox({
 }
 
 function LightboxImage({ item, title }: { item: RecipeGalleryItem; title: string }) {
-  // Lightbox is fullscreen; cap at 2400px wide. Visually indistinguishable
-  // from the original on any consumer display, but a fraction of the bytes
-  // when the source is a 4000px PDF raster.
-  const url = useSignedImage(item.path, item.bucket, {
-    width: 2400,
-    resize: "contain",
+  // Fullscreen, up to 90% of the screen; capped at 2400px wide, which is
+  // indistinguishable from the original on any consumer display. Phones pick
+  // a smaller width.
+  const img = useSignedImageSet(item.path, item.bucket, LIGHTBOX_WIDTHS, {
     quality: 90,
+    resize: "contain",
   });
   return (
     <div
       className="relative flex h-full max-h-[90vh] w-full max-w-[90vw] items-center justify-center"
       onClick={(e) => e.stopPropagation()}
     >
-      {url ? (
+      {img ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={url}
+          src={img.src}
+          srcSet={img.srcSet}
+          sizes="90vw"
           alt={title}
           className="max-h-full max-w-full rounded-lg object-contain"
         />
