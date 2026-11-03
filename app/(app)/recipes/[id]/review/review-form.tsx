@@ -4,7 +4,9 @@ import {
   cloneElement,
   isValidElement,
   useId,
+  useCallback,
   useMemo,
+  useRef,
   useState,
   useTransition,
   type ReactElement,
@@ -37,6 +39,7 @@ import { ImproveWithAI, type AppliedSuggestions } from "@/components/recipes/imp
 import { DeleteRecipeButton } from "../delete-recipe-button";
 import { useUnsavedChangesGuard } from "@/lib/recipes/use-unsaved-changes-guard";
 import { CoverEditor } from "@/components/recipes/cover-editor";
+import type { PendingCropSave } from "@/components/recipes/cover-crop-tool";
 
 type Recipe = Tables<"recipes">;
 type Ingredient = Tables<"recipe_ingredients">;
@@ -338,11 +341,25 @@ export function ReviewForm({
 
   // Save the current form state, then run a follow-up callback (used by the
   // unsaved-changes dialog to navigate after a successful save).
+  // A crop that is open but not yet saved. The recipe's Save saves it first, so
+  // a crop is never lost because the user pressed Save instead of "Save as cover".
+  const pendingCropSave = useRef<PendingCropSave | null>(null);
+  const registerPendingCropSave = useCallback((fn: PendingCropSave | null) => {
+    pendingCropSave.current = fn;
+  }, []);
+  async function savePendingCrop(): Promise<boolean> {
+    return pendingCropSave.current ? pendingCropSave.current() : true;
+  }
+
   async function saveAndThen(after?: () => void) {
     return new Promise<boolean>((resolve) => {
       start(async () => {
         if (!title.trim()) {
           toast.error("Give your recipe a title before saving.");
+          resolve(false);
+          return;
+        }
+        if (!(await savePendingCrop())) {
           resolve(false);
           return;
         }
@@ -371,6 +388,7 @@ export function ReviewForm({
 
   function save() {
     start(async () => {
+      if (!(await savePendingCrop())) return;
       const result = await saveReviewAction(buildSavePayload());
       if (result.ok) {
         toast.success("Recipe saved");
@@ -667,7 +685,7 @@ export function ReviewForm({
 
           <div className="rounded-xl border bg-card p-4">
             <h3 className="mb-2 text-sm font-medium">Cover image</h3>
-            <CoverEditor recipe={recipe} />
+            <CoverEditor recipe={recipe} registerPendingSave={registerPendingCropSave} />
           </div>
 
           <div className="rounded-xl border bg-card p-4 text-sm">

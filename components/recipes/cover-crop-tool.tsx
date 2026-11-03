@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import ReactCrop, {
   type Crop,
   type PercentCrop,
@@ -33,6 +33,12 @@ function startingCrop(width: number, height: number, aspect: number | null): Cro
 }
 
 /**
+ * Saves an unsaved crop; resolves false if it failed (an error is shown). Handed
+ * to the surrounding form so its own Save button saves the crop too.
+ */
+export type PendingCropSave = () => Promise<boolean>;
+
+/**
  * Drag a box over one of the recipe's images and save it as the new cover.
  * The selection travels as percentages, so it doesn't matter that the image
  * shown here is a resized copy: the server crops the full-size original.
@@ -42,11 +48,19 @@ export function CoverCropTool({
   source,
   onSaved,
   onCancel,
+  registerPendingSave,
 }: {
   recipeId: string;
   source: CoverImageRef;
   onSaved: () => void;
   onCancel: () => void;
+  /**
+   * Called with a save function while this crop is open (and with null when it
+   * closes), so pressing the recipe's Save also saves the crop. Without it, a
+   * crop only saved through "Save as cover" — and was lost when the user
+   * pressed the form's Save instead.
+   */
+  registerPendingSave?: (save: PendingCropSave | null) => void;
 }) {
   const [crop, setCrop] = useState<Crop>();
   const [percent, setPercent] = useState<PercentCrop>();
@@ -70,23 +84,41 @@ export function CoverCropTool({
     if (size) startBox(size.w, size.h, aspect);
   }
 
-  function save() {
-    if (!percent || percent.width < 1 || percent.height < 1) {
+  // The latest selection, for the save function the form holds on to.
+  const percentRef = useRef(percent);
+  percentRef.current = percent;
+
+  async function saveCrop(): Promise<boolean> {
+    const p = percentRef.current;
+    if (!p || p.width < 1 || p.height < 1) {
       toast.error("Drag a box over the part you want as the cover.");
-      return;
+      return false;
     }
+    const result = await cropRecipeCoverAction({
+      recipeId,
+      source,
+      crop: { x: p.x, y: p.y, width: p.width, height: p.height },
+    });
+    if (!result.ok) {
+      toast.error(result.error ?? "Couldn't save the crop");
+      return false;
+    }
+    toast.success("New cover saved. The original image is still on the recipe.");
+    onSaved();
+    return true;
+  }
+
+  // While open, let the form's Save button save this crop too.
+  const saveCropRef = useRef(saveCrop);
+  saveCropRef.current = saveCrop;
+  useEffect(() => {
+    registerPendingSave?.(() => saveCropRef.current());
+    return () => registerPendingSave?.(null);
+  }, [registerPendingSave]);
+
+  function save() {
     startSave(async () => {
-      const result = await cropRecipeCoverAction({
-        recipeId,
-        source,
-        crop: { x: percent.x, y: percent.y, width: percent.width, height: percent.height },
-      });
-      if (!result.ok) {
-        toast.error(result.error ?? "Couldn't save the crop");
-        return;
-      }
-      toast.success("New cover saved. The original image is still on the recipe.");
-      onSaved();
+      await saveCrop();
     });
   }
 
@@ -94,7 +126,8 @@ export function CoverCropTool({
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
         Drag the box over the food, and drag its edges or corners to resize it. Free lets the box be
-        any shape; pick a shape to keep it to that shape.
+        any shape; pick a shape to keep it to that shape. Press Save as cover, or just save the
+        recipe — the crop is saved with it.
       </p>
       <div role="radiogroup" aria-label="Crop shape" className="flex flex-wrap gap-1">
         {SHAPES.map((shape) => (

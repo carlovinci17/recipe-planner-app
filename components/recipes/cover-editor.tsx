@@ -9,7 +9,7 @@ import { useSignedImage } from "@/components/recipes/use-signed-image";
 import { cn } from "@/lib/utils";
 import { listRecipeImages, type CoverImageRef } from "@/lib/recipes/cover-image";
 import { clearRecipeCoverAction, makeRecipeCoverAction } from "@/app/(app)/recipes/[id]/actions";
-import { CoverCropTool } from "./cover-crop-tool";
+import { CoverCropTool, type PendingCropSave } from "./cover-crop-tool";
 
 /**
  * Choose and crop a recipe's cover from the images the recipe itself has: its
@@ -25,8 +25,11 @@ import { CoverCropTool } from "./cover-crop-tool";
  */
 export function CoverEditor({
   recipe,
+  registerPendingSave,
 }: {
   recipe: { id: string; image_paths: string[] | null; cover_image_path: string | null };
+  /** See CoverCropTool: lets the form's Save also save an open crop. */
+  registerPendingSave?: (save: PendingCropSave | null) => void;
 }) {
   const router = useRouter();
   const images = listRecipeImages(recipe);
@@ -61,6 +64,7 @@ export function CoverEditor({
         source={selected}
         onSaved={changed}
         onCancel={() => setCropping(false)}
+        registerPendingSave={registerPendingSave}
       />
     );
   }

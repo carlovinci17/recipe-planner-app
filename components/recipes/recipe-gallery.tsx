@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
 import { useSignedImage, useSignedImageSet } from "@/components/recipes/use-signed-image";
 
@@ -9,6 +9,14 @@ const HERO_WIDTHS = [640, 960, 1280, 1600, 2000] as const;
 const LIGHTBOX_WIDTHS = [960, 1600, 2400] as const;
 import { cn } from "@/lib/utils";
 import { listRecipeImages } from "@/lib/recipes/cover-image";
+import {
+  clampZoom,
+  NO_ZOOM,
+  TAP_ZOOM,
+  zoomAbout,
+  type Point,
+  type ZoomState,
+} from "@/lib/recipes/zoom";
 
 /**
  * Recipe gallery — hero + thumbnail strip + lightbox.
@@ -347,7 +355,13 @@ function Lightbox({
         </button>
       ) : null}
 
-      <LightboxImage item={current} title={title} />
+      {/* Keyed by image so zoom resets when moving to another one. */}
+      <LightboxImage
+        key={current.path}
+        item={current}
+        title={title}
+        onSwipe={items.length > 1 ? (dir) => (dir === "next" ? next() : prev()) : undefined}
+      />
 
       {items.length > 1 ? (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-white/10 px-3 py-1 text-xs text-white">
@@ -363,7 +377,31 @@ function Lightbox({
   );
 }
 
-function LightboxImage({ item, title }: { item: RecipeGalleryItem; title: string }) {
+/** A swipe this long (px) with one finger at 1× moves to the next/previous image. */
+const SWIPE_PX = 50;
+/** Two taps this close together (ms) are a double-tap. */
+const DOUBLE_TAP_MS = 300;
+
+/**
+ * The fullscreen image, with touch gestures. The app turns off the browser's
+ * own pinch-zoom (viewport `userScalable: false`, app/layout.tsx), so zoom is
+ * done here and only here:
+ *   - pinch with two fingers to zoom (1×–4×), centred between the fingers
+ *   - drag with one finger to look around while zoomed
+ *   - double-tap to zoom in on that spot, and again to zoom back out
+ *   - swipe left/right at 1× for the next/previous image
+ * Pointer events cover touch, pen and mouse alike; `touch-action: none` stops
+ * the browser treating these gestures as page scrolling.
+ */
+function LightboxImage({
+  item,
+  title,
+  onSwipe,
+}: {
+  item: RecipeGalleryItem;
+  title: string;
+  onSwipe?: (dir: "next" | "prev") => void;
+}) {
   // Fullscreen, up to 90% of the screen; capped at 2400px wide, which is
   // indistinguishable from the original on any consumer display. Phones pick
   // a smaller width.
@@ -371,18 +409,141 @@ function LightboxImage({ item, title }: { item: RecipeGalleryItem; title: string
     quality: 90,
     resize: "contain",
   });
+
+  const [zoom, setZoom] = useState<ZoomState>(NO_ZOOM);
+  const [gesturing, setGesturing] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  // Fingers currently down, by pointer id, in page coordinates.
+  const pointers = useRef(new Map<number, Point>());
+  // The state when the current gesture (or its latest phase) began.
+  // `pinched`: two fingers were down at some point, so it is never a tap or swipe.
+  const gesture = useRef<{
+    zoom: ZoomState;
+    mid: Point;
+    dist: number;
+    moved: boolean;
+    pinched: boolean;
+  } | null>(null);
+  const lastTap = useRef(0);
+
+  /** A page point, measured from the image's centre (the zoom maths' frame). */
+  function local(p: Point): Point {
+    const r = boxRef.current?.getBoundingClientRect();
+    if (!r) return p;
+    return { x: p.x - (r.left + r.width / 2), y: p.y - (r.top + r.height / 2) };
+  }
+  function imageSize() {
+    // Layout size, which the CSS transform doesn't change: the size at 1×.
+    return { width: imgRef.current?.offsetWidth ?? 0, height: imgRef.current?.offsetHeight ?? 0 };
+  }
+  /** Start (or restart, when a finger is added or lifted) the gesture from now. */
+  function beginPhase(current: ZoomState) {
+    const pts = [...pointers.current.values()];
+    const mid = pts.length >= 2 ? midpoint(pts[0]!, pts[1]!) : pts[0]!;
+    gesture.current = {
+      zoom: current,
+      mid: local(mid),
+      dist: pts.length >= 2 ? distance(pts[0]!, pts[1]!) : 0,
+      moved: gesture.current?.moved ?? false,
+      pinched: (gesture.current?.pinched ?? false) || pts.length >= 2,
+    };
+  }
+
+  function onPointerDown(e: React.PointerEvent) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size === 1) gesture.current = null;
+    setGesturing(true);
+    beginPhase(zoom);
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    if (!pointers.current.has(e.pointerId) || !gesture.current) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = gesture.current;
+    const pts = [...pointers.current.values()];
+    if (pts.length >= 2) {
+      const scale = g.zoom.scale * (distance(pts[0]!, pts[1]!) / (g.dist || 1));
+      const next = zoomAbout(g.zoom, g.mid, local(midpoint(pts[0]!, pts[1]!)), scale);
+      g.moved = true;
+      setZoom(clampZoom(next, imageSize()));
+    } else if (g.zoom.scale > 1) {
+      // One finger while zoomed: move the picture with it.
+      const now = local(pts[0]!);
+      g.moved = g.moved || Math.hypot(now.x - g.mid.x, now.y - g.mid.y) > 5;
+      setZoom(
+        clampZoom(
+          { scale: g.zoom.scale, x: g.zoom.x + now.x - g.mid.x, y: g.zoom.y + now.y - g.mid.y },
+          imageSize(),
+        ),
+      );
+    } else {
+      const now = local(pts[0]!);
+      g.moved = g.moved || Math.hypot(now.x - g.mid.x, now.y - g.mid.y) > 5;
+    }
+  }
+
+  function onPointerUp(e: React.PointerEvent) {
+    const start = pointers.current.get(e.pointerId);
+    const g = gesture.current;
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size > 0) {
+      // One of two fingers lifted: carry on from here with the other one.
+      beginPhase(zoom);
+      return;
+    }
+    setGesturing(false);
+    if (!g || !start || g.pinched) return;
+    const end = local({ x: e.clientX, y: e.clientY });
+    const dx = end.x - g.mid.x;
+    const dy = end.y - g.mid.y;
+
+    // Swipe: one finger, not zoomed, mostly sideways.
+    if (onSwipe && g.zoom.scale === 1 && zoom.scale === 1 && Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      onSwipe(dx < 0 ? "next" : "prev");
+      return;
+    }
+    // Double-tap: toggle between 1× and a zoom on the tapped spot.
+    if (!g.moved) {
+      const now = Date.now();
+      if (now - lastTap.current < DOUBLE_TAP_MS) {
+        lastTap.current = 0;
+        setZoom(
+          zoom.scale > 1
+            ? NO_ZOOM
+            : clampZoom(zoomAbout(NO_ZOOM, end, end, TAP_ZOOM), imageSize()),
+        );
+      } else {
+        lastTap.current = now;
+      }
+    }
+  }
+
   return (
     <div
-      className="relative flex h-full max-h-[90vh] w-full max-w-[90vw] items-center justify-center"
+      ref={boxRef}
+      className="relative flex h-full max-h-[90vh] w-full max-w-[90vw] touch-none select-none items-center justify-center"
       onClick={(e) => e.stopPropagation()}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
     >
       {img ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          ref={imgRef}
           src={img.src}
           srcSet={img.srcSet}
           sizes="90vw"
           alt={title}
+          draggable={false}
+          style={{
+            transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`,
+            // Smooth only for jumps (double-tap); follow the fingers exactly.
+            transition: gesturing ? "none" : "transform 200ms ease-out",
+          }}
           className="max-h-full max-w-full rounded-lg object-contain"
         />
       ) : (
@@ -390,4 +551,12 @@ function LightboxImage({ item, title }: { item: RecipeGalleryItem; title: string
       )}
     </div>
   );
+}
+
+function midpoint(a: Point, b: Point): Point {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+function distance(a: Point, b: Point): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
