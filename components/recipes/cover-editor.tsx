@@ -20,15 +20,13 @@ import { CoverCropTool } from "./cover-crop-tool";
  *                  image it came from stays on the recipe.
  *   Use as cover → that image becomes the cover as it is.
  *
- * `onChanged` runs after every change, for callers whose recipe data isn't
- * refreshed by `router.refresh()` (the Recent imports list loads its own).
+ * Lives only in Edit (and the review screen, which is the same form): that is
+ * the one place a recipe's cover is changed.
  */
 export function CoverEditor({
   recipe,
-  onChanged,
 }: {
   recipe: { id: string; image_paths: string[] | null; cover_image_path: string | null };
-  onChanged?: () => void;
 }) {
   const router = useRouter();
   const images = listRecipeImages(recipe);
@@ -44,7 +42,6 @@ export function CoverEditor({
     setSelectedPath(null);
     setCropping(false);
     router.refresh();
-    onChanged?.();
   }
 
   if (images.length === 0) {

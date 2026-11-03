@@ -15,9 +15,21 @@ import { useSignedImage } from "@/components/recipes/use-signed-image";
 import type { CoverImageRef } from "@/lib/recipes/cover-image";
 import { cropRecipeCoverAction } from "@/app/(app)/recipes/[id]/actions";
 
-/** Starts as a centred 4:3 box (the shape of recipe cards); any handle resizes freely. */
-function startingCrop(width: number, height: number): Crop {
-  return centerCrop(makeAspectCrop({ unit: "%", width: 80 }, 4 / 3, width, height), width, height);
+/** Box shapes on offer. `null` = Free: any edge or corner resizes to any shape. */
+const SHAPES: { label: string; aspect: number | null }[] = [
+  { label: "Free", aspect: null },
+  { label: "Card 4:3", aspect: 4 / 3 },
+  { label: "Square", aspect: 1 },
+  { label: "Wide 16:9", aspect: 16 / 9 },
+];
+
+/**
+ * The box a crop starts with: Free covers most of the image in its own shape;
+ * a fixed shape is the largest centred box of that shape.
+ */
+function startingCrop(width: number, height: number, aspect: number | null): Crop {
+  if (aspect === null) return { unit: "%", x: 5, y: 5, width: 90, height: 90 };
+  return centerCrop(makeAspectCrop({ unit: "%", width: 90 }, aspect, width, height), width, height);
 }
 
 /**
@@ -39,14 +51,23 @@ export function CoverCropTool({
   const [crop, setCrop] = useState<Crop>();
   const [percent, setPercent] = useState<PercentCrop>();
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [aspect, setAspect] = useState<number | null>(null);
   const [saving, startSave] = useTransition();
   const url = useSignedImage(source.path, source.bucket, { width: 1600, resize: "contain" });
 
-  function reset() {
-    if (!size) return;
-    const c = startingCrop(size.w, size.h);
+  function startBox(w: number, h: number, nextAspect: number | null) {
+    const c = startingCrop(w, h, nextAspect);
     setCrop(c);
     setPercent(c as PercentCrop);
+  }
+
+  function chooseShape(nextAspect: number | null) {
+    setAspect(nextAspect);
+    if (size) startBox(size.w, size.h, nextAspect);
+  }
+
+  function reset() {
+    if (size) startBox(size.w, size.h, aspect);
   }
 
   function save() {
@@ -72,9 +93,26 @@ export function CoverCropTool({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Drag the box over the food. It starts at the shape of a recipe card; drag any corner to
-        change it.
+        Drag the box over the food, and drag its edges or corners to resize it. Free lets the box be
+        any shape; pick a shape to keep it to that shape.
       </p>
+      <div role="radiogroup" aria-label="Crop shape" className="flex flex-wrap gap-1">
+        {SHAPES.map((shape) => (
+          <Button
+            key={shape.label}
+            type="button"
+            role="radio"
+            aria-checked={aspect === shape.aspect}
+            size="sm"
+            variant={aspect === shape.aspect ? "secondary" : "outline"}
+            className="h-7 px-2.5 text-xs"
+            onClick={() => chooseShape(shape.aspect)}
+            disabled={saving}
+          >
+            {shape.label}
+          </Button>
+        ))}
+      </div>
       <div className="flex justify-center overflow-hidden rounded-md border bg-muted/30">
         {url ? (
           <ReactCrop
@@ -83,6 +121,7 @@ export function CoverCropTool({
               setCrop(c);
               setPercent(pc);
             }}
+            aspect={aspect ?? undefined}
             keepSelection
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -93,9 +132,7 @@ export function CoverCropTool({
               onLoad={(e) => {
                 const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
                 setSize({ w, h });
-                const c = startingCrop(w, h);
-                setCrop(c);
-                setPercent(c as PercentCrop);
+                startBox(w, h, aspect);
               }}
             />
           </ReactCrop>

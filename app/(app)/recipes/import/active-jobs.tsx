@@ -43,7 +43,6 @@ import type { IngestionEventKind, RecipeStatus, Tables } from "@/types/database.
 import { bulkPublishRecipesAction } from "../actions";
 import { cancelJobAction, clearAllJobsAction, clearFailedJobsAction } from "./actions";
 import { SkimPreviewDialog } from "./skim-preview-dialog";
-import { CoverPickerDialog } from "./cover-picker-dialog";
 import { useSignedImage } from "@/components/recipes/use-signed-image";
 import { coverObjectPositionStyle, resolveCoverImage } from "@/lib/recipes/cover-image";
 import { getSourceName } from "@/lib/recipes/source-name";
@@ -369,13 +368,6 @@ export function ActiveJobs({
   >({});
   // Job id whose skim-preview dialog is currently open.
   const [skimDialogJobId, setSkimDialogJobId] = useState<string | null>(null);
-  // { recipeId, jobId } when a recipe's thumbnail is clicked to open its
-  // cover picker. We carry jobId alongside so we can look up the matching
-  // source pages from the job row without re-fetching.
-  const [coverPickerTarget, setCoverPickerTarget] = useState<{
-    recipeId: string;
-    jobId: string;
-  } | null>(null);
   const [pending, start] = useTransition();
   // How many jobs are currently loaded — so a realtime refetch reloads the same
   // span (not just the first page). A ref so the realtime callback stays stable.
@@ -719,7 +711,6 @@ export function ActiveJobs({
             onCancel={cancelJob}
             onSaveAll={(ids) => saveAllForJob(j.id, ids)}
             onOpenSkim={() => setSkimDialogJobId(j.id)}
-            onOpenCoverPicker={(recipeId) => setCoverPickerTarget({ recipeId, jobId: j.id })}
           />
         ))}
         {tab !== "ignored" &&
@@ -738,22 +729,6 @@ export function ActiveJobs({
           )}
       </CardContent>
 
-      {/* Cover dialog — opens when a recipe thumbnail in a sub-row is clicked. */}
-      {(() => {
-        const list = coverPickerTarget ? (recipesByJob[coverPickerTarget.jobId] ?? []) : [];
-        const recipe = list.find((r) => r.id === coverPickerTarget?.recipeId) ?? null;
-        return (
-          <CoverPickerDialog
-            recipe={recipe}
-            recipeTitle={recipe?.title ?? "Recipe"}
-            open={coverPickerTarget !== null}
-            onOpenChange={(next) => {
-              if (!next) setCoverPickerTarget(null);
-            }}
-            onChanged={() => void refetchAll()}
-          />
-        );
-      })()}
 
       {/* Skim preview dialog — opens when the user clicks "Review & pick"
           on a job that has skim_results but no committed selection yet.
@@ -834,7 +809,6 @@ function JobRow({
   onCancel,
   onSaveAll,
   onOpenSkim,
-  onOpenCoverPicker,
 }: {
   job: Job;
   latestEvent?: IngestionEventKind;
@@ -850,7 +824,6 @@ function JobRow({
   onCancel: (jobId: string) => void;
   onSaveAll: (recipeIds: string[]) => void;
   onOpenSkim: () => void;
-  onOpenCoverPicker: (recipeId: string) => void;
 }) {
   const isProcessing = job.status === "processing";
   const progress = isProcessing
@@ -1054,7 +1027,7 @@ function JobRow({
                 <ul className="mt-2 divide-y divide-border/40 rounded-md bg-muted/40 px-2 py-1">
                   {recipes.map((r) => (
                     <li key={r.id} className="flex items-center gap-3 px-1.5 py-1.5 text-sm">
-                      <RecipeCoverThumb recipe={r} onClick={() => onOpenCoverPicker(r.id)} />
+                      <RecipeCoverThumb recipe={r} />
                       <span className="min-w-0 flex-1 truncate" title={r.title}>
                         {r.title}
                       </span>
@@ -1133,13 +1106,11 @@ function JobRow({
 }
 
 /**
- * Tappable square thumbnail for a sub-row recipe. Resolves cover via the
- * shared `resolveCoverImage` (same priority as the recipes listing page —
- * user uploads first, then cover_image_path), signs at 96×96 for the
- * 40px-square render slot @ 2× DPI. Click bubbles up to open the cover
- * picker dialog scoped to this recipe.
+ * Square thumbnail for a sub-row recipe. Resolves cover via the shared
+ * `resolveCoverImage` (same priority as the recipes listing page — user uploads
+ * first, then cover_image_path). Display only: the cover is changed in Edit.
  */
-function RecipeCoverThumb({ recipe, onClick }: { recipe: JobRecipe; onClick: () => void }) {
+function RecipeCoverThumb({ recipe }: { recipe: JobRecipe }) {
   const ref = resolveCoverImage({
     image_paths: recipe.image_paths,
     cover_image_path: recipe.cover_image_path,
@@ -1152,27 +1123,21 @@ function RecipeCoverThumb({ recipe, onClick }: { recipe: JobRecipe; onClick: () 
   });
   const focalStyle = coverObjectPositionStyle(recipe);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label="Change cover image"
-      title="Change cover image"
-      className="group relative h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
+    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-muted">
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={url}
           alt=""
           style={focalStyle}
-          className="h-full w-full object-cover transition-opacity group-hover:opacity-80"
+          className="h-full w-full object-cover"
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
           —
         </div>
       )}
-    </button>
+    </div>
   );
 }
 

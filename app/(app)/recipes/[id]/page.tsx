@@ -23,7 +23,6 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import { cn, formatMinutes } from "@/lib/utils";
 import { FavoriteButton } from "./favorite-button";
 import { RecipeGallery } from "@/components/recipes/recipe-gallery";
-import { ChangeCoverButton } from "./change-cover-button";
 import { SourcePill } from "@/components/recipes/source-pill";
 import { RecipeDates } from "@/components/recipes/recipe-dates";
 import { DeleteRecipeButton } from "./delete-recipe-button";
@@ -101,7 +100,6 @@ export default async function RecipeDetailPage({ params }: { params: Promise<{ i
         <div className="flex flex-wrap gap-2 sm:justify-end">
           <AddToPlannerButton recipeId={recipe.id} householdId={recipe.household_id} />
           <FavoriteButton recipeId={recipe.id} initial={recipe.is_favorite} />
-          {perms.canEdit ? <ChangeCoverButton recipe={recipe} /> : null}
           {perms.canEdit ? (
             <Button variant="outline" asChild>
               <Link href={`/recipes/${recipe.id}/edit`}>

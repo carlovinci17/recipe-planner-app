@@ -200,7 +200,8 @@ The folder's Drive owner must be a household member.
 A recipe's images are its photos (`image_paths`, `recipe-images`; `image_paths[0]` is the cover)
 plus the one import page kept after cleanup (`cover_image_path`, `recipe-uploads`).
 `listRecipeImages()` is the single ordering — gallery, cover editor and `resolveCoverImage`
-agree on it. The cover editor works from those images only, never the import job (whose other
+agree on it. The cover editor lives **only in Edit** (and the review screen, the same form) —
+not on the recipe page or in Recent imports. It works from those images only, never the import job (whose other
 pages are deleted by the cleanup step). Cropping (`recipeService.cropCover`) saves a new
 `cover-crop-*.webp` photo at the front of `image_paths`; the source image is left on the recipe.
 It checks the source belongs to the recipe — keep that check. Import pages are stored
