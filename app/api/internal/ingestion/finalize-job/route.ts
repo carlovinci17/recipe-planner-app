@@ -1,5 +1,6 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
+import { startNextDriveFiles } from "@/lib/ingestion/drive-sync";
 import { ingestionStore } from "@/lib/ingestion/store";
 
 export const runtime = "nodejs";
@@ -19,6 +20,8 @@ export async function POST(req: NextRequest) {
     failed: number;
   };
   await ingestionStore.updateJob(jobId, { recipe_id: primaryRecipeId, status: "needs_review" });
+
+  after(startNextDriveFiles); // this job's Drive slot is free — start the next file
 
   if (failed > 0) {
     await ingestionStore.insertEvent(jobId, "validation_completed", {

@@ -1,5 +1,6 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
+import { startNextDriveFiles } from "@/lib/ingestion/drive-sync";
 import { sweepStuckJobs } from "@/lib/ingestion/sweep-stuck";
 
 export const runtime = "nodejs";
@@ -12,5 +13,6 @@ export async function POST(req: NextRequest) {
   const deny = assertInternalSecret(req);
   if (deny) return deny;
   const result = await sweepStuckJobs();
+  if (result.cleared > 0) after(startNextDriveFiles); // swept jobs free their Drive slots
   return Response.json(result);
 }

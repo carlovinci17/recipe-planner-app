@@ -16,7 +16,7 @@ import {
 
 /**
  * Google Drive tab: share a folder with the app, preview it, start the import.
- * After that the `driveSync` timer keeps it in step — new files every 30 min,
+ * After that, "Sync now" picks up new or changed files whenever you ask —
  * a few at a time. Recipes already in the library are skipped by title.
  */
 export function ImportDrive({
@@ -179,7 +179,7 @@ export function ImportDrive({
                 {f.folderName ?? "Drive folder"}
               </p>
               <p className="text-xs text-muted-foreground">
-                {f.confirmed ? "Syncing every 30 minutes" : "Not started yet"}
+                {f.confirmed ? "Press Sync now to check for new files" : "Not started yet"}
               </p>
             </div>
             <div className="flex shrink-0 gap-1">

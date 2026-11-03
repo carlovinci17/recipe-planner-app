@@ -1,5 +1,6 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
+import { startNextDriveFiles } from "@/lib/ingestion/drive-sync";
 import { ingestionStore } from "@/lib/ingestion/store";
 import { ingestionStorage } from "@/lib/ingestion/storage";
 import { skimRecipesFromImages } from "@/lib/ai/recipe-extraction";
@@ -57,5 +58,7 @@ export async function POST(req: NextRequest) {
     already_in_library: skim.length - newIndices.length,
   });
 
+  // A job waiting on the recipe picker doesn't hold a Drive slot (see inFlightCount).
+  after(startNextDriveFiles); // this job's Drive slot is free — start the next file
   return Response.json({ count: skim.length, newIndices });
 }

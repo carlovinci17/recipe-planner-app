@@ -13,7 +13,7 @@ import {
   getFolder,
   parseFolderId,
 } from "@/lib/integrations/google-drive";
-import { listFolder, queueFiles, retryDriveFiles } from "@/lib/ingestion/drive-sync";
+import { listFolder, retryDriveFiles, startNextDriveFiles } from "@/lib/ingestion/drive-sync";
 import { runInUserTx } from "./user-tx";
 
 export type DriveFolderSummary = {
@@ -182,7 +182,7 @@ export const driveService = {
     return { ok: true, folderId: row.id, folderName: folder.name, preview };
   },
 
-  /** Start importing (first sync), then hand off to the timer. */
+  /** Start importing (first sync); later files start as earlier ones finish. */
   async confirm(args: { householdId: string; folderRowId: string }): Promise<void> {
     const updated = await runInUserTx((tx) =>
       tx
@@ -199,7 +199,7 @@ export const driveService = {
         )
         .returning({ id: driveFolders.id }),
     );
-    if (updated.length > 0) await queueFiles();
+    if (updated.length > 0) await startNextDriveFiles();
   },
 
   async syncNow(args: { householdId: string; folderRowId: string }): Promise<DrivePreview | null> {
@@ -216,7 +216,7 @@ export const driveService = {
     );
     if (!row) return null;
     const preview = await listFolder(row);
-    if (row.confirmedAt) await queueFiles();
+    if (row.confirmedAt) await startNextDriveFiles();
     return preview;
   },
 

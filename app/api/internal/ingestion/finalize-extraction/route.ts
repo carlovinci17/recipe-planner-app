@@ -1,5 +1,6 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
+import { startNextDriveFiles } from "@/lib/ingestion/drive-sync";
 import { ingestionStore } from "@/lib/ingestion/store";
 import { dedupeRecipes, normalizeTitle } from "@/lib/ingestion/pipeline-helpers";
 import { normalizeExtractedRecipe } from "@/lib/ingestion/normalize";
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
       ...usagePatch,
     });
     await ingestionStore.insertEvent(jobId, "failed", { reason });
+    after(startNextDriveFiles); // this job's Drive slot is free — start the next file
     return Response.json({ count: 0, reason });
   }
 

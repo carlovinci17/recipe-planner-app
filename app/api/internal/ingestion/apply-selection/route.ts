@@ -1,5 +1,6 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { assertInternalSecret } from "@/lib/ingestion/internal-endpoint";
+import { startNextDriveFiles } from "@/lib/ingestion/drive-sync";
 import { ingestionStore } from "@/lib/ingestion/store";
 import { resolveBookPages, selectPagesForExtraction } from "@/lib/ingestion/page-mapping";
 
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
             ? "Skipped — no recipes found in this file."
             : "Cancelled at the recipe selection step.",
     });
+    after(startNextDriveFiles); // this job's Drive slot is free — start the next file
     return Response.json({ cancelled: true });
   }
 

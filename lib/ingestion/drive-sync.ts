@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, inArray, isNotNull, lt, or, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, or, isNull, sql } from "drizzle-orm";
 import { driveFiles, driveFolders, ingestionEvents, ingestionJobs } from "@/lib/db/schema";
 import { SUPPORTED_MIME, downloadFile, listFolderTree } from "@/lib/integrations/google-drive";
 import { ingestionStorage } from "@/lib/ingestion/storage";
@@ -7,24 +7,27 @@ import { startFileIngestion } from "@/lib/ingestion/start-job";
 import { logger } from "@/lib/logger";
 
 /**
- * Google Drive folder sync — the work behind the `driveSync` timer (every 5 min)
- * and the import page's "Sync now".
+ * Google Drive folder sync — manual only: the import page's "Start import" and
+ * "Sync now". There is no timer; a folder is only re-listed when someone asks.
+ * (A 5-minute timer used to do this, and kept Neon and the container awake
+ * around the clock for folders that change a few times a year.)
  *
  * Runs on the owner connection (no user in scope, like the rest of the
  * pipeline); every query is scoped by folder row / household explicitly.
  *
- *   listFolder  — walk the shared folder tree and record each file in
- *                 drive_files. New → pending; changed since last import →
- *                 pending again; unreadable types → unsupported.
- *   queueFiles  — start ingestion for pending files, at most MAX_IN_FLIGHT at a
- *                 time across all households, so a 100-PDF first sync trickles
- *                 through instead of firing 100 vision calls at once.
+ *   listFolder          — walk the shared folder tree and record each file in
+ *                         drive_files. New → pending; changed since last import →
+ *                         pending again; unreadable types → unsupported.
+ *   queueFiles          — start ingestion for pending files, at most MAX_IN_FLIGHT
+ *                         at a time across all households, so a 100-PDF first sync
+ *                         trickles through instead of firing 100 vision calls at once.
+ *   startNextDriveFiles — what keeps that trickle moving without a timer: every
+ *                         pipeline step that frees a slot calls it.
  *
  * Duplicates are handled downstream, not here: a Drive job always skims, and
  * the skim marks titles the household already has (see the orchestrator).
  */
 
-const LIST_EVERY_MINUTES = 30;
 const MAX_IN_FLIGHT = 3;
 
 type FolderRow = typeof driveFolders.$inferSelect;
@@ -234,44 +237,50 @@ export async function queueFiles(): Promise<{ queued: number; failed: number }> 
   return { queued: rows.length - failed, failed };
 }
 
-/** One timer tick: re-list folders that are due, then start what fits. */
-export async function driveSyncTick(): Promise<{ listed: number; queued: number; failed: number }> {
-  const d = await db();
-  const due = await d
-    .select()
-    .from(driveFolders)
-    .where(
-      and(
-        eq(driveFolders.isActive, true),
-        isNotNull(driveFolders.confirmedAt),
-        or(
-          isNull(driveFolders.lastListedAt),
-          lt(driveFolders.lastListedAt, sql`now() - make_interval(mins => ${LIST_EVERY_MINUTES})`),
-        ),
-      ),
-    );
-  let listed = 0;
-  for (const folder of due) {
-    try {
-      await listFolder(folder);
-      listed++;
-    } catch (err) {
-      logger.warn({ err, folderId: folder.id }, "drive sync: listing a folder failed");
-    }
+let queueRun: Promise<void> | null = null;
+let queueAgain = false;
+
+/**
+ * Start whatever pending Drive files fit now. Called after "Sync now" / "Start
+ * import" and by every pipeline step where a Drive job finishes, fails, is
+ * skipped or parks on the recipe picker — that hand-off is what walks a big
+ * folder through, three files at a time, with no timer.
+ *
+ * Never throws: a queueing problem must not fail the import step that called
+ * it. One run at a time per process, so two jobs finishing together can't both
+ * start the same pending file; a call that arrives mid-run makes it go round
+ * once more instead. A file that fails to start frees its slot straight away,
+ * so the run goes round again for the next one.
+ */
+export function startNextDriveFiles(): Promise<void> {
+  if (queueRun) {
+    queueAgain = true;
+    return queueRun;
   }
-  const { queued, failed } = await queueFiles();
-  return { listed, queued, failed };
+  queueRun = (async () => {
+    do {
+      queueAgain = false;
+      try {
+        const { failed } = await queueFiles();
+        if (failed > 0) queueAgain = true;
+      } catch (err) {
+        logger.warn({ err }, "drive sync: starting the next files failed");
+      }
+    } while (queueAgain);
+  })().finally(() => {
+    queueRun = null;
+  });
+  return queueRun;
 }
 
 /**
  * "Import again" for files that were skipped, cancelled or failed. Never
- * automatic — a broken file would otherwise be re-read (and paid for) every
- * 30 minutes. Scoped to the household explicitly; the caller has checked
- * membership.
+ * automatic — a broken file would otherwise be re-read (and paid for) on every
+ * sync. Scoped to the household explicitly; the caller has checked membership.
  *
  * One file: queued straight away and ALWAYS opens the recipe picker, even for a
  * short file whose recipes all look like duplicates, so the user can pick the
- * one they want. "Retry all failed": back in the queue for the timer.
+ * one they want. "Retry all failed": back in the queue, started as slots free up.
  */
 export async function retryDriveFiles(args: {
   householdId: string;
@@ -333,6 +342,6 @@ export async function retryDriveFiles(args: {
         failed.map((f) => f.id),
       ),
     );
-  await queueFiles();
+  await startNextDriveFiles();
   return failed.length;
 }
