@@ -19,6 +19,11 @@ vi.mock("openai", () => {
   }
   return { default: class OpenAI {}, AzureOpenAI };
 });
+// Pin the deployment so a local .env.local can't change which params are sent.
+vi.mock("@/lib/env", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@/lib/env")>();
+  return { ...mod, env: { ...mod.env, AZURE_FOUNDRY_DEPLOYMENT: "gpt-5-mini" } };
+});
 vi.mock("@azure/identity", () => ({
   DefaultAzureCredential: class {},
   getBearerTokenProvider: () => async () => "fake-token",
@@ -27,7 +32,7 @@ vi.mock("@azure/identity", () => ({
 import { azureFoundryProvider } from "@/lib/ai/azure-foundry-provider";
 
 const completion = (content: string) => ({
-  model: "gpt-4o-mini",
+  model: "gpt-5-mini",
   usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
   choices: [{ message: { content } }],
 });
@@ -42,7 +47,7 @@ describe("azureFoundryProvider — SDK-mocked (zero tokens, no network)", () => 
     const res = await azureFoundryProvider.callStructured({ schema, schemaName: "t", messages });
     expect(res.data).toEqual({ ok: true });
     expect(res.usage.totalTokens).toBe(150);
-    expect(res.usage.costCents).toBeCloseTo(((100 * 0.15 + 50 * 0.6) / 1_000_000) * 100, 8);
+    expect(res.usage.costCents).toBeCloseTo(((100 * 0.25 + 50 * 2.0) / 1_000_000) * 100, 8);
     expect(create).toHaveBeenCalledOnce();
   });
 
@@ -63,6 +68,16 @@ describe("azureFoundryProvider — SDK-mocked (zero tokens, no network)", () => 
       azureFoundryProvider.callStructured({ schema, schemaName: "t", messages, maxRetries: 1 }),
     ).rejects.toThrow(/failed after 2 attempts/);
     expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends max_completion_tokens and reasoning_effort (not temperature) to a gpt-5 deployment", async () => {
+    create.mockResolvedValueOnce(completion('{"ok":true}'));
+    await azureFoundryProvider.callStructured({ schema, schemaName: "t", messages, temperature: 0.2, maxOutputTokens: 600 });
+    const args = create.mock.calls[0]![0];
+    expect(args.max_completion_tokens).toBe(600);
+    expect(args.max_tokens).toBeUndefined();
+    expect(args.reasoning_effort).toBe("low");
+    expect(args.temperature).toBeUndefined();
   });
 
   it("requests json_object mode and injects a JSON instruction when the prompt lacks one", async () => {

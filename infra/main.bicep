@@ -169,7 +169,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'AZURE_STORAGE_ACCOUNT',    value: 'strpdevdtyzeg7l6ihh4' }
           { name: 'AZURE_WEBPUBSUB_ENDPOINT', value: 'https://wps-recipe-planner.webpubsub.azure.com' }
           { name: 'AZURE_FOUNDRY_ENDPOINT',   value: 'https://aif-recipe-planner.cognitiveservices.azure.com/' }
-          { name: 'AZURE_FOUNDRY_DEPLOYMENT', value: 'gpt-4o-mini' }
+          { name: 'AZURE_FOUNDRY_DEPLOYMENT', value: 'gpt-5-mini' }
           { name: 'FUNCTIONS_BASE_URL',       value: 'https://func-recipe-jobs.azurewebsites.net' }
           { name: 'NEXT_PUBLIC_APP_URL',      value: appPublicUrl }
           { name: 'NODE_ENV',                 value: 'production' }

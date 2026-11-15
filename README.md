@@ -42,7 +42,7 @@ Originally built on Supabase + Vercel + Inngest, the app was migrated onto Azure
                                 ▼
                    ┌──────────────────────────┐
                    │ Azure AI Foundry         │
-                   │ • gpt-4o-mini (vision +  │
+                   │ • gpt-5-mini (vision +   │
                    │   text + embeddings)     │
                    └──────────────────────────┘
 ```
@@ -61,7 +61,7 @@ and new stacks can run side by side. Production runs the Azure value for all fiv
 | Storage       | Azure Blob Storage, keyless via managed identity (`STORAGE_PROVIDER`)     |
 | Realtime      | Azure Web PubSub (`REALTIME_PROVIDER`)                                    |
 | Background    | Azure Durable Functions (`JOBS_PROVIDER=durable`)                         |
-| AI            | Azure AI Foundry — gpt-4o-mini (`AI_PROVIDER=foundry`)                    |
+| AI            | Azure AI Foundry — gpt-5-mini (`AI_PROVIDER=foundry`)                    |
 | Agents        | LangGraph supervisor · Langfuse tracing (dev scripts only, see below)     |
 | Observability | Azure Application Insights (OpenTelemetry)                               |
 | Hosting       | Azure Container Apps · image built + deployed by GitHub Actions           |

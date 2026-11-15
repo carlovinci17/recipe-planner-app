@@ -21,9 +21,12 @@ import type {
  * `thinking`/`effort` (Anthropic-only) are ignored.
  */
 
-// gpt-4o-mini pricing (USD per 1M tokens) → cents per token.
-const INPUT_CENTS_PER_TOKEN = 0.15 / 1_000_000 * 100;
-const OUTPUT_CENTS_PER_TOKEN = 0.6 / 1_000_000 * 100;
+// gpt-5-mini pricing (USD per 1M tokens) → cents per token.
+const INPUT_CENTS_PER_TOKEN = 0.25 / 1_000_000 * 100;
+const OUTPUT_CENTS_PER_TOKEN = 2.0 / 1_000_000 * 100;
+
+/** gpt-5 / o-series deployments are reasoning models: no sampling params, take `reasoning_effort`. */
+const isReasoningDeployment = (name: string) => /^(gpt-5|o\d)/.test(name) && !name.startsWith("gpt-5-chat");
 
 let _client: AzureOpenAI | undefined;
 function getClient(): AzureOpenAI {
@@ -34,7 +37,7 @@ function getClient(): AzureOpenAI {
       new DefaultAzureCredential(),
       "https://cognitiveservices.azure.com/.default",
     );
-    _client = new AzureOpenAI({ endpoint, azureADTokenProvider: tokenProvider, apiVersion: "2024-10-21" });
+    _client = new AzureOpenAI({ endpoint, azureADTokenProvider: tokenProvider, apiVersion: "2025-04-01-preview" });
   }
   return _client;
 }
@@ -107,9 +110,14 @@ export const azureFoundryProvider: AIProvider = {
       const response = await client.chat.completions.create({
         model,
         messages: convo,
-        max_tokens: opts.maxOutputTokens ?? 4000,
+        // Reasoning tokens count toward this budget on gpt-5 models.
+        max_completion_tokens: opts.maxOutputTokens ?? 4000,
         response_format: { type: "json_object" },
-        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+        ...(isReasoningDeployment(model)
+          ? { reasoning_effort: "low" as const }
+          : opts.temperature !== undefined
+            ? { temperature: opts.temperature }
+            : {}),
       });
 
       const usage = response.usage;
