@@ -199,7 +199,9 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         ]
       } ]
       // maxReplicas is 10 live, not the 3 this template used to claim.
-      scale: { minReplicas: 1, maxReplicas: 10 }
+      // minReplicas 0: scale to zero when idle (an always-on replica was ~A$15/mo
+      // of idle charges); the first request wakes it, held by the startup probe.
+      scale: { minReplicas: 0, maxReplicas: 10 }
     }
   }
 }

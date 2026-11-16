@@ -11,10 +11,11 @@ import { callApp } from "../lib/callApp";
  * Google Drive sync is deliberately NOT a timer: it runs from "Sync now".
  */
 
-// Hourly: mark long-stuck ingestion jobs as failed (safety net). A job only
-// counts as stuck after 45 minutes without progress, so hourly is plenty.
+// Daily, 17:00 UTC (3–4 am Sydney): mark long-stuck ingestion jobs as failed
+// (safety net). The container scales to zero when idle, so an hourly tick would
+// wake it and Neon 24 times a day just to find nothing stuck.
 app.timer("sweepStuckJobs", {
-  schedule: "0 0 * * * *",
+  schedule: "0 0 17 * * *",
   handler: async (_timer: Timer, context: InvocationContext) => {
     try {
       const result = await callApp<{ cleared: number }>("sweep-stuck", {});
