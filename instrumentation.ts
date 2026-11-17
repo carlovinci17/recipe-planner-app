@@ -16,8 +16,4 @@ export async function register() {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     useAzureMonitor();
   }
-  // NOTE: Langfuse tracing of the /api/assistant route is a follow-up (docs/TODO.md).
-  // @opentelemetry/sdk-node doesn't bundle in Next's instrumentation hook; the
-  // Kitchen Assistant scripts trace fine, but wiring app-route tracing needs a
-  // lighter tracer-provider setup. Tracked with the token-capture TODO.
 }

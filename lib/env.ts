@@ -61,8 +61,6 @@ const serverSchema = z.object({
   // Azure AI Foundry, keyless via DefaultAzureCredential.
   AZURE_FOUNDRY_ENDPOINT: optionalUrl,
   AZURE_FOUNDRY_DEPLOYMENT: z.string().default("gpt-5-mini"),
-  // Embedding deployment for recipes.embedding (1536 dims = text-embedding-3-small).
-  AZURE_FOUNDRY_EMBED_DEPLOYMENT: z.string().default("text-embedding-3-small"),
   // Google Drive folder sync (lib/integrations/google-drive.ts). The service
   // account households share their folder with, and — in Azure only — the
   // Workload Identity Federation pair that lets the managed identity act as it.

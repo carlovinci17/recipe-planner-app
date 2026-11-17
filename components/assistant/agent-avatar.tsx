@@ -131,8 +131,3 @@ export function AgentAvatar({
     </svg>
   );
 }
-
-/** Map a specialist name from /api/assistant to its face; unknown → coordinator. */
-export function agentFor(specialist: string | null | undefined): AgentId {
-  return specialist && specialist in AGENTS ? (specialist as AgentId) : "coordinator";
-}
