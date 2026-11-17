@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { KitchenAssistant } from "@/components/assistant/kitchen-assistant";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -238,10 +237,6 @@ export function AppShell({
           );
         })}
       </nav>
-
-      {/* Hidden while editing a recipe: its floating button sits over the
-          sticky Save bar, and Improve with AI covers that page's AI needs. */}
-      {/^\/recipes\/[^/]+\/(edit|review)$/.test(pathname) ? null : <KitchenAssistant />}
     </div>
   );
 }

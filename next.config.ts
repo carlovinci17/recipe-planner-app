@@ -38,16 +38,6 @@ const config: NextConfig = {
     "pino",
     "@napi-rs/canvas",
     "@azure/monitor-opentelemetry",
-    // Agent stack (Module 12) — heavy Node packages the bundler shouldn't inline.
-    "langchain",
-    "@langchain/core",
-    "@langchain/langgraph",
-    "@langchain/langgraph-supervisor",
-    "@langchain/openai",
-    "@langfuse/core",
-    "@langfuse/langchain",
-    "@langfuse/otel",
-    "@opentelemetry/sdk-node",
   ],
   // pdfjs-dist loads its worker via a runtime string reference that Vercel's
   // file tracer can't see. Explicitly include it so it's present in the

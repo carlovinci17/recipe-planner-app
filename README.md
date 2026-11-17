@@ -62,7 +62,6 @@ and new stacks can run side by side. Production runs the Azure value for all fiv
 | Realtime      | Azure Web PubSub (`REALTIME_PROVIDER`)                                    |
 | Background    | Azure Durable Functions (`JOBS_PROVIDER=durable`)                         |
 | AI            | Azure AI Foundry — gpt-5-mini (`AI_PROVIDER=foundry`)                    |
-| Agents        | LangGraph supervisor · Langfuse tracing (dev scripts only, see below)     |
 | Observability | Azure Application Insights (OpenTelemetry)                               |
 | Hosting       | Azure Container Apps · image built + deployed by GitHub Actions           |
 
@@ -99,7 +98,6 @@ app/
 functions/                ← Azure Durable Functions app (ingestion orchestration)
 
 lib/
-  agents/                 ← LangGraph supervisor: coordinator + finder/planner/shopping
   ai/                     ← ai.callStructured seam · schemas · versioned prompts
   db/                     ← Drizzle schema + client (withUserContext sets RLS role)
   ingestion/              ← rasterize · normalize · persist · storage seam
@@ -198,20 +196,13 @@ Properties:
 
 ---
 
-## Kitchen Assistant (agentic)
+## Kitchen Assistant (removed)
 
-A LangGraph **supervisor graph**: a coordinator routes each turn to one specialist —
-`finder`, `planner`, or `shopping` — over the household's real data. Actions follow
-**propose → confirm → execute**: the `propose_*` tools only return a proposal, and the app
-performs the write after the user confirms. See
-[ADR-0010](docs/adr/0010-agentic-orchestration.md).
-
-Semantic search is live: recipes are embedded (`text-embedding-3-small`) with an HNSW index
-on `recipes.embedding`.
-
-> **Note:** Langfuse is wired into the developer scripts in `scripts/` only — the
-> `/api/assistant` route is not yet traced (see `instrumentation.ts` and `docs/TODO.md`).
-> Production tracing is Application Insights.
+The LangGraph chat assistant ([ADR-0010](docs/adr/0010-agentic-orchestration.md)) and the
+recipe embeddings behind its semantic search were removed in November 2026 to keep the app
+small and cheap to run. The `recipes.embedding` column and its index remain in the database
+but are no longer written. AI import, tagging, "Improve with AI" and the AI Chef meal plan are
+unchanged.
 
 ---
 
